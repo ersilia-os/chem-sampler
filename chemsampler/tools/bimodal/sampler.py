@@ -8,7 +8,7 @@ root = os.path.dirname(os.path.abspath(__file__))
 
 BIMODAL_CONDA_ENVIRONMENT = "bimodal"
 
-class BimodalSampler:
+class _BimodalSampler:
     def __init__(self):
         self.cwd = os.getcwd()
         self.exec_folder = os.path.join(root)

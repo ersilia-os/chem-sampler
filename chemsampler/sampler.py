@@ -27,7 +27,7 @@ SAMPLERS_LIST = [
     MollibSampler,
     BimodalSampler,
     MolerSampler,
-    JtnnSampler
+    #JtnnSampler
 ]
 
 
@@ -47,9 +47,6 @@ class ChemSampler(object):
         small_smiles_list = smiles_list[: self.small_list_size]
         Sampler = random.sample(self.samplers_list, 1)[0]
         
-        # sampler= ["chemsampler.tools.moler.sampler.moler_sampler"]
-        # Sampler =sampler[0]
-        print(Sampler)
         if Sampler == ChemblSampler:
             print("ChemblSampler")
             sampler = Sampler()
@@ -91,21 +88,25 @@ class ChemSampler(object):
         if Sampler == FasmifraSampler:
             print("FasmifraSampler")
             sampler = Sampler()
-            return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples)
+            return sampler.sample(smiles_list=small_smiles_list, 
+                                    n=self.num_samples)
         if Sampler == MolerSampler:
             print("moler_sampler")
             sampler = Sampler()
-            return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples)
+            return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
+                                    search_pre_calculated=True)
 
         if Sampler == BimodalSampler:
             print("bimodal_sampler")
             sampler = Sampler()
-            return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples)
+            return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
+                                    search_pre_calculated=True)
 
-        if Sampler == JtnnSampler:
-            print("jtnn_sampler")
-            sampler = Sampler()
-            return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples)
+        # if Sampler == JtnnSampler:
+        #     print("jtnn_sampler")
+        #     sampler = Sampler()
+        #     return sampler.sample(n=self.num_samples,smiles_list=small_smiles_list,
+        #                         search_pre_calculated=True)
         
 
 

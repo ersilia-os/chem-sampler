@@ -1,1 +1,1 @@
-from ...tools.moler.fit import fit
+from ...tools.moler.fit import MolerFit

@@ -9,7 +9,7 @@ root = os.path.dirname(os.path.abspath(__file__))
 
 MOLER_CONDA_ENVIRONMENT = "fastjtnn"
 
-class JtnnSampler:
+class _JtnnSampler:
     def __init__(self):
         self.cwd = os.getcwd()
         self.exec_folder = os.path.join(root)
@@ -21,7 +21,7 @@ class JtnnSampler:
 
 
     def _sample(self, n):
-        cmd = "cd {0}; python fast_jtnn/sample.py --nsample {1} --vocab {2} --hidden {3} --model {4} --output_file {5}; cd {6}".format(
+        cmd = "cd {0}; python fast_molvae/sample.py --nsample {1} --vocab {2} --hidden {3} --model {4} --output_file {5}; cd {6}".format(
             self.exec_folder, n, self.VOCAB_FILE, self.hidden, self.model_path, self.data_file,  self.cwd)
         SimpleConda().run_commandlines(MOLER_CONDA_ENVIRONMENT, cmd)
         

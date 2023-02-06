@@ -11,7 +11,7 @@ root = os.path.dirname(os.path.abspath(__file__))
 
 MOLER_CONDA_ENVIRONMENT = "moler"
 
-class fit:
+class MolerFit:
     def __init__(self):
         self.cwd = os.getcwd()
         self.exec_folder = os.path.join(root)
@@ -45,7 +45,7 @@ class fit:
         self.write_smi(val_ds, 'valid')
         self.write_smi(test_ds, 'test') 
         
-    def _fit(self, smiles_list):
+    def fit(self, smiles_list):
         train_ds, val_ds, test_ds = self.input_split(smiles_list)
         self.save_data(train_ds, val_ds, test_ds)
         cmd = "cd {0}; bash fit.sh {1} {2} {3} {4} ; cd {5}".format(

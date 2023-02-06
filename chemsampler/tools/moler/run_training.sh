@@ -7,6 +7,6 @@ if [ $# -eq 3 ] ; then
     echo "Filename not supplied."
 else
 
-python molecule_generation.cli.train.py MoLeR $TRACE_FILE \--load-saved-model $CHECKPOINT_FILE \ --load-weights-only
+python molecule_generation/cli/train.py MoLeR $TRACE_FILE \--load-saved-model $CHECKPOINT_FILE \ --load-weights-only
 
 fi

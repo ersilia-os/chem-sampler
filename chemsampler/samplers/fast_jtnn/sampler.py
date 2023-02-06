@@ -1,4 +1,4 @@
-from ...tools.fast_jtnn.sampler import JtnnSampler
+from ...tools.fast_jtnn.sampler import _JtnnSampler
 
 from ...tools.fpsim2.searcher import SimilaritySearcher, RandomSearcher
 import os
@@ -13,7 +13,7 @@ class JtnnSampler:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
             SimilaritySearcher(self.fp_filename).fit(smiles_list)
 
-    def Sampler(self, smiles_list, n,  search_pre_calculated=True, cutoff = 0.7):
+    def sample(self, smiles_list, n,  search_pre_calculated=True, cutoff = 0.7):
         if search_pre_calculated==True:
             samples = []
             for smile in smiles_list:
@@ -24,7 +24,7 @@ class JtnnSampler:
                 samples += _samples 
         
         else:
-            sampler = JtnnSampler()
+            sampler = _JtnnSampler()
             samples = sampler.sample(n)
 
         return samples
