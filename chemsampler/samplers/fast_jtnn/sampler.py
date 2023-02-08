@@ -6,13 +6,13 @@ import os
 class JtnnSampler:
     def __init__(self):
         # #TODO: pre-calculate samples
-        # self.fp_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.h5'
-        # self.db_smiles_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.csv'
+        self.fp_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.h5'
+        self.db_smiles_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.csv'
 
-        # if os.path.exists(self.fp_filename) is False:
-        #     smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
-        #     SimilaritySearcher(self.fp_filename).fit(smiles_list)
-        pass
+        if os.path.exists(self.fp_filename) is False:
+            smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
+            SimilaritySearcher(self.fp_filename).fit(smiles_list)
+        
 
     def sample(self, n, smiles_list= [],  search_pre_calculated=False, cutoff = 0.7):
         if search_pre_calculated==True:

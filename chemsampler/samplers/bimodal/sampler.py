@@ -12,7 +12,7 @@ class BimodalSampler:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
             SimilaritySearcher(self.fp_filename).fit(smiles_list)
 
-    def sample(self, n , smiles_list = [],  search_pre_calculated=True, cutoff = 0.7):
+    def sample(self, n , smiles_list = [],  search_pre_calculated=False, cutoff = 0.7):
         if search_pre_calculated==True:
             samples = []
             for smile in smiles_list:
