@@ -129,4 +129,3 @@ conda env create -f environment.yml
 To fine tune this model smiles along with bioactivity is required.
 
 ## 5. fastjtnn
-To be replaced by hgraph2grapg which is faster
