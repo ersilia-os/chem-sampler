@@ -6,7 +6,7 @@ class MolerSampler:
     def __init__(self):
         #TODO: Come up with a better way to store precalculated files
         self.fp_filename = '../chemsampler/data/pre_calculated/moler/moler_100k.h5'
-        self.db_smiles_filename = '../chemsampler/data/pre_calculated/moler/moler_10k.csv'
+        self.db_smiles_filename = '../chemsampler/data/pre_calculated/moler/moler_100k.csv'
 
         if os.path.exists(self.fp_filename) is False:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()

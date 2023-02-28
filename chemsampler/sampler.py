@@ -24,7 +24,7 @@ SAMPLERS_LIST = [
     PubChemSampler,
     SmallWorldSampler,
     StonedSampler,
-    MollibSampler,
+    #MollibSampler,
     BimodalSampler,
     MolerSampler,
     #JtnnSampler
