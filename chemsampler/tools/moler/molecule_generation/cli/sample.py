@@ -18,7 +18,9 @@ def print_samples(model_dir: str, num_samples: int, **model_kwargs) -> None:
 def save_samples(model_dir: str, num_samples: int, data_file: str, **model_kwargs,) -> None:
     with load_model_from_directory(model_dir, **model_kwargs) as model:
         samples = model.sample(num_samples)
-    samples.to_csv(data_file, index=False)
+    dict = {'smiles': samples}
+    df_samples = pd.DataFrame(dict)
+    df_samples.to_csv(data_file, index=False)
 
 
 def get_argparser() -> argparse.ArgumentParser:
