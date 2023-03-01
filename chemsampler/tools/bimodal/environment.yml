@@ -14,7 +14,6 @@ dependencies:
   - pillow=9.2.0
   - python=3.7
   - pytorch=1.2.0
-  - cuda100
   - torchvision=0.4.0
   - rdkit=2022.9.3
   - scikit-learn=1.0.2
