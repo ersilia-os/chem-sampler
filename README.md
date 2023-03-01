@@ -31,16 +31,13 @@ sampled_smiles = sampler.sample(smiles_list, num_samples=1000, sim_ub=0.95, sim_
 print(sampled_smiles)
 ```
 ### Parameters: 
+| Parameters | value |
+| -- | -- | 
 | smiles_list | list of smiles as input to search for similar molecules |
-
 | num_samples | total number of smiles to be sampled( samples [num_samples/num of smiles in smiles list] per smile) |
- 
 | sim_ub | uperbound on similarity w.r.t. input smiles (range 0.0 - 1.0, 1.0 being identical to the input) |
-
 | sim_lb | lowerbound on similarity w.r.t.input smiles |
-
-| distribution | ["ramp" , "normal" , "uniform" ]-similarity score distribution across the input smiles. |
-
+| distribution | ["ramp" , "normal" , "uniform" ] - similarity score distribution across the input smiles. |
 | sampler | sampler name , by default it's any two samplers selected at random. |
 
 samplers available : [
