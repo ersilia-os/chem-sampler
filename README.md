@@ -32,10 +32,15 @@ print(sampled_smiles)
 ```
 ### Parameters: 
 smiles_list : list of smiles as input to search for similar molecules
+
 num_samples : total number of smiles to be sampled( samples [num_samples/num of smiles in smiles list] per smile)
+
 sim_ub : uperbound on similarity w.r.t. input smiles (range 0.0 - 1.0, 1.0 being identical to the input)
+
 sim_lb : lowerbound on similarity w.r.t.input smiles
+
 distribution : ["ramp" , "normal" , "uniform" ]-similarity score distribution across the input smiles. 
+
 sampler : sampler name , by default it's any two samplers selected at random.
 
 samplers available : [
@@ -46,6 +51,7 @@ samplers available : [
     BimodalSampler,
     MolerSampler,
 ]
+
 TODO: Include other samplers as well
 
 # Generative Models
