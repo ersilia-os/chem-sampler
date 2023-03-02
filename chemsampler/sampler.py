@@ -256,3 +256,4 @@ class ChemSampler(object):
             return flat_data
         else:
             return data
+
