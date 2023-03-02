@@ -20,14 +20,14 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 
 
 SAMPLERS_LIST = [
-    ChemblSampler,
-    PubChemSampler,
-    SmallWorldSampler,
-    StonedSampler,
-    #MollibSampler,
-    BimodalSampler,
-    MolerSampler,
-    #JtnnSampler
+    'ChemblSampler',
+    'PubChemSampler',
+    'SmallWorldSampler',
+    'StonedSampler',
+    #'MollibSampler',
+    'BimodalSampler',
+    'MolerSampler',
+    #'JtnnSampler'
 ]
 
 
@@ -45,9 +45,10 @@ class ChemSampler(object):
     def _one_sampler(self, smiles_list):
         random.shuffle(smiles_list)
         small_smiles_list = smiles_list[: self.small_list_size]
-        Sampler = random.sample(self.samplers_list, 1)[0]
-        
-        if Sampler == ChemblSampler:
+        Sampler = self.Sampler
+            
+        if Sampler == 'ChemblSampler':
+            Sampler = ChemblSampler
             print("ChemblSampler")
             sampler = Sampler()
             return sampler.sample(
@@ -55,7 +56,8 @@ class ChemSampler(object):
                 n=self.num_samples,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
-        if Sampler == PubChemSampler:
+        if Sampler == 'PubChemSampler':
+            Sampler = PubChemSampler
             print("PubChemSampler")
             sampler = Sampler()
             return sampler.sample(
@@ -63,14 +65,16 @@ class ChemSampler(object):
                 n=self.num_samples,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
-        if Sampler == SmallWorldSampler:
+        if Sampler == 'SmallWorldSampler':
+            Sampler = SmallWorldSampler
             print("SmallWorldSampler")
             sampler = Sampler()
             return sampler.sample(
                 smiles_list=small_smiles_list,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
-        if Sampler == StonedSampler:
+        if Sampler == 'StonedSampler':
+            Sampler = StonedSampler
             print("StonedSampler")
             sampler = Sampler()
             return sampler.sample(
@@ -78,25 +82,30 @@ class ChemSampler(object):
                 n=self.num_samples,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
-        if Sampler == MollibSampler:
+        if Sampler == 'MollibSampler':
+            Sampler = MollibSampler
             print("MollibSampler")
             sampler = Sampler()
             return sampler.sample(
                 smiles_list=small_smiles_list,
-                n=max(self.num_samples, 100),  # TODO check
+                n=max(self.num_samples, 100),
             )
-        if Sampler == FasmifraSampler:
+        
+        if Sampler == 'FasmifraSampler':
+            Sampler = FasmifraSampler
             print("FasmifraSampler")
             sampler = Sampler()
             return sampler.sample(smiles_list=small_smiles_list, 
                                     n=self.num_samples)
-        if Sampler == MolerSampler:
+        if Sampler == 'MolerSampler':
+            Sampler = MolerSampler
             print("moler_sampler")
             sampler = Sampler()
             return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
                                     search_pre_calculated=True)
 
-        if Sampler == BimodalSampler:
+        if Sampler == 'BimodalSampler':
+            Sampler = BimodalSampler
             print("bimodal_sampler")
             sampler = Sampler()
             return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
@@ -111,7 +120,7 @@ class ChemSampler(object):
 
 
 
-    def _greedy_sample(self, smiles_list, num_samples, time_budget_sec):
+    def _greedy_sample(self, smiles_list, num_samples, time_budget_sec, Sampler):
         t0 = timer()
         sampled_smiles = set()
         for _ in range(self.max_greedy_iterations):
@@ -124,13 +133,14 @@ class ChemSampler(object):
             print(len(sampled_smiles))
         return sampled_smiles
 
-    def more(self, smiles_list, num_samples=100, time_budget_sec=60):
+    def more(self, Sampler, smiles_list, num_samples=100, time_budget_sec=60):
+        Sampler = Sampler
         self.time_budget_sec = int(time_budget_sec) + 1
         self.one_sampler_time_budget_sec = (
             int(self.time_budget_sec / len(self.samplers_list)) + 1
         )
         self.num_samples = num_samples
-        sampled_smiles = self._greedy_sample(smiles_list, num_samples, time_budget_sec)
+        sampled_smiles = self._greedy_sample(smiles_list, num_samples, time_budget_sec, Sampler)
         sampled_smiles = list(sampled_smiles)
         if self.sampled_smiles is None:
             self.sampled_smiles = set(sampled_smiles)
@@ -208,6 +218,7 @@ class ChemSampler(object):
     def sample(
         self,
         smiles_list,
+        Sampler = None,
         num_samples=100,
         sim_ub=0.95,
         sim_lb=0.4,
@@ -215,9 +226,13 @@ class ChemSampler(object):
         time_budget_sec=60,
         flatten=False,
     ):
+        if Sampler is None:
+            Sampler = random.sample(self.samplers_list, 1)[0]
+        self.Sampler = Sampler
         num_per_sample = max(3, int(num_samples / len(smiles_list)))
         if self.sampled_smiles is None:
             self.more(
+                Sampler = Sampler,
                 smiles_list=smiles_list,
                 num_samples=num_samples,
                 time_budget_sec=time_budget_sec,
