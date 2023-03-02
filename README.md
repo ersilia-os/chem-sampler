@@ -27,7 +27,7 @@ from chemsampler import example
 
 smiles_list = example()
 sampler = ChemSampler()
-sampled_smiles = sampler.sample(smiles_list, num_samples=1000, sim_ub=0.95, sim_lb=0.6, distribution="ramp")
+sampled_smiles = sampler.sample(smiles_list, Sampler= 'ChemblSampler', num_samples=1000, sim_ub=0.95, sim_lb=0.6, distribution="ramp")
 print(sampled_smiles)
 ```
 ### Parameters: 
@@ -38,7 +38,7 @@ print(sampled_smiles)
 | sim_ub | uperbound on similarity w.r.t. input smiles (range 0.0 - 1.0, 1.0 being identical to the input) |
 | sim_lb | lowerbound on similarity w.r.t.input smiles |
 | distribution | ["ramp" , "normal" , "uniform" ] - similarity score distribution across the input smiles. |
-| sampler | sampler name , by default it's any two samplers selected at random. |
+| Sampler | sampler name , by default it's any two samplers selected at random. |
 
 samplers available : [
     ChemblSampler,
@@ -49,8 +49,7 @@ samplers available : [
     MolerSampler,
 ]
 
-TODO: Include other samplers as well
-
+Output is a list of lists where each list is smiles sampled from one input smile. Empty list means no smile has been sampled
 # Generative Models
 
 To generate your own molecules use the generative models. Some of these generative models can be fitted on the custom dataset and then the fitted model can be used to generate molecules.
