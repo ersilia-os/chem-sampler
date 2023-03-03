@@ -1,9 +1,10 @@
-name: bimodal
+name: moler
 channels:
   - rdkit
   - defaults
 dependencies:
-  - rdkit=2022.9.3
-  - pip=22.2.2
+  - python=3.7
+  - rdkit
+  - pip
   - pip:
-    - molecule-generation
+    - molecule-generation==0.3.0
