@@ -16,6 +16,7 @@ git clone https://github.com/ersilia-os/chem-sampler.git
 cd chem-sampler
 pip install -e .
 ```
+
 # 1. Sample small molecules using ChemSampler class 
 It samples from large chemical libraries and pre-sampled molecules(generated from generative models) in chemsampler database.
 
@@ -25,6 +26,7 @@ It samples from large chemical libraries and pre-sampled molecules(generated fro
 from chemsampler import ChemSampler
 from chemsampler import example
 
+#example() returns a list of smiles
 smiles_list = example()
 sampler = ChemSampler()
 sampled_smiles = sampler.sample(smiles_list, Sampler= 'ChemblSampler', num_samples=1000, sim_ub=0.95, sim_lb=0.6, distribution="ramp")
@@ -50,6 +52,10 @@ samplers available : [
 ]
 
 Output is a list of lists where each list is smiles sampled from one input smile. Empty list means no smile has been sampled
+### To run from command line
+To run from command line run following in `src` directory 
+`python sampler.py './in.csv' './out.csv' --SAMPLER ChemblSampler --NUM_SAMPLES 100`
+
 # Generative Models
 
 To generate your own molecules use the generative models. Some of these generative models can be fitted on the custom dataset and then the fitted model can be used to generate molecules.
@@ -68,6 +74,7 @@ conda env create -f environment.yml
 ### API available for Moler
 ### To generate from pre-trained model 
 
+MolerSampler by deafult needs no seed smiles. It randomly generates samples from pre-trained model.
 Import MolerSampler and call the sample method. Only, number of molecules need to be passed as parameter.
 
 ```python
@@ -78,6 +85,17 @@ samples = sampler.sample(n=1000)
 print(samples)
 ```
 
+To sample molecules with seed molecules pass smiles list and search_pre_calculated=True. A cutoff similarity score can be passed too.
+
+```python
+from chemsampler.samplers.moler.sampler import MolerSampler
+
+num_samples = 100
+smiles_list = [smiles_list]
+sampler = MolerSampler() 
+sampler.sample(n=num_samples, smiles_list=smiles_list,
+                                    search_pre_calculated=True, cutoff = 0.7)
+```
 ### To fine-tune : fit 
 Fit method fine-tunes the data on custom dataset. Input to fit is a list of smiles and directory name to save the newly generated checkpoint. The same checkpoint directory can be used to generate from the fitted model.
 
@@ -112,13 +130,78 @@ cd chemsampler/tools/bimodal
 conda env create -f environment.yml
 ```
 
-### API available : sample anf fit
+### API available : sample and fit
 To sample from bimodal `from chemsampler.samplers.bimodal.sampler import BimodalSampler`. The sample works same as Moler.
+
+```python
+from chemsampler.samplers.bimodal.sampler import BimodalSampler
+
+sampler = BimodalSampler()
+#samples is a list of smiles sampled. It could also be saved to a csv or text file.
+samples = sampler.sample(n=1000)
+print(samples)
+```
+
+To sample molecules with seed molecules pass smiles list and search_pre_calculated=True. A cutoff similarity score can be passed too.
+
+```python
+from chemsampler.samplers.bimodal.sampler import BimodalSampler
+
+num_samples = 100
+smiles_list = [smiles_list]
+sampler = BimodalSampler() 
+samples = sampler.sample(n=num_samples, smiles_list=smiles_list,
+                                    search_pre_calculated=True, cutoff = 0.7)
+```
 
 To fit bimodal import `from chemsampler.samplers.bimodal.fit import BimodalFit`. The fit method works similar to Moler. 
 It takes list of smiles and a directory name  for fint-tuning.
 
-## 3. mgm(Masked Graph modeling)
+
+```python
+from chemsampler.samplers.bimodal.fit import BimodalFit
+from chemsampler.samplers.bimodal.sampler import BimodalSampler
+from chemsampler import example
+
+
+checkpoint_dir = 'fit_example_checkpoint_dir'
+smiles_list = example()
+
+fit = BimodalFit()
+fit(smiles_list, checkpoint_dir)
+
+#sample from finetuned model
+sampler = BimodalSampler()
+#samples is a list of smiles sampled. It could also be saved to a csv or text file.
+samples = sampler.sample(n= 100, checkpoint_dir= checkpoint_dir)
+print(samples)
+```
+## 3. fastjtnn
+To sample from 
+To sample from fastjtnn `from chemsampler.samplers.FastJtnn.sampler import FastJtnnSampler`. The sample works same as Moler.
+
+```python
+from chemsampler.samplers.fast_jtnn.sampler import JtnnSampler
+
+sampler = JtnnSampler()
+#samples is a list of smiles sampled. It could also be saved to a csv or text file.
+samples = sampler.sample(n=1000)
+print(samples)
+```
+
+To sample molecules with seed molecules pass smiles list and search_pre_calculated=True. A cutoff similarity score can be passed too.
+
+```python
+from chemsampler.samplers.fast_jtnn.sampler import JtnnSampler
+
+num_samples = 100
+smiles_list = [smiles_list]
+sampler = JtnnSampler() 
+samples = sampler.sample(n=num_samples, smiles_list=smiles_list,
+                                    search_pre_calculated=True, cutoff = 0.7)
+```
+
+## 4. mgm(Masked Graph modeling)
 This model has been developed by NYU Deel Learning lab. It's faster than the other generative models available. Publication can be found at [Masked graph modeling for molecule generation](https://www.nature.com/articles/s41467-021-23415-2)
 
 Only sample API is availble for mgm. 
@@ -128,9 +211,13 @@ To use mgm build conda environment :
 cd chemsampler/tools/mgm
 conda env create -f environment.yml
 ```
-then import mgm `from chemsampler.samplers.mgm.sampler import MgmSampler`
+NOTE: MGM requires cuda support. It needs GPU to run.
 
-## 4. hybridCLM 
+To run MGM: 
+#WIP
+
+
+## 5. hybridCLM (WIP)
 
 HybridCLM leverages molecular structure and bioactivity with chemical language models to sample molecules. Ideally this model should be fine tuned to focus on targeted bioactivity. M
 
@@ -146,4 +233,3 @@ conda env create -f environment.yml
 ### Fine-tune and sample
 To fine tune this model smiles along with bioactivity is required.
 
-## 5. fastjtnn
