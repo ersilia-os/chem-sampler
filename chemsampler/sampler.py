@@ -22,7 +22,7 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 SAMPLERS_LIST = [
     'ChemblSampler',
     'PubChemSampler',
-    'SmallWorldSampler',
+    #'SmallWorldSampler',
     'StonedSampler',
     #'MollibSampler',
     'BimodalSampler',
@@ -134,7 +134,6 @@ class ChemSampler(object):
         return sampled_smiles
 
     def more(self, Sampler, smiles_list, num_samples=100, time_budget_sec=60):
-        Sampler = Sampler
         self.time_budget_sec = int(time_budget_sec) + 1
         self.one_sampler_time_budget_sec = (
             int(self.time_budget_sec / len(self.samplers_list)) + 1
@@ -215,10 +214,8 @@ class ChemSampler(object):
             R += [selected_smiles]
         return R
 
-    def sample(
-        self,
+    def _sample(self,
         smiles_list,
-        Sampler = None,
         num_samples=100,
         sim_ub=0.95,
         sim_lb=0.4,
@@ -226,13 +223,10 @@ class ChemSampler(object):
         time_budget_sec=60,
         flatten=False,
     ):
-        if Sampler is None:
-            Sampler = random.sample(self.samplers_list, 1)[0]
-        self.Sampler = Sampler
+        
         num_per_sample = max(3, int(num_samples / len(smiles_list)))
-        if self.sampled_smiles is None:
-            self.more(
-                Sampler = Sampler,
+        self.more(
+                Sampler = self.Sampler,
                 smiles_list=smiles_list,
                 num_samples=num_samples,
                 time_budget_sec=time_budget_sec,
@@ -257,3 +251,28 @@ class ChemSampler(object):
         else:
             return data
 
+
+
+    def sample(
+        self,
+        smiles_list,
+        Sampler = None,
+        num_samples=100,
+        sim_ub=0.95,
+        sim_lb=0.4,
+        distribution="ramp",
+        time_budget_sec=60,
+        flatten=False,
+    ):
+        if Sampler == "all":
+            result= []
+            for sampler in (self.samplers_list, 1)[0]:
+                self.Sampler = sampler
+                result_ = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
+                result += result_
+            print(result)    
+        else:
+            self.Sampler = Sampler
+            result = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
+        return result
+        
