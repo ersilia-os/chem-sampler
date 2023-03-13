@@ -81,10 +81,17 @@ class MolerFit:
         smiles_list = smiles_df['smiles']
         return smiles_list
 
+    def _clean(self):
+        try:
+            shutil.rmtree(self.tuned_checkpoint_dir)
+        except OSError as e:
+            print("Error: %s - %s." % (e.filename, e.strerror))
+
     def fit_and_sample(self, smiles_list, n):
         self._fit(smiles_list)
         self._sample(n)
         molecules = self._read_molecules()
+        _clean()
         return molecules
 
     
