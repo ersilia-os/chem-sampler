@@ -22,11 +22,11 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 SAMPLERS_LIST = [
     'ChemblSampler',
     'PubChemSampler',
-    #'SmallWorldSampler',
     'StonedSampler',
-    #'MollibSampler',
     'BimodalSampler',
     'MolerSampler',
+    'SmallWorldSampler',
+    #'MollibSampler',
     #'JtnnSampler'
 ]
 
@@ -244,7 +244,7 @@ class ChemSampler(object):
             num_per_sample=num_per_sample,
         )
         data = R
-        if flatten:
+        if flatten:                                       
             flat_data = list(set([x for d in data for x in d]))
             random.shuffle(flat_data)
             return flat_data
@@ -265,14 +265,16 @@ class ChemSampler(object):
         flatten=False,
     ):
         if Sampler == "all":
-            result= []
+        #result is a dict where keys are name of the sampler and values are the sampled smiles
+            result= {}
             for sampler in (self.samplers_list, 1)[0]:
                 self.Sampler = sampler
                 result_ = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
-                result += result_
-            print(result)    
+                result[self.Sampler] = result_
         else:
+        #result is a list of sampled smiles
             self.Sampler = Sampler
             result = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
         return result
         
+

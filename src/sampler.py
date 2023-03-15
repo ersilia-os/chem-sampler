@@ -4,23 +4,26 @@ import pandas as pd
 import csv
 
 def read_csv(in_file):
-    with open(in_file, "r") as f:
-        reader = csv.reader(f, delimiter=",")
-        smiles_list = list(reader)
-    return smiles_list[0]
+    df = pd.read_csv(in_file)
+    col_name = df.columns[0]
+    smiles_list = df[col_name].tolist()
+    return smiles_list
     
-def write_csv(out_file, smiles_list, sampled_smiles):
-    dict_list = []
-    for i in range(len(smiles_list)):
-        smiles_dict = {}
-        smiles_dict['SMILES']= smiles_list[i] 
-        smiles_dict['sampled_SMILES']= sampled_smiles[i]
-        dict_list.append(smiles_dict)
-    field_names = ['SMILES', 'sampled_SMILES']
-    with open(out_file, 'w') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames = field_names)
-        writer.writeheader()
-        writer.writerows(dict_list)
+def write_csv(out_file,sampled_smiles, sampler):
+    if sampler == "all":
+        with open(out_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            for i in range(len(sampled_smiles)):
+                key = list(sampled_smiles.keys())[i]
+                writer.writerows([key])
+                for j in range(len(sampled_smiles[key])):
+                    writer.writerows([sampled_smiles[key][j]])
+    else:
+        with open(out_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            for i in range(len(sampled_smiles)):
+                writer.writerows([sampled_smiles[i]])
+    
 
 def get_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -46,7 +49,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         sim_lb= args.sim_lb,
         distribution = args.distribution,
     )
-    write_csv(args.OUTPUT_FILE, smiles_list, sampled_smiles)
+    write_csv(args.OUTPUT_FILE, sampled_smiles, args.sampler)
 
 
 def main() -> None:
