@@ -3,7 +3,7 @@ from ...tools.fpsim2.searcher import SimilaritySearcher, RandomSearcher
 import os
 
 root = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.abspath(os.path.join(root, "..", "..", "data", "pre_calculated", "moler"))
+data_path = os.path.abspath(os.path.join(root, "..", "..","..", "data", "pre_calculated", "moler"))
 
 
 class MolerSampler:
@@ -16,7 +16,7 @@ class MolerSampler:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
             SimilaritySearcher(self.fp_filename).fit(smiles_list)
 
-    def sample(self, n , smiles_list = [],  search_pre_calculated=False, cutoff=0.6):
+    def sample(self, smiles_list, n, search_pre_calculated=False, cutoff=0.6):
         if search_pre_calculated:
             samples = []
             for smile in smiles_list:

@@ -6,8 +6,8 @@ import os
 class JtnnSampler:
     def __init__(self):
         # #TODO: pre-calculate samples
-        self.fp_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.h5'
-        self.db_smiles_filename = '../chemsampler/data/pre_calculated/fast_jtnn/.csv'
+        self.fp_filename = '../../data/pre_calculated/fast_jtnn/.h5'
+        self.db_smiles_filename = '../data/pre_calculated/fast_jtnn/sample_100.csv'
 
         if os.path.exists(self.fp_filename) is False:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
