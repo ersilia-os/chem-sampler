@@ -2,18 +2,22 @@ from ...tools.moler.sampler import _MolerSampler
 from ...tools.fpsim2.searcher import SimilaritySearcher, RandomSearcher
 import os
 
+root = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.abspath(os.path.join(root, "..", "..", "data", "pre_calculated", "moler"))
+
+
 class MolerSampler:
     def __init__(self):
         #TODO: Come up with a better way to store precalculated files
-        self.fp_filename = '../chemsampler/data/pre_calculated/moler/moler_100k.h5'
-        self.db_smiles_filename = '../chemsampler/data/pre_calculated/moler/moler_100k.csv'
+        self.fp_filename = os.path.join(data_path, "moler_100k.h5")
+        self.db_smiles_filename = os.path.join(data_path, "moler_100k.csv")
 
         if os.path.exists(self.fp_filename) is False:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
             SimilaritySearcher(self.fp_filename).fit(smiles_list)
 
     def sample(self, n , smiles_list = [],  search_pre_calculated=False, cutoff=0.6):
-        if search_pre_calculated==True:
+        if search_pre_calculated:
             samples = []
             for smile in smiles_list:
                 _samples = SimilaritySearcher(self.fp_filename).search(smile, cutoff)

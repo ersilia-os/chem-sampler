@@ -1,25 +1,32 @@
 # ChemSampler
-This package is intended to:
-1. Given a input smiles sample small molecules similar to the input, both from large chemical libraries as well curated databases from various generative models.
-2. Generate new molecules by fitting existing generative models on the input data
+ChemSampler is a simple Python API to sample the chemical space around a given set of molecules. It has been develped by the [Ersilia Open Source Initiative](https://ersilia.io).
+
+ChemSampler is intended to:
+1. Given an input smiles sample small molecules similar to the input, both from large chemical libraries as well curated databases from various generative models.
+2. Generate new molecules by fitting existing generative models on the input data.
 
 ## Installation
 
-Create a conda environment (with Py=>3.8) and activate it:
-```python
+Create a conda environment and activate it:
+```bash
 conda create -n chemsampler python=3.8
 conda activate chemsampler
 ```
-Clone the github repo and install the package:
 
+Install PyTables using conda (this step is necessary for successful installation on a Mac).
+```bash
+conda install pytables
 ```
+
+Clone the github repo and install the package:
+```bash
 git clone https://github.com/ersilia-os/chem-sampler.git
 cd chem-sampler
 pip install -e .
 ```
 
 # 1. Sample small molecules using ChemSampler
-The ChemSampler module queries a number of existing chemical libraries as well as synthetically generated libraries to identify molecules that are similar to the input molecules
+The ChemSampler module queries a number of existing chemical libraries as well as synthetically generated libraries to identify molecules that are similar to the input molecules.
 
 ## Usage
 

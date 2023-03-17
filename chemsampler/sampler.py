@@ -2,6 +2,7 @@ import random
 from timeit import default_timer as timer
 import numpy as np
 from tqdm import tqdm
+import requests
 
 from rdkit.Chem import AllChem
 from rdkit import Chem
@@ -20,9 +21,10 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 
 
 SAMPLERS_LIST = [
-    'ChemblSampler',
-    'PubChemSampler',
-    'StonedSampler',
+    #'StonedSampler',
+    'FasmifraSampler'
+    #'ChemblSampler',
+    #'PubChemSampler',
     'BimodalSampler',
     'MolerSampler',
     'SmallWorldSampler',
@@ -46,6 +48,7 @@ class ChemSampler(object):
         random.shuffle(smiles_list)
         small_smiles_list = smiles_list[: self.small_list_size]
         Sampler = self.Sampler
+        print("Using sampler:", Sampler)
             
         if Sampler == 'ChemblSampler':
             Sampler = ChemblSampler
@@ -65,6 +68,7 @@ class ChemSampler(object):
                 n=self.num_samples,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
+        
         if Sampler == 'SmallWorldSampler':
             Sampler = SmallWorldSampler
             print("SmallWorldSampler")
@@ -73,6 +77,7 @@ class ChemSampler(object):
                 smiles_list=small_smiles_list,
                 time_budget_sec=self.one_sampler_time_budget_sec,
             )
+        
         if Sampler == 'StonedSampler':
             Sampler = StonedSampler
             print("StonedSampler")
@@ -97,6 +102,7 @@ class ChemSampler(object):
             sampler = Sampler()
             return sampler.sample(smiles_list=small_smiles_list, 
                                     n=self.num_samples)
+        
         if Sampler == 'MolerSampler':
             Sampler = MolerSampler
             print("moler_sampler")
@@ -117,9 +123,6 @@ class ChemSampler(object):
         #     return sampler.sample(n=self.num_samples,smiles_list=small_smiles_list,
         #                         search_pre_calculated=True)
         
-
-
-
     def _greedy_sample(self, smiles_list, num_samples, time_budget_sec, Sampler):
         t0 = timer()
         sampled_smiles = set()
@@ -223,7 +226,7 @@ class ChemSampler(object):
         time_budget_sec=60,
         flatten=False,
     ):
-        
+        print(smiles_list)
         num_per_sample = max(3, int(num_samples / len(smiles_list)))
         self.more(
                 Sampler = self.Sampler,
@@ -251,8 +254,6 @@ class ChemSampler(object):
         else:
             return data
 
-
-
     def sample(
         self,
         smiles_list,
@@ -264,7 +265,7 @@ class ChemSampler(object):
         time_budget_sec=60,
         flatten=False,
     ):
-        if Sampler == "all":
+        if Sampler == "all" or Sampler is None:
         #result is a dict where keys are name of the sampler and values are the sampled smiles
             result= {}
             for sampler in (self.samplers_list, 1)[0]:

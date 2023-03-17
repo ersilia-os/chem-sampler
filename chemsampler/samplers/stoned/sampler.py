@@ -93,6 +93,7 @@ class StonedSampler(object):
             for smi in self.seed_smiles
         ]
         smiles = set(smiles_list)
+        print("Seed SMILES list:", smiles)
         sampled_smiles = set()
         for i in range(n):
             new_smiles = self._sample(list(smiles), n)
@@ -101,7 +102,9 @@ class StonedSampler(object):
             if self.finished:
                 break
         smiles = list(sampled_smiles)
+        print(len(smiles), "molecules sampled. Selecting the best by similarity.")
         smiles = self._select_by_similarity(smiles)
+        print("Molecules remaining", len(smiles))
         if len(smiles) > n:
             smiles = self._select_by_score(smiles, n)
         self.elapsed_time = 0
