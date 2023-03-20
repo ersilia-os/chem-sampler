@@ -24,12 +24,14 @@ def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.4):
         return []
     try:
         data = reply.json()
+        if "PropertyTable" not in data or "Properties" not in data["PropertyTable"]:
+            return []
+        smiles = [d["CanonicalSMILES"] for d in data["PropertyTable"]["Properties"]]
+        smiles = list(set(smiles))
+        return smiles
     except:
         return []
-    smiles = [d["CanonicalSMILES"] for d in data["PropertyTable"]["Properties"]]
-    smiles = list(set(smiles))
-
-    return smiles
+    
 
 
 class PubChemSampler(object):

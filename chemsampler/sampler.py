@@ -226,7 +226,6 @@ class ChemSampler(object):
         time_budget_sec=60,
         flatten=False,
     ):
-        print(smiles_list)
         num_per_sample = max(3, int(num_samples / len(smiles_list)))
         self.more(
                 Sampler = self.Sampler,
