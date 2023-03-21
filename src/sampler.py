@@ -15,14 +15,14 @@ def write_csv(out_file,sampled_smiles, sampler):
             writer = csv.writer(file)
             for i in range(len(sampled_smiles)):
                 key = list(sampled_smiles.keys())[i]
-                writer.writerows([key])
+                writer.writerow([key])
                 for j in range(len(sampled_smiles[key])):
-                    writer.writerows([sampled_smiles[key][j]])
+                    writer.writerow([sampled_smiles[key][j]])
     else:
         with open(out_file, 'w', newline='') as file:
             writer = csv.writer(file)
             for i in range(len(sampled_smiles)):
-                writer.writerows([sampled_smiles[i]])
+                writer.writerow([sampled_smiles[i]])
     
 
 def get_argparser() -> argparse.ArgumentParser:

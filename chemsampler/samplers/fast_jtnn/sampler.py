@@ -3,25 +3,27 @@ from ...tools.fast_jtnn.sampler import _JtnnSampler
 from ...tools.fpsim2.searcher import SimilaritySearcher, RandomSearcher
 import os
 
+root = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.abspath(os.path.join(root, "..", "..","..", "data", "pre_calculated", "fast_jtnn"))
+
+
 class JtnnSampler:
     def __init__(self):
         # #TODO: pre-calculate samples
-        self.fp_filename = '../../data/pre_calculated/fast_jtnn/.h5'
-        self.db_smiles_filename = '../data/pre_calculated/fast_jtnn/sample_100.csv'
+        self.fp_filename = os.path.join(data_path, "sample_100.h5")
+        self.db_smiles_filename = os.path.join(data_path, "sample_100.csv")
 
         if os.path.exists(self.fp_filename) is False:
             smiles_list = SimilaritySearcher(self.fp_filename).read_db_smiles()
             SimilaritySearcher(self.fp_filename).fit(smiles_list)
-        
 
-    def sample(self, n, smiles_list= [],  search_pre_calculated=False, cutoff = 0.7):
-        if search_pre_calculated==True:
+    def sample(self, smiles_list, n, search_pre_calculated=False, cutoff=0.4):
+        if search_pre_calculated:
             samples = []
             for smile in smiles_list:
-                _samples = SimilaritySearcher(self.fp_filename).search(smile, cutoff=0.7)
+                _samples = SimilaritySearcher(self.fp_filename).search(smile, cutoff)
                 if len(_samples) == 0:
-                    print('Coudn\'t find samples in the cutoff range : {}. Generating random samples:'.format(cutoff))
-                    _samples = RandomSearcher(self.db_smiles_filename).search(n)
+                    _samples = []
                 samples += _samples 
         
         else:

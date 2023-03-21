@@ -3,4 +3,5 @@
 *.h5 filter=lfs diff=lfs merge=lfs -text
 *.smi filter=lfs diff=lfs merge=lfs -text
 *.txt filter=lfs diff=lfs merge=lfs -text
+requirements.txt !filter=lfs diff=lfs merge=lfs -text
 chemsampler/tools/mollib/virtual_libraries/experiments/results/data/chembl24_cleaned_unique_canon/1_140_x10/1_140_x10.txt filter=lfs diff=lfs merge=lfs -text

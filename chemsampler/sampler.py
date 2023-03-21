@@ -18,18 +18,16 @@ from .samplers.moler.sampler import MolerSampler
 from .samplers.bimodal.sampler import BimodalSampler
 from .samplers.fast_jtnn.sampler import JtnnSampler
 
-
-
 SAMPLERS_LIST = [
-    #'StonedSampler',
-    'FasmifraSampler',
-    #'ChemblSampler',
-    #'PubChemSampler',
+    'StonedSampler',
+    #'FasmifraSampler',
+    'ChemblSampler',
+    'PubChemSampler',
     'BimodalSampler',
     'MolerSampler',
     'SmallWorldSampler',
     #'MollibSampler',
-    #'JtnnSampler'
+    'JtnnSampler'
 ]
 
 
@@ -48,7 +46,6 @@ class ChemSampler(object):
         random.shuffle(smiles_list)
         small_smiles_list = smiles_list[: self.small_list_size]
         Sampler = self.Sampler
-        print("Using sampler:", Sampler)
             
         if Sampler == 'ChemblSampler':
             Sampler = ChemblSampler
@@ -107,21 +104,23 @@ class ChemSampler(object):
             Sampler = MolerSampler
             print("moler_sampler")
             sampler = Sampler()
-            return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
+            return sampler.sample(smiles_list=small_smiles_list,n=self.num_samples, 
                                     search_pre_calculated=True)
 
         if Sampler == 'BimodalSampler':
             Sampler = BimodalSampler
             print("bimodal_sampler")
             sampler = Sampler()
-            return sampler.sample(n=self.num_samples, smiles_list=small_smiles_list,
+            return sampler.sample(smiles_list=small_smiles_list,n=self.num_samples, 
                                     search_pre_calculated=True)
 
-        # if Sampler == JtnnSampler:
-        #     print("jtnn_sampler")
-        #     sampler = Sampler()
-        #     return sampler.sample(n=self.num_samples,smiles_list=small_smiles_list,
-        #                         search_pre_calculated=True)
+        if Sampler == 'JtnnSampler':
+            Sampler = JtnnSampler
+            print("jtnn_sampler")
+            sampler = Sampler()
+            return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples,
+                                search_pre_calculated=True)
+
         
     def _greedy_sample(self, smiles_list, num_samples, time_budget_sec, Sampler):
         t0 = timer()
@@ -180,14 +179,15 @@ class ChemSampler(object):
             weights = None
         else:
             raise Exception("distribution must be 'normal', 'ramp' 'uniform'")
+
         input_fps = [
             AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(smi), 3)
             for smi in smiles_list
         ]
         sampled_fps = [
             AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(smi), 3)
-            for smi in sampled_smiles
-        ]
+            for smi in sampled_smiles]
+
         R = []
         for input_idx, input_fp in tqdm(enumerate(input_fps)):
             sims = DataStructs.BulkTanimotoSimilarity(input_fp, sampled_fps)
@@ -224,7 +224,7 @@ class ChemSampler(object):
         sim_lb=0.4,
         distribution="ramp",
         time_budget_sec=60,
-        flatten=False,
+        flatten=True,
     ):
         num_per_sample = max(3, int(num_samples / len(smiles_list)))
         self.more(
@@ -262,8 +262,12 @@ class ChemSampler(object):
         sim_lb=0.4,
         distribution="ramp",
         time_budget_sec=60,
-        flatten=False,
+        flatten=True,
     ):
+        for smi in smiles_list:
+            if Chem.MolFromSmiles(smi) is None:
+                print("Invalid SMILE: {}.".format(smi))
+                smiles_list.remove(smi)
         if Sampler == "all" or Sampler is None:
         #result is a dict where keys are name of the sampler and values are the sampled smiles
             result= {}
@@ -277,4 +281,3 @@ class ChemSampler(object):
             result = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
         return result
         
-
