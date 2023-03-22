@@ -4,5 +4,5 @@ exmol==3.0.1
 pandas==1.3.5
 smallworld-api==1.1.2
 standardiser==0.1.9
-fpsim2==0.2.9
+fpsim2==0.4.4
 tables==3.8.0

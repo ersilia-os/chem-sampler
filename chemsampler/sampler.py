@@ -20,14 +20,14 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 
 SAMPLERS_LIST = [
     'StonedSampler',
-    #'FasmifraSampler',
+    'FasmifraSampler',
     'ChemblSampler',
     'PubChemSampler',
     'BimodalSampler',
     'MolerSampler',
     'SmallWorldSampler',
     #'MollibSampler',
-    'JtnnSampler'
+    #'JtnnSampler'
 ]
 
 
