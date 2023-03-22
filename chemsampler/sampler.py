@@ -20,12 +20,12 @@ from .samplers.fast_jtnn.sampler import JtnnSampler
 
 SAMPLERS_LIST = [
     'StonedSampler',
-    'FasmifraSampler',
-    'ChemblSampler',
+    #'FasmifraSampler',
+    #'ChemblSampler',
     'PubChemSampler',
-    'BimodalSampler',
-    'MolerSampler',
-    'SmallWorldSampler',
+    #'BimodalSampler',
+    #'MolerSampler',
+    #'SmallWorldSampler',
     #'MollibSampler',
     #'JtnnSampler'
 ]
@@ -40,7 +40,6 @@ class ChemSampler(object):
         self.inflation = inflation
         self.max_greedy_iterations = max_greedy_iterations
         self.small_list_size = 10
-        self.sampled_smiles = None
 
     def _one_sampler(self, smiles_list):
         random.shuffle(smiles_list)
@@ -102,21 +101,21 @@ class ChemSampler(object):
         
         if Sampler == 'MolerSampler':
             Sampler = MolerSampler
-            print("moler_sampler")
+            print("MolerSampler")
             sampler = Sampler()
             return sampler.sample(smiles_list=small_smiles_list,n=self.num_samples, 
                                     search_pre_calculated=True)
 
         if Sampler == 'BimodalSampler':
             Sampler = BimodalSampler
-            print("bimodal_sampler")
+            print("BimodalSampler")
             sampler = Sampler()
             return sampler.sample(smiles_list=small_smiles_list,n=self.num_samples, 
                                     search_pre_calculated=True)
 
         if Sampler == 'JtnnSampler':
             Sampler = JtnnSampler
-            print("jtnn_sampler")
+            print("JtnnSampler")
             sampler = Sampler()
             return sampler.sample(smiles_list=small_smiles_list, n=self.num_samples,
                                 search_pre_calculated=True)
@@ -158,7 +157,7 @@ class ChemSampler(object):
         num_per_sample=10,
     ):
         steps = 100
-        offset = 0.1
+        offset = 0.5
         num_atoms_proportion_difference = 0.5
         assert sim_ub > sim_lb
         if distribution == "normal":
@@ -202,7 +201,8 @@ class ChemSampler(object):
                     if (
                         (abs(sampled_num_atoms - input_num_atoms) / input_num_atoms)
                         < num_atoms_proportion_difference
-                    ):
+                    ):  
+                        selected_idxs = set(selected_idxs)
                         selected_idxs.update([idx])
             if len(selected_idxs) != 0:
                 selected_idxs = sorted(selected_idxs)
@@ -212,6 +212,7 @@ class ChemSampler(object):
                 selected_smiles = [sampled_smiles[i] for i in selected_idxs]
                 ordered_idxs = np.argsort(selected_sims)[::-1]
                 selected_smiles = [selected_smiles[i] for i in ordered_idxs]
+
             else:
                 selected_smiles = []
             R += [selected_smiles]
@@ -273,6 +274,7 @@ class ChemSampler(object):
             result= {}
             for sampler in (self.samplers_list, 1)[0]:
                 self.Sampler = sampler
+                self.sampled_smiles = set()
                 result_ = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
                 result[self.Sampler] = result_
         else:
@@ -280,4 +282,3 @@ class ChemSampler(object):
             self.Sampler = Sampler
             result = self._sample(smiles_list, num_samples, sim_ub, sim_lb, distribution, time_budget_sec, flatten)
         return result
-        

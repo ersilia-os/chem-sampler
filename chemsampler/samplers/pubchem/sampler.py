@@ -8,14 +8,13 @@ from rdkit import Chem
 
 
 @sleep_and_retry
-@limits(calls=2, period=30)
-def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.4):
+def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.7):
     """Function adapted from Andrew White's Exmol"""
     url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/{requests.utils.quote(origin_smiles)}/property/CanonicalSMILES/JSON"
     try:
         reply = requests.get(
             url,
-            params={"Threshold": int(similarity * 100), "MaxRecords": num_samples},
+            params={"Threshold": int(similarity *100), "MaxRecords": num_samples},
             headers={"accept": "text/json"},
             timeout=10,
         )
@@ -36,7 +35,7 @@ def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.4):
 
 class PubChemSampler(object):
     def __init__(self):
-        self.inflation = 2
+        self.inflation = 10
 
     def _sample(self, smiles, n):
         smiles = run_chemed(origin_smiles=smiles, num_samples=n)
@@ -62,8 +61,8 @@ class PubChemSampler(object):
             t1 = timer()
             if (t1 - t0) > time_budget_sec:
                 break
-            if len(set(sampled_smiles)) > n:
-                break
         sampled_smiles = list(set(sampled_smiles))
         random.shuffle(sampled_smiles)
         return sampled_smiles
+
+
