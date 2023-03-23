@@ -31,7 +31,7 @@ The ChemSampler module queries a number of existing chemical libraries as well a
 ## Usage
 
 ### Input and Output files
-The input file must be a .csv file with a single column named "smiles". You can find an example under the /data directory
+The input file must be a .csv file with a single column named "smiles". You can find an example file in '/data/example_drugs.csv'.
 
 The output file is a .csv file with a "smiles" column that contains the input smiles and a "sampled_smiles" column that provides the sampled smiles as a list. If the list is empty, it means no molecules were identified that filled in the sampling criteria
 
@@ -86,7 +86,7 @@ The CLI accepts the following arguments:
 5. Similarity limits (upper and lower bounds) with `--sim_ub` and `--sim_lb` flags. (range 0.0 - 1.0, 1.0 being identical to the input)
 6. Similarity score distribution with `--distribution` flag 
 
-Note: you can run all the samplers (except mollib and fasmifra) and concat the result into a csv file using 
+Note: you can run all the samplers (except mollib and fasmifra, unless you fill in the prerequisites) and concat the result into a csv file using 
 `python src/sampler.py 'data/in.csv' 'data/out.csv' --sampler all --num_samples 100 --sim_ub 0.9 --sim_lb 0.3 --distribution ramp`
 
 ### API
@@ -94,16 +94,16 @@ Note: you can run all the samplers (except mollib and fasmifra) and concat the r
 from chemsampler import ChemSampler
 from chemsampler import example
 
-#example() returns a list of smiles
+#example() returns a list of 10 smiles
 smiles_list = example()
-sampler = ChemSampler()
-sampled_smiles = sampler.sample(smiles_list, Sampler= 'ChemblSampler', num_samples=1000, sim_ub=0.95, sim_lb=0.6, distribution="ramp")
+sampler = ChemSampler(samplers_list=["ChemblSampler"])
+sampled_smiles = sampler.sample(smiles_list, num_samples=100, sim_ub=0.95, sim_lb=0.6, distribution="ramp")
 print(sampled_smiles)
 ```
-You can find an implementation of this code in src/dummy.py. It will return a Python list of lists, where each list is smiles sampled from one input smile. Empty list means no smile has been sampled
+You can find an implementation of this code in 'notebooks/example.ipynb'. It will return a dictionary where the keys are the samplers and the values the sampled_smiles with each one. An empty list means no smile has been sampled. To run all the samplers at one, include them in the list. If no list is passed, the default SAMPLERS_LIST from 'chemsampler/sample.py' will be used.
 
 
-# 2. Generative Models (Development)
+# 2. Generative Models (In Development)
 
 In addition to querying existing databases, you can generate your own molecules by fitting the models to custom datasets.
 
@@ -136,7 +136,7 @@ print(samples)
 
 ## Bimodal 
 
-Bimodal is Bidirectional Molecule Generation model with Recurrent Neural Networks developed by ETH modal lab [(Grisoni et al, 2020)](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00943),the code is available [here](https://github.com/ETHmodlab/BIMODAL)
+Bimodal is Bidirectional Molecule Generation model with Recurrent Neural Networks developed by ETH modal lab [(Grisoni et al, 2020)](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00943), the code is available [here](https://github.com/ETHmodlab/BIMODAL)
 
 ### Installation
 #### 1. Build the Bimodal environment
@@ -165,6 +165,9 @@ sampler = BimodalSampler()
 samples = sampler.sample(n= 100, checkpoint_dir= checkpoint_dir)
 print(samples)
 ```
+
+# To Do
+
 ## 3. fastjtnn
 
 To sample from fastjtnn `from chemsampler.samplers.FastJtnn.sampler import FastJtnnSampler`. The sample works same as Moler.

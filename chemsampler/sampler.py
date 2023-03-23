@@ -19,13 +19,13 @@ from .samplers.bimodal.sampler import BimodalSampler
 from .samplers.fast_jtnn.sampler import JtnnSampler
 
 SAMPLERS_LIST = [
+    'BimodalSampler',
+    'MolerSampler',
     'StonedSampler',
-    #'FasmifraSampler',
-    #'ChemblSampler',
+    'FasmifraSampler',
+    'ChemblSampler',
     'PubChemSampler',
-    #'BimodalSampler',
-    #'MolerSampler',
-    #'SmallWorldSampler',
+    'SmallWorldSampler',
     #'MollibSampler',
     #'JtnnSampler'
 ]
@@ -40,6 +40,7 @@ class ChemSampler(object):
         self.inflation = inflation
         self.max_greedy_iterations = max_greedy_iterations
         self.small_list_size = 10
+        self.sampled_smiles = None
 
     def _one_sampler(self, smiles_list):
         random.shuffle(smiles_list)
@@ -142,6 +143,7 @@ class ChemSampler(object):
         self.num_samples = num_samples
         sampled_smiles = self._greedy_sample(smiles_list, num_samples, time_budget_sec, Sampler)
         sampled_smiles = list(sampled_smiles)
+        print(sampled_smiles)
         if self.sampled_smiles is None:
             self.sampled_smiles = set(sampled_smiles)
         else:

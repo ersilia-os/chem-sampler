@@ -15,7 +15,7 @@ def write_csv(out_file,sampled_smiles, sampler):
             writer = csv.writer(file)
             for i in range(len(sampled_smiles)):
                 key = list(sampled_smiles.keys())[i]
-                writer.writerow([key])
+                # writer.writerow([key]) #it will write a single list, if want to retrieve by sampler, uncomment this
                 for j in range(len(sampled_smiles[key])):
                     writer.writerow([sampled_smiles[key][j]])
     else:
