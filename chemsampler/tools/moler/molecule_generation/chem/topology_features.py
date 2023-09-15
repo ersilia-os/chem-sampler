@@ -44,15 +44,23 @@ def calculate_topology_features(edges: Collection, mol: RWMol) -> np.ndarray:
             num_tri_ring_edges_created_by_edge[edge_idx] = (
                 num_tri_ring_edges - num_base_tri_ring_edges
             )
-            num_rings_created_by_edge[edge_idx] = num_rings_with_new_edge - num_rings_in_base_mol
+            num_rings_created_by_edge[edge_idx] = (
+                num_rings_with_new_edge - num_rings_in_base_mol
+            )
 
-        return np.stack([num_rings_created_by_edge, num_tri_ring_edges_created_by_edge], axis=-1)
+        return np.stack(
+            [num_rings_created_by_edge, num_tri_ring_edges_created_by_edge], axis=-1
+        )
 
     except Exception as e:
         logger.warning("RDKit runtime error on base molecule, with message:\n" + str(e))
-        return np.stack([num_rings_created_by_edge, num_tri_ring_edges_created_by_edge], axis=-1)
+        return np.stack(
+            [num_rings_created_by_edge, num_tri_ring_edges_created_by_edge], axis=-1
+        )
 
 
 def _calculate_num_tri_rings(mol: RWMol) -> int:
     ring_info = mol.GetRingInfo()
-    return sum(ring_info.NumBondRings(bond_idx) >= 3 for bond_idx in range(mol.GetNumBonds()))
+    return sum(
+        ring_info.NumBondRings(bond_idx) >= 3 for bond_idx in range(mol.GetNumBonds())
+    )

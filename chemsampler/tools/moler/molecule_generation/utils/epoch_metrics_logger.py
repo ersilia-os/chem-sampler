@@ -66,8 +66,7 @@ class EpochMetricsLogger:
             s = tf.summary.experimental.get_step()
             tf.summary.experimental.set_step(s + 1)
             tf.summary.scalar(
-                "batch_graph_av_loss",
-                data=batch_graph_average_loss,
+                "batch_graph_av_loss", data=batch_graph_average_loss,
             )
 
         # Text logging.
@@ -81,7 +80,9 @@ class EpochMetricsLogger:
             )
             if self._moving_average_metrics is not None:
                 mean_num_graphs = np.mean(self._raw_metrics["num_input_graphs"])
-                mean_num_partial_graphs = np.mean(self._raw_metrics["num_partial_graphs_in_batch"])
+                mean_num_partial_graphs = np.mean(
+                    self._raw_metrics["num_partial_graphs_in_batch"]
+                )
                 print_string += (
                     f"  |  Moving avg. loss = {self._moving_average_metrics['loss']:.5f}"
                     f" , avg #graphs = {mean_num_graphs:.2f}"
@@ -109,7 +110,9 @@ class EpochMetricsLogger:
         num_partial_graphs_in_batch: int,
     ):
         self._raw_metrics["num_input_graphs"].append(num_graphs_in_batch)
-        self._raw_metrics["num_partial_graphs_in_batch"].append(num_partial_graphs_in_batch)
+        self._raw_metrics["num_partial_graphs_in_batch"].append(
+            num_partial_graphs_in_batch
+        )
         for k, v in loss_dict.items():
             # Metrics that are not tensors will be skipped
             if not isinstance(v, tf.Tensor):

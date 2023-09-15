@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Tuple, NamedTuple, Optional
 
 import numpy as np
 import tensorflow as tf
-from tf2_gnn.layers import WeightedSumGraphRepresentation, NodesToGraphRepresentationInput
+from tf2_gnn.layers import (
+    WeightedSumGraphRepresentation,
+    NodesToGraphRepresentationInput,
+)
 
 from molecule_generation.utils.property_models import (
     PropertyTaskType,
@@ -51,8 +54,12 @@ class GraphPropertyPredictor(tf.keras.layers.Layer):
                 num_heads=self._params["graph_aggregation_num_heads"],
                 scoring_mlp_layers=self._params["graph_aggregation_hidden_layers"],
                 scoring_mlp_dropout_rate=self._params["graph_aggregation_dropout_rate"],
-                transformation_mlp_layers=self._params["graph_aggregation_hidden_layers"],
-                transformation_mlp_dropout_rate=self._params["graph_aggregation_dropout_rate"],
+                transformation_mlp_layers=self._params[
+                    "graph_aggregation_hidden_layers"
+                ],
+                transformation_mlp_dropout_rate=self._params[
+                    "graph_aggregation_dropout_rate"
+                ],
             )
             if self._property_type == PropertyTaskType.BINARY_CLASSIFICATION:
                 self._property_predictor = MLPBinaryClassifierLayer(
@@ -90,14 +97,18 @@ class GraphPropertyPredictor(tf.keras.layers.Layer):
                 node_representations=tf.TensorSpec(
                     shape=tf.TensorShape((None, None)), dtype=tf.float32
                 ),
-                node_to_graph_map=tf.TensorSpec(shape=tf.TensorShape((None,)), dtype=tf.int32),
+                node_to_graph_map=tf.TensorSpec(
+                    shape=tf.TensorShape((None,)), dtype=tf.int32
+                ),
                 num_graphs=tf.TensorSpec(shape=(), dtype=tf.int32),
                 graph_ids_to_predict_for=tf.TensorSpec(shape=(None,), dtype=tf.int32),
             ),
             tf.TensorSpec(shape=(), dtype=tf.bool),
         )
     )
-    def call(self, input: GraphPropertyPredictorInput, training: tf.Tensor) -> tf.Tensor:
+    def call(
+        self, input: GraphPropertyPredictorInput, training: tf.Tensor
+    ) -> tf.Tensor:
         """
         Predict properties from graphs, given their node representations.
 
@@ -137,9 +148,7 @@ class GraphPropertyPredictor(tf.keras.layers.Layer):
         ]
     )
     def compute_task_metrics(
-        self,
-        property_predictions: tf.Tensor,
-        property_labels: tf.Tensor,
+        self, property_predictions: tf.Tensor, property_labels: tf.Tensor,
     ) -> Tuple[tf.Tensor, Dict[str, Any]]:
         loss, batch_results = self._property_predictor.compute_task_metrics(
             predictions=property_predictions, labels=property_labels
@@ -153,5 +162,6 @@ class GraphPropertyPredictor(tf.keras.layers.Layer):
         )
 
         return self._property_predictor.compute_epoch_metrics(
-            num_samples=tf.cast(total_num_samples, tf.float32), task_results=task_results
+            num_samples=tf.cast(total_num_samples, tf.float32),
+            task_results=task_results,
         )

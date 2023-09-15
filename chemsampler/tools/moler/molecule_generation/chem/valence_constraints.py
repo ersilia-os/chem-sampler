@@ -4,7 +4,10 @@ from typing import Collection, List
 import numpy as np
 
 # Copied from the RDKit definitions, found in https://github.com/rdkit/rdkit/blob/master/Code/GraphMol/atomic_data.cpp
-from molecule_generation.chem.rdkit_helpers import get_true_symbol, get_charge_from_symbol
+from molecule_generation.chem.rdkit_helpers import (
+    get_true_symbol,
+    get_charge_from_symbol,
+)
 
 ATOM_TO_MAX_VALENCE = {
     "C": 4,
@@ -135,8 +138,7 @@ def _calculate_valid_edge_mask(
 
 
 def _calculate_valency_map(
-    adjacency_lists: Collection[np.ndarray],
-    node_types: List[str],
+    adjacency_lists: Collection[np.ndarray], node_types: List[str],
 ) -> np.ndarray:
     """Calculate a numpy array of the valencies of each node.
 

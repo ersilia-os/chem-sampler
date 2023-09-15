@@ -37,7 +37,9 @@ class GraphGenerationVisualiser(ABC):
         self.supported_property_names = vae._graph_property_params.keys()
 
     @abstractmethod
-    def render_property_data(self, prop_infos: Dict[str, PropertyPredictionInformation]) -> None:
+    def render_property_data(
+        self, prop_infos: Dict[str, PropertyPredictionInformation]
+    ) -> None:
         pass
 
     @abstractmethod
@@ -49,7 +51,9 @@ class GraphGenerationVisualiser(ABC):
         pass
 
     @abstractmethod
-    def render_molecule_gen_step(self, step: int, step_info: MoleculeGenerationStepInfo) -> None:
+    def render_molecule_gen_step(
+        self, step: int, step_info: MoleculeGenerationStepInfo
+    ) -> None:
         pass
 
     def visualise_from_smiles(self, smiles: str):
@@ -94,7 +98,9 @@ class GraphGenerationVisualiser(ABC):
         ):
             focus_node_to_choice_indices[src_node_idx].append(choice_idx)
         partial_node_to_orig_node_id = dict(
-            enumerate(i.numpy() for i in batch_features["partial_node_to_original_node_map"])
+            enumerate(
+                i.numpy() for i in batch_features["partial_node_to_original_node_map"]
+            )
         )
 
         total_num_valid_edge_choices = batch_features["valid_edge_choices"].shape[0]
@@ -115,9 +121,13 @@ class GraphGenerationVisualiser(ABC):
             candidate_edge_infos = []
             any_edge_candidate_correct = False
             for i, edge_choice_index in enumerate(edge_choice_indices):
-                tgt_idx = batch_features["valid_edge_choices"][edge_choice_index, 1].numpy()
+                tgt_idx = batch_features["valid_edge_choices"][
+                    edge_choice_index, 1
+                ].numpy()
                 tgt_node_orig_idx = partial_node_to_orig_node_id[tgt_idx]
-                choice_correct = batch_labels["correct_edge_choices"][edge_choice_index].numpy() > 0
+                choice_correct = (
+                    batch_labels["correct_edge_choices"][edge_choice_index].numpy() > 0
+                )
                 any_edge_candidate_correct |= choice_correct
                 type_logprobs = tf.nn.log_softmax(
                     predictions.edge_type_logits[edge_choice_index, :]
@@ -136,7 +146,9 @@ class GraphGenerationVisualiser(ABC):
                 step,
                 MoleculeGenerationStepInfo(
                     focus_node_idx=focus_node_orig_idx,
-                    partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[step],
+                    partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[
+                        step
+                    ],
                     candidate_edge_infos=candidate_edge_infos,
                     no_edge_score=edge_choice_scores[-1],
                     no_edge_logprob=edge_choice_logprobs[-1],
@@ -173,7 +185,9 @@ class GraphGenerationVisualiser(ABC):
                 AtomPredictionInformation(
                     node_idx=node_idx,
                     true_type_idx=None,
-                    type_idx_to_prob=tf.nn.softmax(node_classification_logits[node_idx, :]).numpy(),
+                    type_idx_to_prob=tf.nn.softmax(
+                        node_classification_logits[node_idx, :]
+                    ).numpy(),
                 )
                 for node_idx in range(num_nodes)
             ]

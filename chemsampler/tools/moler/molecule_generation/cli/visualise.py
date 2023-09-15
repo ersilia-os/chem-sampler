@@ -5,7 +5,10 @@ from molecule_generation.utils.cli_utils import (
     setup_logging,
     supress_tensorflow_warnings,
 )
-from molecule_generation.visualisation import moler_visualiser_cli, moler_visualiser_html
+from molecule_generation.visualisation import (
+    moler_visualiser_cli,
+    moler_visualiser_html,
+)
 
 
 MODES = {"cli": moler_visualiser_cli, "html": moler_visualiser_html}

@@ -11,7 +11,10 @@ from rdkit import Chem
 
 from molecule_generation.chem.atom_feature_utils import AtomFeatureExtractor
 from molecule_generation.chem.molecule_dataset_utils import BOND_DICT, featurise_atoms
-from molecule_generation.chem.rdkit_helpers import initialise_atom_from_symbol, get_atom_symbol
+from molecule_generation.chem.rdkit_helpers import (
+    initialise_atom_from_symbol,
+    get_atom_symbol,
+)
 from molecule_generation.chem.motif_utils import (
     MotifAnnotation,
     MotifAtomAnnotation,
@@ -61,7 +64,9 @@ def sample_indices_from_logprobs(
     """
     num_choices = logprobs.shape[0]
     indices = np.arange(num_choices)
-    num_samples = min(num_samples, num_choices)  # Handle cases where we only have few candidates
+    num_samples = min(
+        num_samples, num_choices
+    )  # Handle cases where we only have few candidates
     if sampling_mode == DecoderSamplingMode.GREEDY:
         # Note that this will return the top num_samples indices, but not in order:
         picked_indices = np.argpartition(logprobs, -num_samples)[-num_samples:]
@@ -71,10 +76,7 @@ def sample_indices_from_logprobs(
         num_choices = np.sum(p > 0)
         num_samples = min(num_samples, num_choices)
         picked_indices = np.random.choice(
-            indices,
-            size=(num_samples,),
-            replace=False,
-            p=p,
+            indices, size=(num_samples,), replace=False, p=p,
         )
     else:
         raise ValueError(f"Sampling method {sampling_mode} not known.")
@@ -268,7 +270,9 @@ class MoLeRDecoderState(object):
         new_atom_types.append(atom_symbol)
         new_atoms_to_visit = list(old_state._atoms_to_visit)
         new_atoms_to_visit.append(new_atom_idx)
-        new_focus_atom = new_atoms_to_visit.pop(0)  # BFS exploration; .pop() would give DFS
+        new_focus_atom = new_atoms_to_visit.pop(
+            0
+        )  # BFS exploration; .pop() would give DFS
 
         new_generation_steps = MoLeRDecoderState.extend_generation_steps(
             generation_steps=old_state._generation_steps,
@@ -345,13 +349,19 @@ class MoLeRDecoderState(object):
             )
         new_mol = Chem.RWMol(old_state._molecule)
         new_mol.AddBond(
-            old_state._focus_atom, target_atom_idx, EDGE_TYPE_IDX_TO_BOND_TYPE[bond_type_idx]
+            old_state._focus_atom,
+            target_atom_idx,
+            EDGE_TYPE_IDX_TO_BOND_TYPE[bond_type_idx],
         )
         # We only need to make an actual copy of the adj_list for the bond type we change:
         new_adjacency_lists = list(old_state._adjacency_lists)
         new_adjacency_lists[bond_type_idx] = list(new_adjacency_lists[bond_type_idx])
-        new_adjacency_lists[bond_type_idx].append((old_state._focus_atom, target_atom_idx))
-        new_adjacency_lists[bond_type_idx].append((target_atom_idx, old_state._focus_atom))
+        new_adjacency_lists[bond_type_idx].append(
+            (old_state._focus_atom, target_atom_idx)
+        )
+        new_adjacency_lists[bond_type_idx].append(
+            (target_atom_idx, old_state._focus_atom)
+        )
 
         new_generation_steps = MoLeRDecoderState.extend_generation_steps(
             generation_steps=old_state._generation_steps,
@@ -407,7 +417,11 @@ class MoLeRDecoderState(object):
         node_idx_offset = len(old_state.molecule.GetAtoms())
 
         motif_adjacency_list = [
-            (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx(), BOND_DICT[str(bond.GetBondType())])
+            (
+                bond.GetBeginAtomIdx(),
+                bond.GetEndAtomIdx(),
+                BOND_DICT[str(bond.GetBondType())],
+            )
             for bond in motif.GetBonds()
         ]
 
@@ -460,7 +474,9 @@ class MoLeRDecoderState(object):
             node_types=motif_atom_symbols,
         )
 
-        attachment_points = [node_idx + node_idx_offset for node_idx in attachment_points]
+        attachment_points = [
+            node_idx + node_idx_offset for node_idx in attachment_points
+        ]
 
         new_generation_steps = MoLeRDecoderState.extend_generation_steps(
             generation_steps=old_state._generation_steps,
@@ -496,7 +512,8 @@ class MoLeRDecoderState(object):
             generation_steps=new_generation_steps,
             candidate_attachment_points=attachment_points,
             motifs=new_motifs,
-            num_free_bond_slots=old_state._num_free_bond_slots + [None] * motif_num_atoms,
+            num_free_bond_slots=old_state._num_free_bond_slots
+            + [None] * motif_num_atoms,
         )
 
     @staticmethod
@@ -657,7 +674,10 @@ class MoLeRDecoderState(object):
             motifs=self._motifs,
         )
 
-        return np.concatenate([features.real_valued_features]), features.categorical_features
+        return (
+            np.concatenate([features.real_valued_features]),
+            features.categorical_features,
+        )
 
     def get_bond_candidate_targets(self) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -701,7 +721,10 @@ class MoLeRDecoderState(object):
             node_types=self._atom_types,
         )
 
-        return candidate_targets[candidate_targets_mask], bond_type_mask[candidate_targets_mask]
+        return (
+            candidate_targets[candidate_targets_mask],
+            bond_type_mask[candidate_targets_mask],
+        )
 
     def compute_bond_candidate_features(self, candidate_targets) -> np.ndarray:
         """
@@ -726,7 +749,8 @@ class MoLeRDecoderState(object):
         )  # Shape [EC]
         # Calculate the topology featues:
         topology_features = calculate_topology_features(
-            edges=[(self._focus_atom, target) for target in candidate_targets], mol=self._molecule
+            edges=[(self._focus_atom, target) for target in candidate_targets],
+            mol=self._molecule,
         )  # Shape [EC, 2]
 
         return np.concatenate(

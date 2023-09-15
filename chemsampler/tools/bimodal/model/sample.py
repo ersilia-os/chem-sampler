@@ -15,62 +15,83 @@ from helper import clean_molecule, check_valid
 np.random.seed(1)
 
 
-class Sampler():
-
+class Sampler:
     def __init__(self, experiment_name):
         self._encoder = SMILESEncoder()
 
         # Read parameter used during training
         self._config = configparser.ConfigParser()
         self.root = os.getcwd()
-        self.experiement_dir = os.path.join(self.root, 'experiments/')
-        self._config.read(self.experiement_dir + experiment_name + '.ini')
-        self._model_type = self._config['MODEL']['model']
+        self.experiement_dir = os.path.join(self.root, "experiments/")
+        self._config.read(self.experiement_dir + experiment_name + ".ini")
+        self._model_type = self._config["MODEL"]["model"]
         self._experiment_name = experiment_name
-        self._hidden_units = int(self._config['MODEL']['hidden_units'])
+        self._hidden_units = int(self._config["MODEL"]["hidden_units"])
 
-        self._file_name = self._config['DATA']['data']
-        self._encoding_size = int(self._config['DATA']['encoding_size'])
-        self._molecular_size = int(self._config['DATA']['molecular_size'])
+        self._file_name = self._config["DATA"]["data"]
+        self._encoding_size = int(self._config["DATA"]["encoding_size"])
+        self._molecular_size = int(self._config["DATA"]["molecular_size"])
 
-        self._epochs = int(self._config['TRAINING']['epochs'])
-        self._n_folds = int(self._config['TRAINING']['n_folds'])
-        self._learning_rate = float(self._config['TRAINING']['learning_rate'])
-        self._batch_size = int(self._config['TRAINING']['batch_size'])
+        self._epochs = int(self._config["TRAINING"]["epochs"])
+        self._n_folds = int(self._config["TRAINING"]["n_folds"])
+        self._learning_rate = float(self._config["TRAINING"]["learning_rate"])
+        self._batch_size = int(self._config["TRAINING"]["batch_size"])
 
-        self._samples = int(self._config['EVALUATION']['samples'])
-        self._T = float(self._config['EVALUATION']['temp'])
-        self._starting_token = self._encoder.encode([self._config['EVALUATION']['starting_token']])
-        self.eval_dir= os.path.join(self.root, 'evaluation')
+        self._samples = int(self._config["EVALUATION"]["samples"])
+        self._T = float(self._config["EVALUATION"]["temp"])
+        self._starting_token = self._encoder.encode(
+            [self._config["EVALUATION"]["starting_token"]]
+        )
+        self.eval_dir = os.path.join(self.root, "evaluation")
 
-    
-        if self._model_type == 'ForwardRNN':
-            self._model = ForwardRNN(self._molecular_size, self._encoding_size,
-                                     self._learning_rate, self._hidden_units)
+        if self._model_type == "ForwardRNN":
+            self._model = ForwardRNN(
+                self._molecular_size,
+                self._encoding_size,
+                self._learning_rate,
+                self._hidden_units,
+            )
 
-        elif self._model_type == 'BIMODAL':
-            self._model = BIMODAL(self._molecular_size, self._encoding_size,
-                                  self._learning_rate, self._hidden_units)
-
-        
+        elif self._model_type == "BIMODAL":
+            self._model = BIMODAL(
+                self._molecular_size,
+                self._encoding_size,
+                self._learning_rate,
+                self._hidden_units,
+            )
 
         # Read data
-        self.data_dir = os.path.join(self.root, 'data/')
+        self.data_dir = os.path.join(self.root, "data/")
 
-        if os.path.isfile(self.data_dir + self._file_name + '.csv'):
-            self._data = pd.read_csv(self.data_dir + self._file_name + '.csv', header=None).values[:, 0]
-        elif os.path.isfile(self.data_dir + self._file_name + '.tar.xz'):
+        if os.path.isfile(self.data_dir + self._file_name + ".csv"):
+            self._data = pd.read_csv(
+                self.data_dir + self._file_name + ".csv", header=None
+            ).values[:, 0]
+        elif os.path.isfile(self.data_dir + self._file_name + ".tar.xz"):
             # Skip first line since empty and last line since nan
-            self._data = pd.read_csv(self.data_dir + self._file_name + '.tar.xz', compression='xz', header=None).values[
-                         1:-1, 0]
+            self._data = pd.read_csv(
+                self.data_dir + self._file_name + ".tar.xz",
+                compression="xz",
+                header=None,
+            ).values[1:-1, 0]
 
         # Clean data from start, end and padding token
         for i, mol_dat in enumerate(self._data):
             self._data[i] = clean_molecule(mol_dat, self._model_type)
 
-    def sample(self, N=100,  T=0.7, fold=[1], epoch=[9], valid=True, novel=True, unique=True, write_csv=True):
+    def sample(
+        self,
+        N=100,
+        T=0.7,
+        fold=[1],
+        epoch=[9],
+        valid=True,
+        novel=True,
+        unique=True,
+        write_csv=True,
+    ):
 
-        '''Sample from a model where the number of novel valid unique molecules is fixed
+        """Sample from a model where the number of novel valid unique molecules is fixed
         :param stor_dir:    directory where the generated SMILES are saved
         :param N:        number of samples
         :param T:        Temperature
@@ -81,20 +102,29 @@ class Sampler():
         :param unique:   If True, only accept unique SMILES
         :param write_csv If True, the generated SMILES are written in stor_dir
         :return: res_molecules: list with all the generated SMILES
-        '''
+        """
         N = int(N)
         stor_dir = self.eval_dir
         res_molecules = []
-        print('Sampling: started')
+        print("Sampling: started")
         for f in fold:
             for e in epoch:
                 self._model.build(
-                    stor_dir + '/' + self._experiment_name + '/models/model_fold_' + str(f) + '_epochs_' + str(e))
+                    stor_dir
+                    + "/"
+                    + self._experiment_name
+                    + "/models/model_fold_"
+                    + str(f)
+                    + "_epochs_"
+                    + str(e)
+                )
 
                 new_molecules = []
-                
+
                 while len(new_molecules) < N:
-                    new_mol = self._encoder.decode(self._model.sample(self._starting_token, T))
+                    new_mol = self._encoder.decode(
+                        self._model.sample(self._starting_token, T)
+                    )
 
                     # Remove remains from generation
                     new_mol = clean_molecule(new_mol[0], self._model_type)
@@ -115,23 +145,39 @@ class Sampler():
                     new_molecules.append(new_mol)
 
                 # Prepare name for file
-                name = 'molecules_fold_' + str(f) + '_epochs_' + str(e) + '_T_' + str(T) + '_N_' + str(N) + '.csv'
+                name = (
+                    "molecules_fold_"
+                    + str(f)
+                    + "_epochs_"
+                    + str(e)
+                    + "_T_"
+                    + str(T)
+                    + "_N_"
+                    + str(N)
+                    + ".csv"
+                )
                 if unique:
-                    name = 'unique_' + name
+                    name = "unique_" + name
                 if valid:
-                    name = 'valid_' + name
+                    name = "valid_" + name
                 if novel:
-                    name = 'novel_' + name
+                    name = "novel_" + name
 
                 # Store final molecules
                 if write_csv:
-                    if not os.path.exists(stor_dir + '/' + self._experiment_name + '/molecules/'):
-                        os.makedirs(stor_dir + '/' + self._experiment_name + '/molecules/')
+                    if not os.path.exists(
+                        stor_dir + "/" + self._experiment_name + "/molecules/"
+                    ):
+                        os.makedirs(
+                            stor_dir + "/" + self._experiment_name + "/molecules/"
+                        )
                     mol = np.array(new_molecules).reshape(-1)
-                    pd.DataFrame(mol).to_csv(stor_dir + '/' + self._experiment_name + '/molecules/' + name, header=None)
-        
+                    pd.DataFrame(mol).to_csv(
+                        stor_dir + "/" + self._experiment_name + "/molecules/" + name,
+                        header=None,
+                    )
+
             res_molecules.append(new_molecules)
-        
-        print('Sampling: done')
+
+        print("Sampling: done")
         return res_molecules
-        

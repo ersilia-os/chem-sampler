@@ -6,7 +6,10 @@ import numpy as np
 import tensorflow as tf
 from dpu_utils.tf2utils import MLP
 from tf2_gnn import GraphTaskModel
-from tf2_gnn.layers import NodesToGraphRepresentationInput, WeightedSumGraphRepresentation
+from tf2_gnn.layers import (
+    NodesToGraphRepresentationInput,
+    WeightedSumGraphRepresentation,
+)
 
 from molecule_generation.dataset.trace_dataset import TraceDataset
 from molecule_generation.layers.moler_decoder import MoLeRDecoderMetrics
@@ -53,7 +56,9 @@ class MoLeRVae(MoLeRBaseModel):
     """
 
     @classmethod
-    def get_default_hyperparameters(cls, mp_style: Optional[str] = None) -> Dict[str, Any]:
+    def get_default_hyperparameters(
+        cls, mp_style: Optional[str] = None
+    ) -> Dict[str, Any]:
         base_hypers = super().get_default_hyperparameters(mp_style)
 
         base_hypers.update(
@@ -101,7 +106,9 @@ class MoLeRVae(MoLeRBaseModel):
             weighting_fun="softmax",
             scoring_mlp_layers=[l // 2 for l in self._params["latent_repr_mlp_layers"]],
             scoring_mlp_dropout_rate=self._params["latent_repr_dropout_rate"],
-            transformation_mlp_layers=[l // 2 for l in self._params["latent_repr_mlp_layers"]],
+            transformation_mlp_layers=[
+                l // 2 for l in self._params["latent_repr_mlp_layers"]
+            ],
             transformation_mlp_dropout_rate=self._params["latent_repr_dropout_rate"],
         )
         self._weighted_sum_of_nodes_to_graph_repr = WeightedSumGraphRepresentation(
@@ -110,7 +117,9 @@ class MoLeRVae(MoLeRBaseModel):
             weighting_fun="sigmoid",
             scoring_mlp_layers=[l // 2 for l in self._params["latent_repr_mlp_layers"]],
             scoring_mlp_dropout_rate=self._params["latent_repr_dropout_rate"],
-            transformation_mlp_layers=[l // 2 for l in self._params["latent_repr_mlp_layers"]],
+            transformation_mlp_layers=[
+                l // 2 for l in self._params["latent_repr_mlp_layers"]
+            ],
             transformation_mlp_dropout_rate=self._params["latent_repr_dropout_rate"],
             transformation_mlp_result_upper_bound=5,
         )
@@ -173,9 +182,13 @@ class MoLeRVae(MoLeRBaseModel):
         )
         with tf.name_scope("latent_representation_computation"):
             with tf.name_scope("weighted_avg"):
-                self._weighted_avg_of_nodes_to_graph_repr.build(node_to_graph_repr_input)
+                self._weighted_avg_of_nodes_to_graph_repr.build(
+                    node_to_graph_repr_input
+                )
             with tf.name_scope("weighted_sum"):
-                self._weighted_sum_of_nodes_to_graph_repr.build(node_to_graph_repr_input)
+                self._weighted_sum_of_nodes_to_graph_repr.build(
+                    node_to_graph_repr_input
+                )
 
         with tf.name_scope("mean_and_var"):
             self._mean_and_var_mlp.build(latent_graph_representation_shape)
@@ -184,7 +197,10 @@ class MoLeRVae(MoLeRBaseModel):
             with tf.name_scope(f"property_{prop_name}"):
                 prop_predictor.build(latent_graph_representation_shape)
 
-        if self.uses_categorical_features and self._node_categorical_features_embedding is None:
+        if (
+            self.uses_categorical_features
+            and self._node_categorical_features_embedding is None
+        ):
             with tf.name_scope("node_categorical_features_embedding"):
                 self._node_categorical_features_embedding = self.add_weight(
                     name="categorical_features_embedding",
@@ -205,7 +221,8 @@ class MoLeRVae(MoLeRBaseModel):
             node_features_shape = tf.TensorShape(
                 dims=(
                     None,
-                    node_features_shape[-1] + self._params["categorical_features_embedding_dim"],
+                    node_features_shape[-1]
+                    + self._params["categorical_features_embedding_dim"],
                 )
             )
 
@@ -216,10 +233,13 @@ class MoLeRVae(MoLeRBaseModel):
 
         if self.uses_categorical_features:
             embedded_categorical_features = tf.nn.embedding_lookup(
-                self._node_categorical_features_embedding, inputs["node_categorical_features"]
+                self._node_categorical_features_embedding,
+                inputs["node_categorical_features"],
             )
 
-            node_features = tf.concat([node_features, embedded_categorical_features], axis=-1)
+            node_features = tf.concat(
+                [node_features, embedded_categorical_features], axis=-1
+            )
 
         return node_features
 
@@ -274,7 +294,9 @@ class MoLeRVae(MoLeRBaseModel):
         if self._params["use_intermediate_gnn_results"]:
             # In this case, we have one initial representation + results for all layers,
             # which we simply collapse into a flat vector:
-            final_node_representations = tf.concat(final_node_representations[1], axis=-1)
+            final_node_representations = tf.concat(
+                final_node_representations[1], axis=-1
+            )
 
         node_to_graph_repr_input = NodesToGraphRepresentationInput(
             node_embeddings=final_node_representations,
@@ -295,21 +317,31 @@ class MoLeRVae(MoLeRBaseModel):
             input_graph_encodings, training=training
         )
         graph_mean = graph_mean_and_log_variance[:, : self.latent_dim]  # Shape: [V, MD]
-        graph_log_variance = graph_mean_and_log_variance[:, self.latent_dim :]  # Shape: [V, MD]
+        graph_log_variance = graph_mean_and_log_variance[
+            :, self.latent_dim :
+        ]  # Shape: [V, MD]
 
         # result_representations: shape [PG, MD]
         if self._latent_sample_strategy == "passthrough":
-            result_representations = tf.gather(graph_mean, partial_graph_to_original_graph_map)
+            result_representations = tf.gather(
+                graph_mean, partial_graph_to_original_graph_map
+            )
         elif self._latent_sample_strategy == "per_graph":
             standard_noise = tf.random.truncated_normal(shape=tf.shape(graph_mean))
             noise = tf.sqrt(tf.exp(graph_log_variance)) * standard_noise
             samples = graph_mean + noise
-            result_representations = tf.gather(samples, partial_graph_to_original_graph_map)
+            result_representations = tf.gather(
+                samples, partial_graph_to_original_graph_map
+            )
         elif self._latent_sample_strategy == "per_partial_graph":
             standard_deviation = tf.sqrt(tf.exp(graph_log_variance))
-            partial_graph_mean = tf.gather(graph_mean, partial_graph_to_original_graph_map)
+            partial_graph_mean = tf.gather(
+                graph_mean, partial_graph_to_original_graph_map
+            )
             node_sd = tf.gather(standard_deviation, partial_graph_to_original_graph_map)
-            standard_noise = tf.random.truncated_normal(shape=tf.shape(partial_graph_mean))
+            standard_noise = tf.random.truncated_normal(
+                shape=tf.shape(partial_graph_mean)
+            )
             noise = node_sd * standard_noise
             result_representations = partial_graph_mean + noise
         else:
@@ -349,11 +381,17 @@ class MoLeRVae(MoLeRBaseModel):
 
         # Property prediction and first node type prediction happen once per input graph (as opposed
         # to once per partial graph). For convenience, get one fresh latent sample per input graph:
-        (_, _, per_graph_molecule_representations) = self.compute_latent_molecule_representations(
+        (
+            _,
+            _,
+            per_graph_molecule_representations,
+        ) = self.compute_latent_molecule_representations(
             final_node_representations=final_node_representations,
             num_graphs=batch_features["num_graphs_in_batch"],
             node_to_graph_map=batch_features["node_to_graph_map"],
-            partial_graph_to_original_graph_map=tf.range(0, batch_features["num_graphs_in_batch"]),
+            partial_graph_to_original_graph_map=tf.range(
+                0, batch_features["num_graphs_in_batch"]
+            ),
             training=training,
         )
 
@@ -389,7 +427,9 @@ class MoLeRVae(MoLeRBaseModel):
         task_output: MoLeRVaeOutput,
         batch_labels: Dict[str, tf.Tensor],
     ) -> Dict[str, tf.Tensor]:
-        vae_metrics = self.compute_vae_metrics(batch_features, task_output, batch_labels)
+        vae_metrics = self.compute_vae_metrics(
+            batch_features, task_output, batch_labels
+        )
 
         property_metrics = self.compute_property_predictor_metrics(
             prop_to_predictions=task_output.predicted_properties,
@@ -415,7 +455,9 @@ class MoLeRVae(MoLeRBaseModel):
     ) -> MoLeRMetrics:
 
         total_loss, decoder_metrics = self._compute_decoder_loss_and_metrics(
-            batch_features=batch_features, task_output=task_output, batch_labels=batch_labels
+            batch_features=batch_features,
+            task_output=task_output,
+            batch_labels=batch_labels,
         )
 
         kl_divergence_summand = (
@@ -452,26 +494,34 @@ class MoLeRVae(MoLeRBaseModel):
         )
 
     def compute_property_predictor_metrics(
-        self, prop_to_predictions: Dict[str, tf.Tensor], batch_labels: Dict[str, tf.Tensor]
+        self,
+        prop_to_predictions: Dict[str, tf.Tensor],
+        batch_labels: Dict[str, tf.Tensor],
     ) -> PropertyPredictionMetrics:
         total_loss = 0.0
         property_to_metrics: Dict[str, Any] = {}
 
         for prop_name, prop_predictions in prop_to_predictions.items():
             prop_labels = batch_labels[f"graph_property_{prop_name}_values"]
-            loss, pred_metrics = self._property_predictors[prop_name].compute_task_metrics(
-                predictions=prop_predictions, labels=prop_labels
+            loss, pred_metrics = self._property_predictors[
+                prop_name
+            ].compute_task_metrics(predictions=prop_predictions, labels=prop_labels)
+            total_loss += (
+                self._property_predictor_params[prop_name]["loss_weight_factor"] * loss
             )
-            total_loss += self._property_predictor_params[prop_name]["loss_weight_factor"] * loss
             pred_metrics["num_samples"] = tf.shape(prop_labels)[0]
             property_to_metrics[prop_name] = pred_metrics
 
         return PropertyPredictionMetrics(total_loss, property_to_metrics)
 
-    def _get_graph_generation_losses(self, task_results: List[Any]) -> List[Tuple[str, str]]:
+    def _get_graph_generation_losses(
+        self, task_results: List[Any]
+    ) -> List[Tuple[str, str]]:
         graph_generation_losses = super()._get_graph_generation_losses(task_results)
         average_kl_divergence = self._dict_average(task_results, "kl_divergence")
-        graph_generation_losses.append(("Avg KL divergence:", f"{average_kl_divergence: 7.4f}\n"))
+        graph_generation_losses.append(
+            ("Avg KL divergence:", f"{average_kl_divergence: 7.4f}\n")
+        )
         return graph_generation_losses
 
     def compute_epoch_metrics(self, task_results: List[Any]) -> Tuple[float, str]:
@@ -492,11 +542,16 @@ class MoLeRVae(MoLeRBaseModel):
             )
             prop_metric, prop_metric_description = self._property_predictors[
                 prop_name
-            ].compute_epoch_metrics(num_samples=prop_num_samples, task_results=prop_results)
-            property_epoch_metric += (
-                self._property_predictor_params[prop_name]["loss_weight_factor"] * prop_metric
+            ].compute_epoch_metrics(
+                num_samples=prop_num_samples, task_results=prop_results
             )
-            property_epoch_descriptions.append(f"{prop_name}: {prop_metric_description}")
+            property_epoch_metric += (
+                self._property_predictor_params[prop_name]["loss_weight_factor"]
+                * prop_metric
+            )
+            property_epoch_descriptions.append(
+                f"{prop_name}: {prop_metric_description}"
+            )
 
         average_loss = self._dict_average(task_results, "loss")
         result_string = (

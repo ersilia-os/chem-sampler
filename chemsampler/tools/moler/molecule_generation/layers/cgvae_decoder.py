@@ -125,7 +125,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         """Initialise the layer."""
         super().__init__(**kwargs)
         self._params = params
-        self._use_self_loop_edges_in_partial_graphs = use_self_loop_edges_in_partial_graphs
+        self._use_self_loop_edges_in_partial_graphs = (
+            use_self_loop_edges_in_partial_graphs
+        )
         self._num_edge_types_to_classify = params["num_edge_types_to_classify"]
 
         self._feature_extractors = feature_extractors
@@ -133,7 +135,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
 
         # The number of node types is the number of atom types we saw during training:
         atom_type_featuriser = next(
-            featuriser for featuriser in feature_extractors if featuriser.name == "AtomType"
+            featuriser
+            for featuriser in feature_extractors
+            if featuriser.name == "AtomType"
         )
         self._num_node_types = atom_type_featuriser.feature_width
 
@@ -188,7 +192,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
             self._gnn.build(gnn_input_shapes)
 
         # We get the initial GNN input (after projection) + results for all layers:
-        node_repr_size = self._params["gnn_hidden_dim"] * (1 + self._params["gnn_num_layers"])
+        node_repr_size = self._params["gnn_hidden_dim"] * (
+            1 + self._params["gnn_num_layers"]
+        )
 
         with tf.name_scope("global_repr"):
             final_node_representation_shapes = NodesToGraphRepresentationInput(
@@ -214,16 +220,22 @@ class CGVAEDecoder(tf.keras.layers.Layer):
             )
 
         with tf.name_scope("edge_type_selector"):
-            self._edge_type_selector.build(input_shape=[None, edge_candidate_representation_size])
+            self._edge_type_selector.build(
+                input_shape=[None, edge_candidate_representation_size]
+            )
 
         self._build_distance_embedding_weight()
 
         super().build(tensor_shapes)
 
-        variable_node_features_shape = tf.TensorShape((None, tensor_shapes.node_features[-1]))
+        variable_node_features_shape = tf.TensorShape(
+            (None, tensor_shapes.node_features[-1])
+        )
         call_input_spec = (
             CGVAEDecoderInput(
-                node_features=tf.TensorSpec(shape=variable_node_features_shape, dtype=tf.float32),
+                node_features=tf.TensorSpec(
+                    shape=variable_node_features_shape, dtype=tf.float32
+                ),
                 adjacency_lists=tuple(
                     tf.TensorSpec(shape=(None, 2), dtype=tf.int32)
                     for _ in range(len(tensor_shapes.adjacency_lists))
@@ -232,11 +244,15 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 graph_to_focus_node_map=tf.TensorSpec(shape=(None,), dtype=tf.int32),
                 node_to_graph_map=tf.TensorSpec(shape=(None,), dtype=tf.int32),
                 valid_edge_choices=tf.TensorSpec(shape=(None, 2), dtype=tf.int32),
-                edge_features=tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float32),
+                edge_features=tf.TensorSpec(
+                    shape=(None, edge_feature_dim), dtype=tf.float32
+                ),
             ),
             tf.TensorSpec(shape=(), dtype=tf.bool),
         )
-        setattr(self, "call", tf.function(func=self.call, input_signature=call_input_spec))
+        setattr(
+            self, "call", tf.function(func=self.call, input_signature=call_input_spec)
+        )
 
     def _build_distance_embedding_weight(self):
         """Utility method to build the distance embedding weights.
@@ -254,7 +270,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 def _initializer(*args, **kwargs):
                     return np.arange(
                         start=0,
-                        stop=self._params.get("distance_truncation", _COMPAT_DISTANCE_TRUNCATION),
+                        stop=self._params.get(
+                            "distance_truncation", _COMPAT_DISTANCE_TRUNCATION
+                        ),
                         dtype=np.float32,
                     ).reshape(-1, 1)
 
@@ -263,7 +281,12 @@ class CGVAEDecoder(tf.keras.layers.Layer):
 
             self._distance_embedding = self.add_weight(
                 name="distance_embedding",
-                shape=(self._params.get("distance_truncation", _COMPAT_DISTANCE_TRUNCATION), 1),
+                shape=(
+                    self._params.get(
+                        "distance_truncation", _COMPAT_DISTANCE_TRUNCATION
+                    ),
+                    1,
+                ),
                 trainable=True,
                 initializer=_initializer,
             )
@@ -319,7 +342,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
             ),
             shape=(tf.shape(inputs.node_features)[0], 1),
         )
-        initial_node_features = tf.concat([inputs.node_features, node_is_in_focus_bit], axis=-1)
+        initial_node_features = tf.concat(
+            [inputs.node_features, node_is_in_focus_bit], axis=-1
+        )
 
         # Encode the initial node representations using the partial adjacency lists:
         encoder_input = GNNInput(
@@ -449,10 +474,14 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         # Make decoding reproducible. All randomness should be in the initial node_features:
         rng = np.random.default_rng(0)
         if connection_nodes is None:
-            focus_nodes = rng.choice(num_nodes, size=beam_size, replace=num_nodes < beam_size)
+            focus_nodes = rng.choice(
+                num_nodes, size=beam_size, replace=num_nodes < beam_size
+            )
         else:
             focus_nodes = rng.choice(
-                connection_nodes, size=beam_size, replace=len(connection_nodes) < beam_size
+                connection_nodes,
+                size=beam_size,
+                replace=len(connection_nodes) < beam_size,
             )
         beam = [
             Ray.construct_ray(
@@ -529,7 +558,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 [ray.focus_node, node_idx]
                 for node_idx, state in ray.node_states.items()
                 if state in {NodeState.DISCOVERED, NodeState.UNDISCOVERED}
-                and not ray.contains_edge(source_idx=ray.focus_node, target_idx=node_idx)
+                and not ray.contains_edge(
+                    source_idx=ray.focus_node, target_idx=node_idx
+                )
             ]
 
             # We may need to strip out the self-loops for enforcing valence constraints:
@@ -571,15 +602,21 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 symmetrise_adjacency_list=False,
             )
             # Reshape to make concatenation with topology features possible.
-            distance_features = np.expand_dims(np.array(distance_features, dtype=np.float32), -1)
+            distance_features = np.expand_dims(
+                np.array(distance_features, dtype=np.float32), -1
+            )
             # Calculate the topology featues:
             topology_features = calculate_topology_features(valid_edges, ray.molecule)
 
-            edge_features = np.concatenate([distance_features, topology_features], axis=-1)
+            edge_features = np.concatenate(
+                [distance_features, topology_features], axis=-1
+            )
 
             # Calculate new node features:
             mol = ray.molecule
-            concatenated_node_features = self._calculate_node_features(mol, node_features)
+            concatenated_node_features = self._calculate_node_features(
+                mol, node_features
+            )
 
             # Run the GNN decoder to calculate edge choice and type logits.
             edge_choice_logits, edge_type_logits = self.__call__(
@@ -603,7 +640,10 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 adjacency_lists=ray_no_self_loop_adjacency_lists,
                 node_types=node_types,
             )
-            edge_choice_logprob, edge_type_logprob = self.calculate_logprobs_from_logits(
+            (
+                edge_choice_logprob,
+                edge_type_logprob,
+            ) = self.calculate_logprobs_from_logits(
                 edge_choice_logits, edge_type_logits, valid_edge_type_masks
             )
 
@@ -643,7 +683,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 edge_logprob = edge_choice_logprob[edge_idx]
                 edge_type_mask = valid_edge_type_masks[edge_idx]
                 type_logprobs = edge_type_logprob[edge_idx]
-                max_logprob = np.max(type_logprobs[tf.cast(edge_type_mask, dtype=tf.bool).numpy()])
+                max_logprob = np.max(
+                    type_logprobs[tf.cast(edge_type_mask, dtype=tf.bool).numpy()]
+                )
                 for type_idx in range(num_edge_types):
                     type_mask = edge_type_mask[type_idx]
                     if type_mask == 0:
@@ -687,7 +729,10 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         calculated_node_features = []
         for atom in mol.GetAtoms():
             atom_features = np.concatenate(
-                [atom_featuriser.featurise(atom) for atom_featuriser in self._feature_extractors],
+                [
+                    atom_featuriser.featurise(atom)
+                    for atom_featuriser in self._feature_extractors
+                ],
                 axis=0,
             )
             calculated_node_features.append(atom_features)
@@ -719,13 +764,17 @@ class CGVAEDecoder(tf.keras.layers.Layer):
 
         """
         # Easy one first:
-        edge_choice_logprob = edge_choice_logits - np.log(np.sum(np.exp(edge_choice_logits)))
+        edge_choice_logprob = edge_choice_logits - np.log(
+            np.sum(np.exp(edge_choice_logits))
+        )
 
         # We want to multiply masked probabilities by 0. We are in log space, so instead we
         # subtract a large numer.
         scaled_edge_type_mask = (1 - edge_type_mask) * 1e7
         masked_edge_type_logits = edge_type_logits - scaled_edge_type_mask
-        edge_type_log_denom = np.log(np.sum(np.exp(masked_edge_type_logits), axis=1, keepdims=True))
+        edge_type_log_denom = np.log(
+            np.sum(np.exp(masked_edge_type_logits), axis=1, keepdims=True)
+        )
         edge_type_logprob = masked_edge_type_logits - edge_type_log_denom
         return edge_choice_logprob, edge_type_logprob
 
@@ -754,7 +803,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
                 params=self._node_type_loss_weights, indices=node_type_label_indices
             )  # Shape: [PV]
             per_node_losses *= per_node_loss_weight
-        node_classification_loss = tf.reduce_sum(per_node_losses) / num_graphs_in_batch  # Shape: []
+        node_classification_loss = (
+            tf.reduce_sum(per_node_losses) / num_graphs_in_batch
+        )  # Shape: []
 
         # Edge selection.
         # We have some physically valid edge targets in valid_target_node_idx, and the correct
@@ -795,9 +846,13 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         #
         # Note: num_correct_edge_choices does not include the choice of an edge to the stop
         # node, so can be zero.
-        per_graph_num_correct_choices = tf.maximum(num_correct_edge_choices, 1)  # Shape: [PG]
+        per_graph_num_correct_choices = tf.maximum(
+            num_correct_edge_choices, 1
+        )  # Shape: [PG]
         per_valid_edge_num_correct_choices = tf.cast(
-            tf.nn.embedding_lookup(per_graph_num_correct_choices, valid_node_to_graph_map),
+            tf.nn.embedding_lookup(
+                per_graph_num_correct_choices, valid_node_to_graph_map
+            ),
             tf.float32,
         )  # Shape: [VE]
         per_correct_edge_neglogprob = -(
@@ -819,7 +874,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         # The `valid_edge_types` tensor is equal to 1 when the edge is valid, 0 otherwise.
         # We want to multiply the selection probabilities by this mask. Because the logits are in
         # log space, we instead subtract a large value from the logits wherever this mask is zero.
-        scaled_edge_mask = (1 - tf.cast(valid_edge_types, dtype=tf.float32)) * tf.constant(
+        scaled_edge_mask = (
+            1 - tf.cast(valid_edge_types, dtype=tf.float32)
+        ) * tf.constant(
             1e7, dtype=tf.float32
         )  # Shape: [CE, ET]
         masked_edge_type_logits = (
@@ -828,7 +885,9 @@ class CGVAEDecoder(tf.keras.layers.Layer):
         edge_type_loss = tf.nn.softmax_cross_entropy_with_logits(
             one_hot_edge_types, masked_edge_type_logits
         )  # Shape: [CE]
-        edge_type_loss = tf.reduce_sum(edge_type_loss) / num_graphs_in_batch  # Shape: []
+        edge_type_loss = (
+            tf.reduce_sum(edge_type_loss) / num_graphs_in_batch
+        )  # Shape: []
         return edge_loss, edge_type_loss, node_classification_loss
 
 

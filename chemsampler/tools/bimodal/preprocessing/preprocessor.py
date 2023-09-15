@@ -12,21 +12,22 @@ np.random.seed(1)
 
 
 class Preprocessor:
-
     def __init__(self, name):
-        # where name is the name of the file 
-        
+        # where name is the name of the file
+
         # List to store data
         self._data = []
 
         # If True, check after each function that all duplicates are still removed
         self._duplicates_removed = False
 
-        if os.path.isfile(name + '.csv'):
-            self._data = pd.read_csv(name + '.csv', header=None).values[:, 0]
-        elif os.path.isfile(dname + '.tar.xz'):
+        if os.path.isfile(name + ".csv"):
+            self._data = pd.read_csv(name + ".csv", header=None).values[:, 0]
+        elif os.path.isfile(dname + ".tar.xz"):
             # Skip first line since empty and last line since nan
-            self._data = pd.read_csv(data_name + '.tar.xz', compression='xz', header=None).values[1:-1, 0]
+            self._data = pd.read_csv(
+                data_name + ".tar.xz", compression="xz", header=None
+            ).values[1:-1, 0]
 
         # Remove empty dimensions
         self._data = np.squeeze(self._data)
@@ -39,33 +40,35 @@ class Preprocessor:
         :param aug:     Data augmentation
         :return:
         """
-        
+
         if name == "ForwardRNN":
-            self.add_ending('E')
-            self.add_sentinel('G')
-            self.padding_right('A', l=length+2)
+            self.add_ending("E")
+            self.add_sentinel("G")
+            self.padding_right("A", l=length + 2)
 
         elif name == "FBRNN_fixed" or name == "BIMODAL_fixed":
-            self.add_middle('G')
-            self.add_ending('E')
-            self.add_sentinel('E')
-            self.padding_left_right('A', l=length+3)
+            self.add_middle("G")
+            self.add_ending("E")
+            self.add_sentinel("E")
+            self.padding_left_right("A", l=length + 3)
 
         elif name == "FBRNN_random" or name == "BIMODAL_random":
-            self.add_ending('E')
-            self.add_sentinel('E')
-            self.add_token_random_padding(start_token='G', pad_token='A', aug=aug, l=3+length*2)
+            self.add_ending("E")
+            self.add_sentinel("E")
+            self.add_token_random_padding(
+                start_token="G", pad_token="A", aug=aug, l=3 + length * 2
+            )
 
         elif name == "NADE_fixed":
-            p.padding_left_right('A', l=length)
-            p.add_ending('G')
-            p.add_sentinel('G')
+            p.padding_left_right("A", l=length)
+            p.add_ending("G")
+            p.add_sentinel("G")
 
         elif name == "NADE_random":
-            self.padding_left_right('A', l=length)
-            self.add_ending('G')
-            self.add_sentinel('G')
-            self.insert_missing_token(missing_token='M', aug=aug)
+            self.padding_left_right("A", l=length)
+            self.add_ending("G")
+            self.add_sentinel("G")
+            self.insert_missing_token(missing_token="M", aug=aug)
 
         else:
             print("CAN NOT FIND MODEL")
@@ -104,7 +107,7 @@ class Preprocessor:
         :return:
         """
         # Token used for stereochemistry
-        stereochem_token = ['/', '@', '\\']
+        stereochem_token = ["/", "@", "\\"]
 
         for t in stereochem_token:
             self.remove_token(t)
@@ -119,7 +122,7 @@ class Preprocessor:
         :param t:   token to remove
         :return:
         """
-        self._data = np.array([d.replace(t, '') for d in self._data])
+        self._data = np.array([d.replace(t, "") for d in self._data])
 
         # Remove possible created duplicates
         if self._duplicates_removed:
@@ -133,12 +136,12 @@ class Preprocessor:
         :return:
         """
         for i, s in enumerate(self._data):
-            splits = s.split('.')
+            splits = s.split(".")
             # Select longest part of SMILES
             self._data[i] = max(splits, key=len)
 
         # Remove possible deposits
-        self.remove_token('.')
+        self.remove_token(".")
         # Remove possible created duplicates
         if self._duplicates_removed:
             self.remove_duplicates()
@@ -182,7 +185,7 @@ class Preprocessor:
         self._data = np.delete(self._data, to_delete)
         return
 
-    def add_sentinel(self, token='E'):
+    def add_sentinel(self, token="E"):
         """Add token at the beginning of each SMILES
         :param  token:  token to insert
         :return:
@@ -193,7 +196,7 @@ class Preprocessor:
         self._data = data
         return
 
-    def add_ending(self, token='E'):
+    def add_ending(self, token="E"):
         """Add token at the end of each SMILES
         :param  token:  token to insert
         :return:
@@ -204,7 +207,7 @@ class Preprocessor:
         self._data = data
         return
 
-    def add_middle(self, token='G'):
+    def add_middle(self, token="G"):
         """Add token in the middle of each SMILES
         :param  token:  token to insert
         :return:
@@ -216,14 +219,14 @@ class Preprocessor:
         self._data = data
         return
 
-    def add_token_random_padding(self, start_token='G', pad_token='A', aug=5, l=0):
-        '''Add start_token a n different random position and pad to have start_token in the middle of the obtained sequence
+    def add_token_random_padding(self, start_token="G", pad_token="A", aug=5, l=0):
+        """Add start_token a n different random position and pad to have start_token in the middle of the obtained sequence
         Meathod should be applied after add_ending
         :param start_token:     token introduced in the string
         :param pad_token:       token used for padding
         :param n:               number for data augmentation
         :param l:               length of the final string (if l=0 use length of longest string)
-        '''
+        """
 
         # Compute length of longest string
         if l == 0:
@@ -242,13 +245,17 @@ class Preprocessor:
             for j, r_j in enumerate(r):
                 # Added token should be located within the molecule (after 0 and before l-1,
                 # since 0 and l-1 are special tokens for the ending (E)
-                aug_data[i, j] = s[:r_j].rjust(max_l, pad_token) + start_token + s[r_j:].ljust(max_l, pad_token)
+                aug_data[i, j] = (
+                    s[:r_j].rjust(max_l, pad_token)
+                    + start_token
+                    + s[r_j:].ljust(max_l, pad_token)
+                )
 
         # Convert array to shape (n_samples, n_augmentation)
         print(self._data.shape)
         self._data = aug_data.astype(str)
 
-    def insert_missing_token(self, missing_token='M', aug=1):
+    def insert_missing_token(self, missing_token="M", aug=1):
         """Insert missing_token at random position and store changed and reference SMILES
         :param missing_token:   Token used to indicate missing value
         """
@@ -274,11 +281,13 @@ class Preprocessor:
 
                 # Insert missing values
                 for r_i in r:
-                    data[i, a + 1] = data[i, a + 1][:r_i] + missing_token + data[i, a + 1][r_i + 1:]
+                    data[i, a + 1] = (
+                        data[i, a + 1][:r_i] + missing_token + data[i, a + 1][r_i + 1 :]
+                    )
 
         self._data = data.astype(str)
 
-    def padding_right(self, token='A', l=0):
+    def padding_right(self, token="A", l=0):
         """Padding of data on the right side to obtain a consistent length
         :param token:   token used for padding
         :return l:      length of the padding (if l=0 use length of longest string)
@@ -294,7 +303,7 @@ class Preprocessor:
         self._data = data
         return l
 
-    def padding_left_right(self, token='A', l=0):
+    def padding_left_right(self, token="A", l=0):
         """Padding of data on the right and left side to obtain a consistent length
         :param token:   token used for padding
         :return l:      length of the padding (if l=0 use length of longest string)
@@ -310,7 +319,7 @@ class Preprocessor:
         self._data = data
         return l
 
-    def save_data(self, name='data.csv'):
+    def save_data(self, name="data.csv"):
         pd.DataFrame(self._data).to_csv(name, header=None, index=None)
         return
 

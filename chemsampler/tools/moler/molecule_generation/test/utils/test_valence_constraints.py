@@ -124,7 +124,9 @@ def test_constrain_edge_types_based_on_valence_on_simple_graph():
     )
 
     # Then:
-    expected_edge_type_mask = np.array([[1, 1, 0], [0, 0, 0], [1, 1, 1]], dtype=np.float64)
+    expected_edge_type_mask = np.array(
+        [[1, 1, 0], [0, 0, 0], [1, 1, 1]], dtype=np.float64
+    )
     np.testing.assert_array_equal(edge_type_mask, expected_edge_type_mask)
 
 

@@ -42,7 +42,9 @@ class GenerationOrder:
         return random.choice(valid_first_node_choices)
 
     @abstractmethod
-    def get_valid_next_node_choices(self, frontier: List[int], visited: List[int]) -> List[int]:
+    def get_valid_next_node_choices(
+        self, frontier: List[int], visited: List[int]
+    ) -> List[int]:
         """Filters down the exploration queue to nodes that we want to consider for the next step.
 
         Args:
@@ -78,13 +80,17 @@ class CanonicalOrder(GenerationOrder):
         # Deterministically pick the first node in the canonical order.
         return [self._atom_order[0]]
 
-    def get_valid_next_node_choices(self, frontier: List[int], visited: List[int]) -> List[int]:
+    def get_valid_next_node_choices(
+        self, frontier: List[int], visited: List[int]
+    ) -> List[int]:
         # Pick the node that occurs first in the canonical order.
         return [min(frontier, key=self._node_id_to_position.get)]
 
 
 class RandomOrder(GenerationOrder):
-    def get_valid_next_node_choices(self, frontier: List[int], visited: List[int]) -> List[int]:
+    def get_valid_next_node_choices(
+        self, frontier: List[int], visited: List[int]
+    ) -> List[int]:
         # We consider all one-hop-away candidates as valid.
         return frontier
 
@@ -95,7 +101,9 @@ class LoopClosingOrder(GenerationOrder):
 
         self._rings = [list(ring) for ring in GetSymmSSSR(mol)]
 
-    def get_valid_next_node_choices(self, frontier: List[int], visited: List[int]) -> List[int]:
+    def get_valid_next_node_choices(
+        self, frontier: List[int], visited: List[int]
+    ) -> List[int]:
         # Keep track of rings with maximum overlap. Often there will be exactly one ring with
         # non-trivial overlap, but there may be several e.g. if three rings share a bond.
         max_overlap = 0
@@ -136,7 +144,9 @@ class BFSOrder(GenerationOrder):
         # Deterministically pick the first node in the canonical order.
         return [self._atom_order[0]]
 
-    def get_valid_next_node_choices(self, frontier: List[int], visited: List[int]) -> List[int]:
+    def get_valid_next_node_choices(
+        self, frontier: List[int], visited: List[int]
+    ) -> List[int]:
         for node_id in frontier:
             if node_id not in self._dist:
                 self._dist[node_id] = self._last_dist + 1

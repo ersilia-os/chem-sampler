@@ -12,12 +12,18 @@ import numpy as np
 from more_itertools import chunked, ichunked
 from rdkit import Chem
 
-from molecule_generation.dataset.in_memory_trace_dataset import DataFold, InMemoryTraceDataset
+from molecule_generation.dataset.in_memory_trace_dataset import (
+    DataFold,
+    InMemoryTraceDataset,
+)
 from molecule_generation.models.moler_generator import MoLeRGenerator
 from molecule_generation.models.moler_vae import MoLeRVae
 from molecule_generation.preprocessing.data_conversion_utils import remove_non_max_frags
 from molecule_generation.utils.model_utils import load_vae_model_and_dataset
-from molecule_generation.utils.moler_decoding_utils import DecoderSamplingMode, MoLeRDecoderState
+from molecule_generation.utils.moler_decoding_utils import (
+    DecoderSamplingMode,
+    MoLeRDecoderState,
+)
 
 Pathlike = Union[str, pathlib.Path]
 
@@ -62,7 +68,11 @@ def _encode_from_smiles(
         )
 
         # Get means and log variances, both with shape [NumGraphsInBatch, LatentDim].
-        (graph_rep_mean, graph_rep_logvar, _,) = model.compute_latent_molecule_representations(
+        (
+            graph_rep_mean,
+            graph_rep_logvar,
+            _,
+        ) = model.compute_latent_molecule_representations(
             final_node_representations=final_node_representations,
             num_graphs=batch_features["num_graphs_in_batch"],
             node_to_graph_map=batch_features["node_to_graph_map"],
@@ -99,7 +109,9 @@ def _decode_from_latents(
     for decoder_state in decoder_states:
         decoder_states_by_id[decoder_state.molecule_id].append(decoder_state)
 
-    for per_sampled_latent_results in sorted(decoder_states_by_id.items(), key=lambda kv: kv[0]):
+    for per_sampled_latent_results in sorted(
+        decoder_states_by_id.items(), key=lambda kv: kv[0]
+    ):
         best_decoder_state = max(per_sampled_latent_results[1], key=lambda s: s.logprob)
         mol = remove_non_max_frags(Chem.RWMol(best_decoder_state.molecule))
         input_mol_representation = None
@@ -110,9 +122,7 @@ def _decode_from_latents(
 
 
 def _moler_worker_process(
-    model_path: str,
-    request_queue,
-    output_queue,
+    model_path: str, request_queue, output_queue,
 ):
     dataset, moler_model = load_vae_model_and_dataset(model_path)
 
@@ -124,7 +134,10 @@ def _moler_worker_process(
         elif request == MoLeRRequestType.ENCODE:
             smiles_list, include_log_variances = arguments
             encoded_mols = _encode_from_smiles(
-                dataset, moler_model, smiles_list, include_log_variances=include_log_variances
+                dataset,
+                moler_model,
+                smiles_list,
+                include_log_variances=include_log_variances,
             )
             output_queue.put((uid, encoded_mols))
         elif request == MoLeRRequestType.DECODE:
@@ -270,13 +283,19 @@ class MoLeRInferenceServer(object):
         self.init_workers()
 
         # Choose chunk size such that all workers have something to do.
-        chunk_size = min(self._max_num_samples_per_chunk, len(smiles_list) // self._num_workers + 1)
+        chunk_size = min(
+            self._max_num_samples_per_chunk, len(smiles_list) // self._num_workers + 1
+        )
 
         # Issue all requests to the workers.
         num_results = 0
         for smiles_chunk in chunked(smiles_list, chunk_size):
             self._request_queue.put(
-                (MoLeRRequestType.ENCODE, num_results, (smiles_chunk, include_log_variances))
+                (
+                    MoLeRRequestType.ENCODE,
+                    num_results,
+                    (smiles_chunk, include_log_variances),
+                )
             )
             num_results += 1
 
@@ -294,7 +313,8 @@ class MoLeRInferenceServer(object):
 
         # Choose chunk size such that all workers have something to do.
         chunk_size = min(
-            self._max_num_samples_per_chunk, len(latent_representations) // self._num_workers + 1
+            self._max_num_samples_per_chunk,
+            len(latent_representations) // self._num_workers + 1,
         )
 
         if init_mols and len(init_mols) != len(latent_representations):

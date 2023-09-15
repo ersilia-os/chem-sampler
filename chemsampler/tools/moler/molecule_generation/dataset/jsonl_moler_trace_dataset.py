@@ -3,7 +3,9 @@ import random
 from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
-from molecule_generation.dataset.jsonl_abstract_trace_dataset import JSONLAbstractTraceDataset
+from molecule_generation.dataset.jsonl_abstract_trace_dataset import (
+    JSONLAbstractTraceDataset,
+)
 from molecule_generation.dataset.trace_sample import TraceStep
 from molecule_generation.chem.motif_utils import get_motif_type_to_node_type_index_map
 from dpu_utils.utils import RichPath
@@ -30,9 +32,13 @@ class JSONLMoLeRTraceDataset(JSONLAbstractTraceDataset):
         no_parallelism: bool = False,
     ):
         super().__init__(params, metadata=metadata, no_parallelism=no_parallelism)
-        assert params["add_self_loop_edges"], "MoLeR requires the addition of self-loop edges."
+        assert params[
+            "add_self_loop_edges"
+        ], "MoLeR requires the addition of self-loop edges."
 
-    def load_data(self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None) -> None:
+    def load_data(
+        self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None
+    ) -> None:
         super().load_data(path, folds_to_load)
 
         self._motif_vocabulary = self.metadata.get("motif_vocabulary")
@@ -73,7 +79,10 @@ class JSONLMoLeRTraceDataset(JSONLAbstractTraceDataset):
             trace_step.correct_node_type_choices is not None
             and "C" not in trace_step.correct_node_type_choices
         ):
-            return random.uniform(0, 1) < self._params["trace_element_non_carbon_keep_prob"]
+            return (
+                random.uniform(0, 1)
+                < self._params["trace_element_non_carbon_keep_prob"]
+            )
 
         # Otherwise, fall back onto default sampling behaviour:
         return super()._include_trace_step_in_batch(trace_step)

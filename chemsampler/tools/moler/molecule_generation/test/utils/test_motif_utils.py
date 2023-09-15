@@ -23,7 +23,9 @@ def get_motifs_ethanonl(cut_leaf_edges: bool) -> Set[str]:
 
 
 def get_motifs_vanilin(cut_leaf_edges: bool) -> Set[str]:
-    benzene_ring_part_motifs = ["O", "C1=CC=CC=C1"] if cut_leaf_edges else ["OC1=CC=CC=C1"]
+    benzene_ring_part_motifs = (
+        ["O", "C1=CC=CC=C1"] if cut_leaf_edges else ["OC1=CC=CC=C1"]
+    )
     return set(["CO", "C=O"] + benzene_ring_part_motifs)
 
 
@@ -37,7 +39,9 @@ def test_fragment_into_candidate_motifs(cut_leaf_edges: bool):
         return set(
             [
                 Chem.MolToSmiles(motif)
-                for (motif, _) in fragment_into_candidate_motifs(molecule, cut_leaf_edges)
+                for (motif, _) in fragment_into_candidate_motifs(
+                    molecule, cut_leaf_edges
+                )
             ]
         )
 
@@ -49,9 +53,13 @@ def test_fragment_into_candidate_motifs(cut_leaf_edges: bool):
 @pytest.mark.parametrize("min_frequency", [1, 2, 3])
 @pytest.mark.parametrize("min_num_atoms", [1, 6])
 @pytest.mark.parametrize("cut_leaf_edges", [False, True])
-def test_motif_vocabulary_extractor(min_frequency: int, min_num_atoms: int, cut_leaf_edges: bool):
+def test_motif_vocabulary_extractor(
+    min_frequency: int, min_num_atoms: int, cut_leaf_edges: bool
+):
     extraction_settings = MotifExtractionSettings(
-        min_frequency=min_frequency, min_num_atoms=min_num_atoms, cut_leaf_edges=cut_leaf_edges
+        min_frequency=min_frequency,
+        min_num_atoms=min_num_atoms,
+        cut_leaf_edges=cut_leaf_edges,
     )
 
     extractor = MotifVocabularyExtractor(settings=extraction_settings)
@@ -71,7 +79,8 @@ def test_motif_vocabulary_extractor(min_frequency: int, min_num_atoms: int, cut_
     motifs_expected = set(
         motif
         for (motif, frequency) in motifs_counter.items()
-        if frequency >= min_frequency and Chem.MolFromSmiles(motif).GetNumAtoms() >= min_num_atoms
+        if frequency >= min_frequency
+        and Chem.MolFromSmiles(motif).GetNumAtoms() >= min_num_atoms
     )
 
     # ...and compare to the result from the vocabulary extractor.

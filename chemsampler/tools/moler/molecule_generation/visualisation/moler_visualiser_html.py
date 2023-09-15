@@ -27,7 +27,9 @@ EDGE_TYPE_IDX_TO_BOND_TYPE = {
 
 
 class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
-    def render_property_data(self, prop_infos: Dict[str, PropertyPredictionInformation]) -> None:
+    def render_property_data(
+        self, prop_infos: Dict[str, PropertyPredictionInformation]
+    ) -> None:
         print(f"<h2>Molecule Properties</h2>", file=self.__out_fh)
         print(f"<table>", file=self.__out_fh)
         print(f" <tr>", file=self.__out_fh)
@@ -90,7 +92,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
         print(f" </tr>", file=self.__out_fh)
 
         max_prob_atom_idx = np.argmax(atom_info.type_idx_to_prob)
-        for idx, prob, descr in self.get_atom_and_motif_types_to_render(atom_info, prob_threshold):
+        for idx, prob, descr in self.get_atom_and_motif_types_to_render(
+            atom_info, prob_threshold
+        ):
             print(f" <tr>", file=self.__out_fh)
             if idx == max_prob_atom_idx:
                 print(f"  <td><b>{descr}</b></td>", file=self.__out_fh)
@@ -102,7 +106,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
         print(f"</table>", file=self.__out_fh)
 
     def render_attachment_point_selection_step(
-        self, step: int, attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo
+        self,
+        step: int,
+        attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo,
     ) -> None:
         print("<hr>", file=self.__out_fh)
         print(f"<h2>Step {step}</h2>", file=self.__out_fh)
@@ -142,7 +148,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
                 print(f"  <td>-</td>", file=self.__out_fh)
             else:
                 correct = node_idx == attachment_point_info.correct_attachment_point_idx
-                print(f"  <td>{'C' if correct else 'Inc'}orrect</td>", file=self.__out_fh)
+                print(
+                    f"  <td>{'C' if correct else 'Inc'}orrect</td>", file=self.__out_fh
+                )
 
             print(f"  <td>{prob:5.3f}</td>", file=self.__out_fh)
             print(f" </tr>", file=self.__out_fh)
@@ -176,12 +184,16 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
         for type_idx, edges in enumerate(partial_molecule_adj_lists):
             for source, target in edges:
                 if source < target:
-                    step_mol.AddBond(int(source), int(target), EDGE_TYPE_IDX_TO_BOND_TYPE[type_idx])
+                    step_mol.AddBond(
+                        int(source), int(target), EDGE_TYPE_IDX_TO_BOND_TYPE[type_idx]
+                    )
 
         # Now set labels for the visited nodes:
         drawer = rdMolDraw2D.MolDraw2DCairo(300, 300)
         drawer_options = drawer.drawOptions()
-        self.__visited_nodes.update(map(int, new_visited_nodes_ids))  # np.int32 to pyInt
+        self.__visited_nodes.update(
+            map(int, new_visited_nodes_ids)
+        )  # np.int32 to pyInt
         for node_idx in self.__visited_nodes:
             drawer_options.atomLabels[
                 node_idx
@@ -192,7 +204,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
             new_visited_nodes_ids
         )  # Python auto converts np.int32 -> pyInt
         for node_idx in self.__unvisited_nodes:
-            drawer_options.atomLabels[node_idx] = self.__final_mol.GetAtoms()[node_idx].GetSymbol()
+            drawer_options.atomLabels[node_idx] = self.__final_mol.GetAtoms()[
+                node_idx
+            ].GetSymbol()
 
         drawer.SetDrawOptions(drawer_options)
 
@@ -217,7 +231,11 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
                 self.__mol_atom_idx_to_point2d[candidate_edge[0]],
                 self.__mol_atom_idx_to_point2d[candidate_edge[1]],
                 color1=(0.7, 0, 0),  # Primary color is dark-ish red
-                color2=(0, 0, 0),  # For the life of me, I don't know what color2 controls
+                color2=(
+                    0,
+                    0,
+                    0,
+                ),  # For the life of me, I don't know what color2 controls
                 nSegments=3,
             )
 
@@ -260,7 +278,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
         print(f" </tr>", file=self.__out_fh)
 
         if len(step_info.candidate_edge_infos) > 0:
-            max_logprob = max(edge_info.logprob for edge_info in step_info.candidate_edge_infos)
+            max_logprob = max(
+                edge_info.logprob for edge_info in step_info.candidate_edge_infos
+            )
             if step_info.no_edge_logprob > max_logprob:
                 max_logprob = step_info.no_edge_logprob
         else:
@@ -277,12 +297,24 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
             if edge_info.correct is None:
                 print(f"  <td>-</td>", file=self.__out_fh)
             else:
-                print(f"  <td>{'C' if edge_info.correct else 'Inc'}orrect</td>", file=self.__out_fh)
+                print(
+                    f"  <td>{'C' if edge_info.correct else 'Inc'}orrect</td>",
+                    file=self.__out_fh,
+                )
             print(f"  <td>{edge_info.score:7.3f}</td>", file=self.__out_fh)
             print(f"  <td>{np.exp(edge_info.logprob):5.3f}</td>", file=self.__out_fh)
-            print(f"  <td>{np.exp(edge_info.type_idx_to_logprobs[0]):.3f}</td>", file=self.__out_fh)
-            print(f"  <td>{np.exp(edge_info.type_idx_to_logprobs[1]):.3f}</td>", file=self.__out_fh)
-            print(f"  <td>{np.exp(edge_info.type_idx_to_logprobs[2]):.3f}</td>", file=self.__out_fh)
+            print(
+                f"  <td>{np.exp(edge_info.type_idx_to_logprobs[0]):.3f}</td>",
+                file=self.__out_fh,
+            )
+            print(
+                f"  <td>{np.exp(edge_info.type_idx_to_logprobs[1]):.3f}</td>",
+                file=self.__out_fh,
+            )
+            print(
+                f"  <td>{np.exp(edge_info.type_idx_to_logprobs[2]):.3f}</td>",
+                file=self.__out_fh,
+            )
             print(f" </tr>", file=self.__out_fh)
 
         if step_info.no_edge_logprob >= max_logprob:
@@ -299,7 +331,9 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
                 file=self.__out_fh,
             )
         print(f"  <td>{step_info.no_edge_score:7.3f}</td>", file=self.__out_fh)
-        print(f"  <td>{np.exp(step_info.no_edge_logprob):5.3f}</td>", file=self.__out_fh)
+        print(
+            f"  <td>{np.exp(step_info.no_edge_logprob):5.3f}</td>", file=self.__out_fh
+        )
         print(f" </tr>", file=self.__out_fh)
         print(f"</table>", file=self.__out_fh)
 
@@ -309,9 +343,15 @@ class HTMLGraphGenerationVisualiser(GraphGenerationVisualiser):
         out_file = os.path.join(out_dir, "index.html")
         with open(out_file, "wt") as out_fh:
             self.__out_fh = out_fh
-            print(f"<html><head><title>Generation of {smiles}</title></head>", file=self.__out_fh)
+            print(
+                f"<html><head><title>Generation of {smiles}</title></head>",
+                file=self.__out_fh,
+            )
             print(f"<body>", file=self.__out_fh)
-            print(f"<h1>Visualisation of MoLeR generation of {smiles}</h1>", file=self.__out_fh)
+            print(
+                f"<h1>Visualisation of MoLeR generation of {smiles}</h1>",
+                file=self.__out_fh,
+            )
             super().visualise_from_smiles(smiles)
             print(f"</body>", file=self.__out_fh)
 
@@ -352,7 +392,8 @@ def run_from_args(args) -> None:
 
 def get_argparser() -> argparse.ArgumentParser():
     parser = get_model_loading_parser(
-        description="Visualise MoLeR molecule generation as HTML.", include_extra_args=False
+        description="Visualise MoLeR molecule generation as HTML.",
+        include_extra_args=False,
     )
     parser.add_argument(
         "SMILES_OR_PATH",

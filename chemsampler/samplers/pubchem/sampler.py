@@ -14,7 +14,7 @@ def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.7):
     try:
         reply = requests.get(
             url,
-            params={"Threshold": int(similarity *100), "MaxRecords": num_samples},
+            params={"Threshold": int(similarity * 100), "MaxRecords": num_samples},
             headers={"accept": "text/json"},
             timeout=10,
         )
@@ -30,7 +30,6 @@ def run_chemed(origin_smiles: str, num_samples: int, similarity: float = 0.7):
         return smiles
     except:
         return []
-    
 
 
 class PubChemSampler(object):
@@ -64,5 +63,3 @@ class PubChemSampler(object):
         sampled_smiles = list(set(sampled_smiles))
         random.shuffle(sampled_smiles)
         return sampled_smiles
-
-

@@ -8,7 +8,7 @@ root = os.path.abspath(os.path.dirname(__file__))
 
 def example():
     smiles_list = []
-    with open(os.path.join(root,"..", "data", "example_drugs.csv"), "r") as f:
+    with open(os.path.join(root, "..", "data", "example_drugs.csv"), "r") as f:
         reader = csv.reader(f)
         next(reader)
         for r in reader:

@@ -87,7 +87,9 @@ class MLPRegressionLayer(PropertyPredictionLayer):
                 f"Standard deviation of 0.0 cannot be used for normalisation - please turn off normalisation."
             )
         self._property_stddev = property_stddev
-        self._mlp = MLP(out_size=1, hidden_layers=mlp_layer_sizes, dropout_rate=dropout_rate)
+        self._mlp = MLP(
+            out_size=1, hidden_layers=mlp_layer_sizes, dropout_rate=dropout_rate
+        )
 
     def build(self, input_shape):
         self._mlp.build(input_shape)
@@ -127,10 +129,12 @@ class MLPRegressionLayer(PropertyPredictionLayer):
         self, num_samples: tf.float32, task_results: List[Dict[str, Any]]
     ) -> Tuple[float, str]:
         epoch_abs_err = np.sum(
-            np.sum(batch_task_result["absolute_error"]) for batch_task_result in task_results
+            np.sum(batch_task_result["absolute_error"])
+            for batch_task_result in task_results
         )
         epoch_squared_err = np.sum(
-            np.sum(batch_task_result["squared_error"]) for batch_task_result in task_results
+            np.sum(batch_task_result["squared_error"])
+            for batch_task_result in task_results
         )
         num_samples = num_samples.numpy()
         epoch_mae = epoch_abs_err / num_samples
@@ -172,7 +176,11 @@ class MLPRegressionLayer(PropertyPredictionLayer):
 
     @staticmethod
     def log_evaluation_report(
-        prop_name: str, predictions, labels, aml_run=None, log_fun: Callable[[str], None] = print
+        prop_name: str,
+        predictions,
+        labels,
+        aml_run=None,
+        log_fun: Callable[[str], None] = print,
     ) -> None:
         mae = metrics.mean_absolute_error(y_true=labels, y_pred=predictions)
         mse = metrics.mean_squared_error(y_true=labels, y_pred=predictions)
@@ -239,7 +247,9 @@ class MLPBinaryClassifierLayer(MLPRegressionLayer):
     ) -> None:
         rounded_predictions = np.round(predictions)
         acc = metrics.accuracy_score(y_true=labels, y_pred=rounded_predictions)
-        balanced_acc = metrics.balanced_accuracy_score(y_true=labels, y_pred=rounded_predictions)
+        balanced_acc = metrics.balanced_accuracy_score(
+            y_true=labels, y_pred=rounded_predictions
+        )
         precicision = metrics.precision_score(y_true=labels, y_pred=rounded_predictions)
         recall = metrics.recall_score(y_true=labels, y_pred=rounded_predictions)
         f1_score = metrics.f1_score(y_true=labels, y_pred=rounded_predictions)
@@ -255,11 +265,17 @@ class MLPBinaryClassifierLayer(MLPRegressionLayer):
 
     @staticmethod
     def log_evaluation_report(
-        prop_name: str, predictions, labels, aml_run=None, log_fun: Callable[[str], None] = print
+        prop_name: str,
+        predictions,
+        labels,
+        aml_run=None,
+        log_fun: Callable[[str], None] = print,
     ) -> None:
         rounded_predictions = np.round(predictions)
         acc = metrics.accuracy_score(y_true=labels, y_pred=rounded_predictions)
-        balanced_acc = metrics.balanced_accuracy_score(y_true=labels, y_pred=rounded_predictions)
+        balanced_acc = metrics.balanced_accuracy_score(
+            y_true=labels, y_pred=rounded_predictions
+        )
         precision = metrics.precision_score(y_true=labels, y_pred=rounded_predictions)
         recall = metrics.recall_score(y_true=labels, y_pred=rounded_predictions)
         f1_score = metrics.f1_score(y_true=labels, y_pred=rounded_predictions)

@@ -60,8 +60,12 @@ def tmp_test_directory() -> LocalPath:
 
     Gets cleaned up after the tests have finished.
     """
-    tmp_directory: LocalPath = RichPath.create(os.path.join(os.path.dirname(__file__), "tmp"))
-    assert not tmp_directory.exists(), "Tried to create a temporary directory that already exists."
+    tmp_directory: LocalPath = RichPath.create(
+        os.path.join(os.path.dirname(__file__), "tmp")
+    )
+    assert (
+        not tmp_directory.exists()
+    ), "Tried to create a temporary directory that already exists."
     tmp_directory.make_as_dir()
     yield tmp_directory
     # Tear down.
@@ -194,7 +198,10 @@ def test_model_trains_from_data(tmp_test_directory):
             "graph_properties": {},
         },
         model_class=MoLeRVae,
-        model_default_hypers={"decoder_num_node_types": 3, "num_train_steps_between_valid": 20},
+        model_default_hypers={
+            "decoder_num_node_types": 3,
+            "num_train_steps_between_valid": 20,
+        },
     )
 
     # Set up our directory structure.
@@ -243,7 +250,10 @@ def test_load_model_weights_and_loss_below_untrained_loss(capsys, tmp_test_direc
             "graph_properties": {},
         },
         model_class=MoLeRVae,
-        model_default_hypers={"decoder_num_node_types": 3, "num_train_steps_between_valid": 20},
+        model_default_hypers={
+            "decoder_num_node_types": 3,
+            "num_train_steps_between_valid": 20,
+        },
     )
 
     # Set up our directory structure.
@@ -364,7 +374,9 @@ def test_can_decode_smiles_with_scaffold_trained_model(capsys, tmp_test_director
         assert len(substructure_match) == num_atoms_in_substructure
 
 
-def test_can_decode_smiles_list_with_optional_scaffold_trained_model(capsys, tmp_test_directory):
+def test_can_decode_smiles_list_with_optional_scaffold_trained_model(
+    capsys, tmp_test_directory
+):
     # Clear the Keras session so that unique naming does not mess up weight loading.
     tf.keras.backend.clear_session()
 
@@ -376,11 +388,15 @@ def test_can_decode_smiles_list_with_optional_scaffold_trained_model(capsys, tmp
     with MoLeRInferenceServer(get_model_path(tmp_test_directory)) as moler:
         # Initial Molecules = [Scaffold, None]
         embeddings = moler.encode([base_smiles, base_smiles])
-        smiles = [s for s, _ in moler.decode(embeddings, init_mols=[scaffold_mol, None])]
+        smiles = [
+            s for s, _ in moler.decode(embeddings, init_mols=[scaffold_mol, None])
+        ]
 
         assert len(smiles) == 2
 
-        substructure_match = get_substructure_match(Chem.MolFromSmiles(smiles[0]), scaffold_smarts)
+        substructure_match = get_substructure_match(
+            Chem.MolFromSmiles(smiles[0]), scaffold_smarts
+        )
         assert len(substructure_match) == num_atoms_in_substructure
 
         # Initial Molecules = [None, None]

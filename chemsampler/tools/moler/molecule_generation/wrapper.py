@@ -16,7 +16,9 @@ Pathlike = Union[str, pathlib.Path]
 
 
 class ModelWrapper(ContextManager):
-    def __init__(self, dir: Pathlike, seed: int = 0, num_workers: int = 6, beam_size: int = 1):
+    def __init__(
+        self, dir: Pathlike, seed: int = 0, num_workers: int = 6, beam_size: int = 1
+    ):
         # TODO(kmaziarz): Consider whether this should be a `Path` instead.
         self.trained_model_path = str(self._get_model_file(dir))
         self.num_workers = num_workers
@@ -29,7 +31,9 @@ class ModelWrapper(ContextManager):
         print(f"Loading a trained model from: {self.trained_model_path}")
 
         # Read latent dimension size. It may have been serialized as str or float, so to be sure we cast it to int.
-        raw_latent_repr_size = get_model_parameters(self.trained_model_path)["latent_repr_size"]
+        raw_latent_repr_size = get_model_parameters(self.trained_model_path)[
+            "latent_repr_size"
+        ]
         self._latent_size = int(raw_latent_repr_size)
 
     @classmethod
@@ -55,7 +59,9 @@ class ModelWrapper(ContextManager):
             return candidates[0]
 
     def __enter__(self):
-        from molecule_generation.utils.moler_inference_server import MoLeRInferenceServer
+        from molecule_generation.utils.moler_inference_server import (
+            MoLeRInferenceServer,
+        )
 
         self._inference_server = MoLeRInferenceServer(
             self.trained_model_path,
@@ -89,7 +95,9 @@ class VaeWrapper(ModelWrapper):
         Returns:
             List of latent vectors.
         """
-        return np.random.normal(size=(num_samples, self._latent_size)).astype(np.float32)
+        return np.random.normal(size=(num_samples, self._latent_size)).astype(
+            np.float32
+        )
 
     def encode(
         self, smiles_list: List[str], include_log_variances: bool = False
@@ -177,6 +185,8 @@ def load_model_from_directory(model_dir: str, **model_kwargs) -> ModelWrapper:
     model_class = get_model_class(ModelWrapper._get_model_file(model_dir))
 
     if model_class not in model_class_to_wrapper:
-        raise ValueError(f"Could not found a wrapper suitable for model class {model_class}")
+        raise ValueError(
+            f"Could not found a wrapper suitable for model class {model_class}"
+        )
 
     return model_class_to_wrapper[model_class](model_dir, **model_kwargs)

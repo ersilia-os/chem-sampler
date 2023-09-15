@@ -54,7 +54,9 @@ class Ray:
         self.logprob = logprob
         self.idx = idx
         self.adjacency_lists = adjacency_lists
-        self._node_idx_to_neighbours: Dict[int, Set] = {i: set() for i in range(len(node_states))}
+        self._node_idx_to_neighbours: Dict[int, Set] = {
+            i: set() for i in range(len(node_states))
+        }
         for adjacency_list in adjacency_lists:
             for edge in adjacency_list:
                 source = edge[0]
@@ -152,7 +154,9 @@ class Ray:
             adjacency_lists.append(
                 np.repeat(np.arange(num_nodes, dtype=np.int32), 2).reshape(-1, 2)
             )
-        node_states = {node_idx: NodeState.UNDISCOVERED for node_idx in range(len(node_types))}
+        node_states = {
+            node_idx: NodeState.UNDISCOVERED for node_idx in range(len(node_types))
+        }
 
         # Lock all of the nodes that are present in the adjacency lists.
         for edge_type_idx in range(num_edge_types):
@@ -260,7 +264,9 @@ class Ray:
 
         # Add the edge to the molecule representation. Symmetrisation of adjacency list is done for us by RDKit.
         self._molecule.AddBond(
-            edge_source.item(), edge_target.item(), self._edge_type_idx_to_rdkit_type[edge_type]
+            edge_source.item(),
+            edge_target.item(),
+            self._edge_type_idx_to_rdkit_type[edge_type],
         )
 
         # Add the the neighbour dictionary.
@@ -323,7 +329,9 @@ def extend_beam(extension_choices: List[RayExtension], beam: List[Ray]) -> List[
 
         else:
             # Add the chosen edge to the appropriate adjacency list.
-            new_beam[i].add_edge(extension_choice.edge_choice, extension_choice.edge_type)
+            new_beam[i].add_edge(
+                extension_choice.edge_choice, extension_choice.edge_type
+            )
             # Correct the logprob to incorporate the edge type choice information.
             new_beam[i].logprob += extension_choice.type_logprob
     return new_beam

@@ -144,7 +144,9 @@ class TraceSample(GraphSample):
     @property
     def partial_node_categorical_features(self) -> List[Optional[np.ndarray]]:
         """The categorical node features for each partial graph."""
-        return getattr(self, "_partial_node_categorical_features", [None] * len(self.focus_nodes))
+        return getattr(
+            self, "_partial_node_categorical_features", [None] * len(self.focus_nodes)
+        )
 
     @property
     def partial_adjacency_lists(self) -> List[List[np.ndarray]]:
@@ -176,12 +178,7 @@ class TraceSample(GraphSample):
     @property
     def valid_attachment_point_choices(self) -> List[np.ndarray]:
         value = getattr(self, "_valid_attachment_point_choices", None)
-        return value or [
-            np.zeros(
-                0,
-            )
-            for _ in range(len(self.focus_nodes))
-        ]
+        return value or [np.zeros(0,) for _ in range(len(self.focus_nodes))]
 
     @property
     def focus_nodes(self) -> List[int]:

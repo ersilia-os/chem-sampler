@@ -1,5 +1,16 @@
 """GNN Variational Autoencoder model."""
-from typing import Any, Dict, Optional, Tuple, List, NamedTuple, Union, Iterable, DefaultDict, Deque
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Tuple,
+    List,
+    NamedTuple,
+    Union,
+    Iterable,
+    DefaultDict,
+    Deque,
+)
 
 import numpy as np
 import tensorflow as tf
@@ -53,7 +64,9 @@ class CGVAE(GraphTaskModel):
         return cls.__property_predictor_prefix
 
     @classmethod
-    def get_default_hyperparameters(cls, mp_style: Optional[str] = None) -> Dict[str, Any]:
+    def get_default_hyperparameters(
+        cls, mp_style: Optional[str] = None
+    ) -> Dict[str, Any]:
         base_hypers = super().get_default_hyperparameters(mp_style)
 
         # Add our own hyperparameters:
@@ -111,19 +124,25 @@ class CGVAE(GraphTaskModel):
         self._sample_strategy = params["sample_strategy"]
 
         # Get some information out from the dataset:
-        self._node_type_index_to_string: Dict[int, str] = dataset.node_type_index_to_string
+        self._node_type_index_to_string: Dict[
+            int, str
+        ] = dataset.node_type_index_to_string
         self._graph_property_params = dataset.params["graph_properties"]
         self._feature_extractors: List[AtomFeatureExtractor] = dataset.metadata.get(
             "feature_extractors", []
         )
         self._num_node_types = dataset.num_node_types
-        self._decoder_use_self_loop_edges_in_partial_graphs = dataset.params["add_self_loop_edges"]
+        self._decoder_use_self_loop_edges_in_partial_graphs = dataset.params[
+            "add_self_loop_edges"
+        ]
         self._graph_property_metadata = {}
         for prop_name in self._graph_property_params.keys():
             self._graph_property_metadata[f"{prop_name}_stddev"] = dataset.metadata.get(
                 f"{prop_name}_stddev"
             )
-        self._atom_type_distribution = dataset.metadata.get("train_atom_type_distribution")
+        self._atom_type_distribution = dataset.metadata.get(
+            "train_atom_type_distribution"
+        )
 
         # ===== Prepare sub-layers, which will be actually created in .build()
         self._mean_and_var_mlp = MLP(
@@ -137,14 +156,20 @@ class CGVAE(GraphTaskModel):
             out_size=self._num_node_types,
             hidden_layers=self._params["node_classifier_hidden_layers"],
             use_biases=True,
-            activation_fun=get_activation_function(self._params["node_classifier_activation_fun"]),
+            activation_fun=get_activation_function(
+                self._params["node_classifier_activation_fun"]
+            ),
             dropout_rate=self._params["node_classifier_dropout_rate"],
         )
 
         decoder_prefix = self.decoder_prefix()
         n = len(decoder_prefix)
-        decoder_hypers = {k[n:]: v for k, v in self._params.items() if k.startswith(decoder_prefix)}
-        class_weight_factor = self._params.get("node_classifier_class_loss_weight_factor", 0.0)
+        decoder_hypers = {
+            k[n:]: v for k, v in self._params.items() if k.startswith(decoder_prefix)
+        }
+        class_weight_factor = self._params.get(
+            "node_classifier_class_loss_weight_factor", 0.0
+        )
         if not (0.0 <= class_weight_factor <= 1.0):
             raise ValueError(
                 f"Node class loss weight node_classifier_class_loss_weight_factor must be in [0,1], but is {class_weight_factor}!"
@@ -189,8 +214,12 @@ class CGVAE(GraphTaskModel):
                 )
 
         # Moving average variables, will be filled later:
-        self._logged_loss_smoothing_window_size = self._params["logged_loss_smoothing_window_size"]
-        self._smoothed_stats_raw_values: DefaultDict[str, Deque[Union[float, int]]] = None
+        self._logged_loss_smoothing_window_size = self._params[
+            "logged_loss_smoothing_window_size"
+        ]
+        self._smoothed_stats_raw_values: DefaultDict[
+            str, Deque[Union[float, int]]
+        ] = None
 
         # Deal with Tensorboard's global state:
         tf.summary.experimental.set_step(0)
@@ -207,7 +236,9 @@ class CGVAE(GraphTaskModel):
         encoder_gnn_dim = self._params["gnn_hidden_dim"]
         if self._params["use_intermediate_gnn_results"]:
             # We get the initial GNN input (after projection) + results for all layers:
-            final_node_representation_dim = encoder_gnn_dim * (1 + self._params["gnn_num_layers"])
+            final_node_representation_dim = encoder_gnn_dim * (
+                1 + self._params["gnn_num_layers"]
+            )
             final_node_representation_spec: Tuple[tf.TensorSpec, ...] = (
                 tf.TensorSpec(
                     shape=(None, encoder_gnn_dim), dtype=tf.float32
@@ -245,9 +276,14 @@ class CGVAE(GraphTaskModel):
         with tf.name_scope("mean_and_var"):
             self._mean_and_var_mlp.build(encoded_node_representation_shape)
 
-        latent_node_representation_shape = tf.TensorShape(dims=(None, self._latent_repr_dim))
+        latent_node_representation_shape = tf.TensorShape(
+            dims=(None, self._latent_repr_dim)
+        )
         partial_node_representation_shape = tf.TensorShape(
-            dims=(None, self._latent_repr_dim + input_shapes["partial_node_features"][-1])
+            dims=(
+                None,
+                self._latent_repr_dim + input_shapes["partial_node_features"][-1],
+            )
         )
         with tf.name_scope("node_classifier"):
             self._node_to_label_layer.build(latent_node_representation_shape)
@@ -291,9 +327,13 @@ class CGVAE(GraphTaskModel):
                 node_representations[1], axis=-1
             )  # Shape [V, ED*(num_layers+1)]
 
-        node_mean_and_log_var = self._mean_and_var_mlp(node_representations, training=training)
+        node_mean_and_log_var = self._mean_and_var_mlp(
+            node_representations, training=training
+        )
         node_mean = node_mean_and_log_var[:, : self._latent_repr_dim]  # Shape: [V, ED]
-        node_log_variance = node_mean_and_log_var[:, self._latent_repr_dim :]  # Shape: [V, ED]
+        node_log_variance = node_mean_and_log_var[
+            :, self._latent_repr_dim :
+        ]  # Shape: [V, ED]
 
         return node_mean, node_log_variance
 
@@ -375,7 +415,9 @@ class CGVAE(GraphTaskModel):
         # We never want atom type "UNK" (index 0), so remove that value. However, the indexing still
         # accounts for it, so add it back in the lookup:
         max_indices = tf.argmax(node_classification_logits[:, 1:], axis=1)  # shape: [V]
-        return [self._node_type_index_to_string[1 + index.numpy()] for index in max_indices]
+        return [
+            self._node_type_index_to_string[1 + index.numpy()] for index in max_indices
+        ]
 
     def get_node_samples(
         self,
@@ -404,7 +446,12 @@ class CGVAE(GraphTaskModel):
             [partial_graph_node_samples, partial_graph_node_features], axis=-1
         )
 
-        return node_mean, node_log_variance, node_samples, partial_graph_node_representations
+        return (
+            node_mean,
+            node_log_variance,
+            node_samples,
+            partial_graph_node_representations,
+        )
 
     def compute_task_output(
         self,
@@ -462,7 +509,9 @@ class CGVAE(GraphTaskModel):
                 node_representations=node_samples,
                 node_to_graph_map=batch_features["node_to_graph_map"],
                 num_graphs=batch_features["num_graphs_in_batch"],
-                graph_ids_to_predict_for=batch_features[f"graph_property_{prop_name}_graph_ids"],
+                graph_ids_to_predict_for=batch_features[
+                    f"graph_property_{prop_name}_graph_ids"
+                ],
             )
             property_prediction_results[prop_name] = property_predictor(
                 prop_prediction_input, training=training
@@ -489,7 +538,9 @@ class CGVAE(GraphTaskModel):
         - VE: number of valid edges in this batch.
         - CE: number of correct edge choices for this batch
         """
-        vae_metrics = self.compute_vae_metrics(batch_features, task_output, batch_labels)
+        vae_metrics = self.compute_vae_metrics(
+            batch_features, task_output, batch_labels
+        )
 
         property_metrics = self.compute_property_predictor_metrics(
             prop_to_predictions=task_output.predicted_properties,
@@ -511,7 +562,9 @@ class CGVAE(GraphTaskModel):
         task_output: CGVAEOutput,
         batch_labels: Dict[str, tf.Tensor],
     ) -> DecoderMetrics:
-        num_graphs_in_batch = tf.cast(batch_features["num_graphs_in_batch"], dtype=tf.float32)
+        num_graphs_in_batch = tf.cast(
+            batch_features["num_graphs_in_batch"], dtype=tf.float32
+        )
         # KL divergence.
         kl_divergence_summand = (
             tf.square(task_output.node_representation_mean)
@@ -534,11 +587,19 @@ class CGVAE(GraphTaskModel):
             node_type_label_indices=batch_labels["node_types"],  # Shape: [V]
             num_graphs_in_batch=num_graphs_in_batch,
             num_partial_graphs_in_batch=batch_features["num_partial_graphs_in_batch"],
-            node_to_partial_graph_map=batch_features["node_to_partial_graph_map"],  # Shape: [PV]
-            correct_target_node_multihot=batch_labels["correct_edge_choices"],  # Shape: [VE]
-            valid_target_node_idx=batch_features["valid_edge_choices"][:, 1],  # Shape: [VE]
+            node_to_partial_graph_map=batch_features[
+                "node_to_partial_graph_map"
+            ],  # Shape: [PV]
+            correct_target_node_multihot=batch_labels[
+                "correct_edge_choices"
+            ],  # Shape: [VE]
+            valid_target_node_idx=batch_features["valid_edge_choices"][
+                :, 1
+            ],  # Shape: [VE]
             stop_node_label=batch_labels["stop_node_label"],  # Shape: [PG]
-            num_correct_edge_choices=batch_labels["num_correct_edge_choices"],  # Shape: [PG]
+            num_correct_edge_choices=batch_labels[
+                "num_correct_edge_choices"
+            ],  # Shape: [PG]
             one_hot_edge_types=batch_labels["correct_edge_types"],  # Shape: [CE, ET]
             valid_edge_types=batch_labels["valid_edge_types"],  # Shape: [CE, ET]
         )
@@ -568,7 +629,9 @@ class CGVAE(GraphTaskModel):
         )
 
     def compute_property_predictor_metrics(
-        self, prop_to_predictions: Dict[str, tf.Tensor], batch_labels: Dict[str, tf.Tensor]
+        self,
+        prop_to_predictions: Dict[str, tf.Tensor],
+        batch_labels: Dict[str, tf.Tensor],
     ) -> PropertyPredictionMetrics:
         total_loss = 0.0
         property_to_metrics: Dict[str, Any] = {}
@@ -576,7 +639,9 @@ class CGVAE(GraphTaskModel):
         for prop_name, prop_predictions in prop_to_predictions.items():
             prop_params = self._graph_property_params[prop_name]
             prop_labels = batch_labels[f"graph_property_{prop_name}_values"]
-            loss, pred_metrics = self._property_predictors[prop_name].compute_task_metrics(
+            loss, pred_metrics = self._property_predictors[
+                prop_name
+            ].compute_task_metrics(
                 property_predictions=prop_predictions, property_labels=prop_labels
             )
             total_loss += prop_params["loss_weight_factor"] * loss
@@ -609,9 +674,12 @@ class CGVAE(GraphTaskModel):
                 prop_name
             ].compute_epoch_metrics(prop_results)
             property_epoch_metric += (
-                self._graph_property_params[prop_name]["loss_weight_factor"] * prop_metric
+                self._graph_property_params[prop_name]["loss_weight_factor"]
+                * prop_metric
             )
-            property_epoch_descriptions.append(f"{prop_name}: {prop_metric_description}")
+            property_epoch_descriptions.append(
+                f"{prop_name}: {prop_metric_description}"
+            )
 
         result_string = (
             f"\n"

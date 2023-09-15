@@ -20,10 +20,15 @@ from molecule_generation.utils.cgvae_visualisation_utils import (
 
 
 class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
-    def render_property_data(self, prop_infos: Dict[str, PropertyPredictionInformation]) -> None:
+    def render_property_data(
+        self, prop_infos: Dict[str, PropertyPredictionInformation]
+    ) -> None:
         print("= Molecule properties")
         for prop_name, prop_info in prop_infos.items():
-            print(f" Property {prop_name:>15}:" f" Pred = {prop_info.prediction:7.3f}", end="")
+            print(
+                f" Property {prop_name:>15}:" f" Pred = {prop_info.prediction:7.3f}",
+                end="",
+            )
             if prop_info.ground_truth is None:
                 print()
             else:
@@ -40,9 +45,7 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
                 for node_typ_idx in range(1, num_atom_types)
             ]
             if atom_info.true_type_idx is not None:
-                true_node_type_info = (
-                    f" (True: {self.dataset._node_type_index_to_string[atom_info.true_type_idx]})"
-                )
+                true_node_type_info = f" (True: {self.dataset._node_type_index_to_string[atom_info.true_type_idx]})"
             else:
                 true_node_type_info = ""
 
@@ -53,7 +56,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
     def render_molecule_gen_start(self, mol: Chem.Mol) -> None:
         print(f"= Edge Steps to create {Chem.MolToSmiles(mol)}")
 
-    def render_molecule_gen_step(self, step: int, step_info: MoleculeGenerationStepInfo) -> None:
+    def render_molecule_gen_step(
+        self, step: int, step_info: MoleculeGenerationStepInfo
+    ) -> None:
         print(f" -- Step {step} - focusing on node {step_info.focus_node_idx}")
         for edge_info in step_info.candidate_edge_infos:
             edge_type_result_str = ", ".join(
@@ -63,7 +68,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
             if edge_info.correct is None:
                 correctness_info = ""
             else:
-                correctness_info = f" {'[in' if not edge_info.correct else '  ['}correct]"
+                correctness_info = (
+                    f" {'[in' if not edge_info.correct else '  ['}correct]"
+                )
             print(
                 f"   Edge {step_info.focus_node_idx:2} -- {edge_info.target_node_idx:2}:   "
                 f"prob {np.exp(edge_info.logprob):5.3f}, score {edge_info.score:7.3f}"
@@ -73,7 +80,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
         if step_info.no_edge_correct is None:
             correctness_info = ""
         else:
-            correctness_info = f" {'[in' if not step_info.no_edge_correct else '  ['}correct]"
+            correctness_info = (
+                f" {'[in' if not step_info.no_edge_correct else '  ['}correct]"
+            )
         print(
             f"   No further edge: "
             f"prob {np.exp(step_info.no_edge_logprob):5.3f}, score {step_info.no_edge_score:7.3f}"
@@ -96,7 +105,8 @@ def run_from_args(args) -> None:
 
 def run():
     parser = get_model_loading_parser(
-        description="Visualise CGVAE molecule generation as text.", include_extra_args=False
+        description="Visualise CGVAE molecule generation as text.",
+        include_extra_args=False,
     )
     parser.add_argument(
         "SMILES_OR_PATH",
@@ -104,7 +114,9 @@ def run():
         nargs="+",
         help="SMILES string(s) or paths of latent representations to visualise.",
     )
-    parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug routines")
+    parser.add_argument(
+        "--debug", dest="debug", action="store_true", help="Enable debug routines"
+    )
     args = parser.parse_args()
 
     # Shut up tensorflow:

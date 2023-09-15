@@ -7,7 +7,10 @@ import rdkit.Chem
 import tensorflow as tf
 
 from molecule_generation.chem.atom_feature_utils import AtomTypeFeatureExtractor
-from molecule_generation.chem.motif_utils import MotifExtractionSettings, MotifVocabulary
+from molecule_generation.chem.motif_utils import (
+    MotifExtractionSettings,
+    MotifVocabulary,
+)
 from molecule_generation.layers.moler_decoder import (
     MoLeRDecoder,
     MoLeRDecoderInput,
@@ -17,7 +20,9 @@ from molecule_generation.utils.moler_decoding_utils import DecoderSamplingMode
 
 
 def decode_random_latents(
-    num_samples: int, decoder_param_overrides: Dict[str, Any], decode_kwargs: Dict[str, Any]
+    num_samples: int,
+    decoder_param_overrides: Dict[str, Any],
+    decode_kwargs: Dict[str, Any],
 ) -> List[MoLeRDecoderState]:
     tf.random.set_seed(0)
 
@@ -32,11 +37,21 @@ def decode_random_latents(
     decoder = MoLeRDecoder(
         params=params,
         atom_featurisers=[atom_type_featuriser],
-        index_to_node_type_map={0: "UNK", 1: "C", 2: "N", 3: "O", 4: "O=[N+][O-]", 5: "C1=CC=CC1N"},
+        index_to_node_type_map={
+            0: "UNK",
+            1: "C",
+            2: "N",
+            3: "O",
+            4: "O=[N+][O-]",
+            5: "C1=CC=CC1N",
+        },
         motif_vocabulary=MotifVocabulary(
             vocabulary={"O=[N+][O-]": 0, "C1=CC=CC1N": 1},
             settings=MotifExtractionSettings(
-                min_frequency=None, min_num_atoms=3, cut_leaf_edges=True, max_vocab_size=2
+                min_frequency=None,
+                min_num_atoms=3,
+                cut_leaf_edges=True,
+                max_vocab_size=2,
             ),
         ),
     )

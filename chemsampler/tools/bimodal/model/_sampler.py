@@ -6,7 +6,6 @@ import csv
 root = os.path.dirname(os.path.abspath(__file__))
 
 
-
 class _sampler:
     def __init__(self):
         self.cwd = os.getcwd()
@@ -16,26 +15,32 @@ class _sampler:
         self.epoch = [9]
 
     def sampler_ForwardRNN(self, n, data_file):
-        experiment_name = 'BIMODAL_random_1024'
+        experiment_name = "BIMODAL_random_1024"
         s = Sampler(experiment_name)
-        samples = s.sample(N=n, T=self.temperature, fold=self.fold, epoch= self.epoch,
-                 valid=True, novel=True, unique=True, write_csv=False)
-        with open(data_file, 'w') as f:
+        samples = s.sample(
+            N=n,
+            T=self.temperature,
+            fold=self.fold,
+            epoch=self.epoch,
+            valid=True,
+            novel=True,
+            unique=True,
+            write_csv=False,
+        )
+        with open(data_file, "w") as f:
             write = csv.writer(f)
-            write.writerow(['smiles'])
+            write.writerow(["smiles"])
             for sample in samples[0]:
                 write.writerow([sample])
 
-        
     # def sampler_BIMODAL(self, n):
     #     experiment_name = 'BIMODAL_random_1024'
     #     s = Sampler(experiment_name)
     #     s.sample(N=n, T=self.temperature, fold=self.fold, epoch= self.epoch,
     #              valid=True, novel=True, unique=True, write_csv=True)
-    
+
 
 if __name__ == "__main__":
     n = sys.argv[1]
     data_file = sys.argv[2]
-    _sampler().sampler_ForwardRNN( n , data_file)
-
+    _sampler().sampler_ForwardRNN(n, data_file)

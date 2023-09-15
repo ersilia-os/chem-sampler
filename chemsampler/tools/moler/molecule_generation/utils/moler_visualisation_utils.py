@@ -43,7 +43,9 @@ class GraphGenerationVisualiser(ABC):
         self.supported_property_names = dataset.params["graph_properties"].keys()
 
     @abstractmethod
-    def render_property_data(self, prop_infos: Dict[str, PropertyPredictionInformation]) -> None:
+    def render_property_data(
+        self, prop_infos: Dict[str, PropertyPredictionInformation]
+    ) -> None:
         pass
 
     @abstractmethod
@@ -67,7 +69,9 @@ class GraphGenerationVisualiser(ABC):
 
     @abstractmethod
     def render_attachment_point_selection_step(
-        self, step: int, attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo
+        self,
+        step: int,
+        attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo,
     ) -> None:
         pass
 
@@ -133,7 +137,9 @@ class GraphGenerationVisualiser(ABC):
         ):
             focus_node_to_choice_indices[src_node_idx].append(choice_idx)
         partial_node_to_orig_node_id = dict(
-            enumerate(i.numpy() for i in batch_features["partial_node_to_original_node_map"])
+            enumerate(
+                i.numpy() for i in batch_features["partial_node_to_original_node_map"]
+            )
         )
 
         total_num_valid_edge_choices = batch_features["valid_edge_choices"].shape[0]
@@ -142,8 +148,12 @@ class GraphGenerationVisualiser(ABC):
         ].numpy()
 
         node_to_partial_graph = batch_features["node_to_partial_graph_map"].numpy()
-        valid_attachment_point_choices = batch_features["valid_attachment_point_choices"].numpy()
-        correct_attachment_point_choices = batch_labels["correct_attachment_point_choices"].numpy()
+        valid_attachment_point_choices = batch_features[
+            "valid_attachment_point_choices"
+        ].numpy()
+        correct_attachment_point_choices = batch_labels[
+            "correct_attachment_point_choices"
+        ].numpy()
 
         graph_to_valid_attachment_point_choices = {}
         graph_to_correct_attachment_point_choice = {}
@@ -167,16 +177,18 @@ class GraphGenerationVisualiser(ABC):
             node_idx = valid_attachment_point_choices[node_idx]
 
             graph_idx = node_to_partial_graph[node_idx]
-            graph_to_correct_attachment_point_choice[graph_idx] = partial_node_to_orig_node_id[
-                node_idx
-            ]
+            graph_to_correct_attachment_point_choice[
+                graph_idx
+            ] = partial_node_to_orig_node_id[node_idx]
 
         # First, render the initial atom choice:
-        first_node_choice_one_hot_labels = batch_labels["correct_first_node_type_choices"][
-            0
-        ].numpy()
+        first_node_choice_one_hot_labels = batch_labels[
+            "correct_first_node_type_choices"
+        ][0].numpy()
         first_node_choice_true_type_idxs = first_node_choice_one_hot_labels.nonzero()[0]
-        first_node_choice_probs = tf.nn.softmax(predictions.first_node_type_logits[0, :]).numpy()
+        first_node_choice_probs = tf.nn.softmax(
+            predictions.first_node_type_logits[0, :]
+        ).numpy()
 
         self.render_atom_data(
             MoleculeGenerationAtomChoiceInfo(
@@ -193,7 +205,9 @@ class GraphGenerationVisualiser(ABC):
 
             if step in graph_to_valid_attachment_point_choices:
                 indices = list(
-                    np.where(node_to_partial_graph[valid_attachment_point_choices] == step)[0]
+                    np.where(
+                        node_to_partial_graph[valid_attachment_point_choices] == step
+                    )[0]
                 )
                 logits = predictions.attachment_point_selection_logits.numpy()[indices]
 
@@ -209,11 +223,17 @@ class GraphGenerationVisualiser(ABC):
                 self.render_attachment_point_selection_step(
                     step,
                     MoleculeGenerationAttachmentPointChoiceInfo(
-                        partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[step],
+                        partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[
+                            step
+                        ],
                         motif_nodes=added_motif_nodes,
-                        candidate_attachment_points=graph_to_valid_attachment_point_choices[step],
+                        candidate_attachment_points=graph_to_valid_attachment_point_choices[
+                            step
+                        ],
                         candidate_idx_to_prob=tf.nn.softmax(logits),
-                        correct_attachment_point_idx=graph_to_correct_attachment_point_choice[step],
+                        correct_attachment_point_idx=graph_to_correct_attachment_point_choice[
+                            step
+                        ],
                     ),
                 )
             else:
@@ -224,7 +244,9 @@ class GraphGenerationVisualiser(ABC):
                 ]
                 # The special "no more edges" choices are appended to the end, so get that one:
                 edge_choice_scores.append(
-                    predictions.edge_candidate_logits[total_num_valid_edge_choices + step].numpy()
+                    predictions.edge_candidate_logits[
+                        total_num_valid_edge_choices + step
+                    ].numpy()
                 )
                 edge_choice_scores = np.array(edge_choice_scores)
                 edge_choice_logprobs = tf.nn.log_softmax(edge_choice_scores).numpy()
@@ -232,10 +254,13 @@ class GraphGenerationVisualiser(ABC):
                 candidate_edge_infos = []
                 any_edge_candidate_correct = False
                 for i, edge_choice_index in enumerate(edge_choice_indices):
-                    tgt_idx = batch_features["valid_edge_choices"][edge_choice_index, 1].numpy()
+                    tgt_idx = batch_features["valid_edge_choices"][
+                        edge_choice_index, 1
+                    ].numpy()
                     tgt_node_orig_idx = partial_node_to_orig_node_id[tgt_idx]
                     choice_correct = (
-                        batch_labels["correct_edge_choices"][edge_choice_index].numpy() > 0
+                        batch_labels["correct_edge_choices"][edge_choice_index].numpy()
+                        > 0
                     )
                     any_edge_candidate_correct |= choice_correct
                     type_logprobs = tf.nn.log_softmax(
@@ -255,7 +280,9 @@ class GraphGenerationVisualiser(ABC):
                     step,
                     MoleculeGenerationEdgeChoiceInfo(
                         focus_node_idx=focus_node_orig_idx,
-                        partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[step],
+                        partial_molecule_adjacency_lists=trace_sample.partial_adjacency_lists[
+                            step
+                        ],
                         candidate_edge_infos=candidate_edge_infos,
                         no_edge_score=edge_choice_scores[-1],
                         no_edge_logprob=edge_choice_logprobs[-1],
@@ -265,7 +292,9 @@ class GraphGenerationVisualiser(ABC):
 
             if step in steps_requiring_node_choices:
                 node_choice_idx = np.where(steps_requiring_node_choices == step)[0][0]
-                one_hot_labels = batch_labels["correct_node_type_choices"][node_choice_idx].numpy()
+                one_hot_labels = batch_labels["correct_node_type_choices"][
+                    node_choice_idx
+                ].numpy()
                 true_type_idx = one_hot_labels.nonzero()[0]
                 self.render_atom_data(
                     MoleculeGenerationAtomChoiceInfo(
@@ -319,7 +348,9 @@ class GraphGenerationVisualiser(ABC):
                     MoleculeGenerationAtomChoiceInfo(
                         node_idx=step_info.node_idx,
                         true_type_idx=step_info.true_type_idx,
-                        type_idx_to_prob=np.concatenate(([0.0], step_info.type_idx_to_prob)),
+                        type_idx_to_prob=np.concatenate(
+                            ([0.0], step_info.type_idx_to_prob)
+                        ),
                     ),
                     choice_descr=(
                         "next addition to partial molecule"
@@ -328,6 +359,8 @@ class GraphGenerationVisualiser(ABC):
                     ),
                 )
             else:
-                raise ValueError(f"Unrecognized generation step info class: {step_info.__class__}")
+                raise ValueError(
+                    f"Unrecognized generation step info class: {step_info.__class__}"
+                )
 
             first_step_done = True

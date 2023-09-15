@@ -127,7 +127,9 @@ def graph_sample_to_cgvae_trace(graph_sample: GraphSample) -> GraphTraceSample:
             break
         focus_node_idx = exploration_queue.get()
         node_states[focus_node_idx] = NodeState.FOCUS
-        edges_to_add = get_node_edges(node_idx_to_neighbours, focus_node_idx, node_states)
+        edges_to_add = get_node_edges(
+            node_idx_to_neighbours, focus_node_idx, node_states
+        )
         edges_to_open_nodes = get_open_edges(focus_node_idx, node_states)
         random.shuffle(edges_to_add)
         while edges_to_add:
@@ -151,9 +153,13 @@ def graph_sample_to_cgvae_trace(graph_sample: GraphSample) -> GraphTraceSample:
             # Get the edge that we actually do add:
             edge = edges_to_add.pop()
             # Add it to the molecule:
-            mol.AddBond(edge.source, edge.target, EDGE_TYPE_IDX_TO_RDKIT_TYPE[edge.type])
+            mol.AddBond(
+                edge.source, edge.target, EDGE_TYPE_IDX_TO_RDKIT_TYPE[edge.type]
+            )
             # And remove that edge from the 'edges_to_open_nodes' list.
-            edges_to_open_nodes.remove(Edge(source=edge.source, target=edge.target, type=-1))
+            edges_to_open_nodes.remove(
+                Edge(source=edge.source, target=edge.target, type=-1)
+            )
 
             # Record the current state of the partial adjacency list, then add the selected edge:
             generation_trace.append(deepcopy(partial_adjacency_list))
@@ -193,7 +199,9 @@ def graph_sample_to_cgvae_trace(graph_sample: GraphSample) -> GraphTraceSample:
     return result
 
 
-def _convert_np_to_edgecollection(arrays: Union[List[np.ndarray], np.ndarray]) -> EdgeCollection:
+def _convert_np_to_edgecollection(
+    arrays: Union[List[np.ndarray], np.ndarray]
+) -> EdgeCollection:
     """Convert a numpy array or list of arrays, representing adjacency lists, into an EdgeCollection."""
     if isinstance(arrays, np.ndarray):
         arrays = [arrays]
@@ -345,7 +353,9 @@ def convert_lists_to_graph_trace_sample(
 
     # Double check that we have added the same number of all of the steps.
     n = len(partial_graphs)
-    assert len(focus_nodes) == n, "Must be the same number of focus nodes as partial graphs."
+    assert (
+        len(focus_nodes) == n
+    ), "Must be the same number of focus nodes as partial graphs."
     assert (
         len(correct_edge_choices) == n
     ), "Must have the same number of correct edge choices as partial graphs."
@@ -453,7 +463,9 @@ def get_node_edges(
     return unlocked_edges
 
 
-def get_open_edges(focus_node_idx: int, node_states: Dict[int, NodeState]) -> EdgeCollection:
+def get_open_edges(
+    focus_node_idx: int, node_states: Dict[int, NodeState]
+) -> EdgeCollection:
     """Get the edges which have one end at the given focus node and the other end at a non-closed
     node.
 
@@ -492,7 +504,9 @@ def get_open_edges(focus_node_idx: int, node_states: Dict[int, NodeState]) -> Ed
     return unlocked_edges
 
 
-def calculate_source_to_targets_dict(adjacency_list: AdjacencyList) -> Dict[int, EdgeCollection]:
+def calculate_source_to_targets_dict(
+    adjacency_list: AdjacencyList,
+) -> Dict[int, EdgeCollection]:
     """Convert an of adjacency list into a dict from source node to EdgeCollection.
 
     Example use:
@@ -520,7 +534,9 @@ def __symmetrize_adjacency_list(adjacency_list):
     for edge in adjacency_list:
         new_adjacency_list.append(edge)
         if edge.source != edge.target:
-            new_adjacency_list.append(Edge(source=edge.target, target=edge.source, type=edge.type))
+            new_adjacency_list.append(
+                Edge(source=edge.target, target=edge.source, type=edge.type)
+            )
     return new_adjacency_list
 
 

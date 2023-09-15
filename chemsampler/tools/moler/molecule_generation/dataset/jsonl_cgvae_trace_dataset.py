@@ -2,7 +2,9 @@
 import logging
 from typing import Any, Dict
 
-from molecule_generation.dataset.jsonl_abstract_trace_dataset import JSONLAbstractTraceDataset
+from molecule_generation.dataset.jsonl_abstract_trace_dataset import (
+    JSONLAbstractTraceDataset,
+)
 
 logger = logging.getLogger(__name__)
 

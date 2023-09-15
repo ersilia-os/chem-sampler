@@ -104,7 +104,9 @@ def compute_canonical_atom_order(mol: Mol) -> List[int]:
     _ = Chem.MolToSmiles(mol)
 
     return list(
-        mol.GetPropsAsDict(includePrivate=True, includeComputed=True)["_smilesAtomOutputOrder"]
+        mol.GetPropsAsDict(includePrivate=True, includeComputed=True)[
+            "_smilesAtomOutputOrder"
+        ]
     )
 
 

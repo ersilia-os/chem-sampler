@@ -93,7 +93,11 @@ def test_generation_trace_for_two_nodes():
 
     # Then:
     assert generation_trace.focus_nodes == [0, 0, 1]
-    assert generation_trace.correct_edge_choices == [[Edge(source=0, target=1, type=0)], [], []]
+    assert generation_trace.correct_edge_choices == [
+        [Edge(source=0, target=1, type=0)],
+        [],
+        [],
+    ]
     assert generation_trace.full_graph == simple_graph
 
     unconnected_graph = GraphSample(
@@ -106,11 +110,16 @@ def test_generation_trace_for_two_nodes():
     )
     expected_partial_graphs = [unconnected_graph, simple_graph, simple_graph]
     partial_graphs_without_mol = [
-        partial_graph[:-1] + (None,) for partial_graph in generation_trace.partial_graphs
+        partial_graph[:-1] + (None,)
+        for partial_graph in generation_trace.partial_graphs
     ]
     assert partial_graphs_without_mol == expected_partial_graphs
 
-    assert generation_trace.valid_edge_choices == [[Edge(source=0, target=1, type=-1)], [], []]
+    assert generation_trace.valid_edge_choices == [
+        [Edge(source=0, target=1, type=-1)],
+        [],
+        [],
+    ]
 
 
 @patch("random.choice", mock_random_choice)
@@ -167,7 +176,10 @@ def test_generation_trace_for_three_nodes():
         smiles_string="CCF",
     )
     two_edge_graph = GraphSample(
-        adjacency_list=[Edge(source=0, target=2, type=0), Edge(source=0, target=1, type=0)],
+        adjacency_list=[
+            Edge(source=0, target=2, type=0),
+            Edge(source=0, target=1, type=0),
+        ],
         num_edge_types=num_edge_types,
         node_features=node_features,
         graph_properties=graph_properties,
@@ -195,7 +207,8 @@ def test_generation_trace_for_three_nodes():
         three_edge_graph,
     ]
     partial_graphs_without_mol = [
-        partial_graph[:-1] + (None,) for partial_graph in generation_trace.partial_graphs
+        partial_graph[:-1] + (None,)
+        for partial_graph in generation_trace.partial_graphs
     ]
     assert partial_graphs_without_mol == expected_partial_graphs
 
@@ -265,4 +278,13 @@ def test_generation_trace_for_four_nodes():
         [],
     ]
 
-    assert generation_trace.distance_to_target == [[0, 0, 0], [0, 0], [0], [2, 0], [2], [3], [], []]
+    assert generation_trace.distance_to_target == [
+        [0, 0, 0],
+        [0, 0],
+        [0],
+        [2, 0],
+        [2],
+        [3],
+        [],
+        [],
+    ]

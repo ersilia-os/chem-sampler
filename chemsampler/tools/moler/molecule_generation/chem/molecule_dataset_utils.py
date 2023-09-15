@@ -76,7 +76,9 @@ def compute_smiles_dataset_metadata(
         ]
 
     need_to_init_featurisers = len(uninitialised_featurisers) > 0
-    need_to_init_motifs = motif_vocabulary is None and motif_extraction_settings is not None
+    need_to_init_motifs = (
+        motif_vocabulary is None and motif_extraction_settings is not None
+    )
 
     if not need_to_init_featurisers:
         featurisers_descr = "provided and marked as final [action: none]"
@@ -192,7 +194,10 @@ class FeaturisedData:
             featuriser_data = train_data
             len_featurizer_data = len(train_data)
 
-        self._atom_feature_extractors, self._motif_vocabulary = compute_smiles_dataset_metadata(
+        (
+            self._atom_feature_extractors,
+            self._motif_vocabulary,
+        ) = compute_smiles_dataset_metadata(
             mol_data=featuriser_data,
             data_len=len_featurizer_data,
             quiet=quiet,
@@ -378,7 +383,9 @@ def molecule_to_adjacency_lists(mol: Mol) -> List[List[Tuple[int, int]]]:
     bonds = mol.GetBonds()
     for bond in bonds:
         bond_type_idx = BOND_DICT[str(bond.GetBondType())]
-        adjacency_lists[bond_type_idx].append((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+        adjacency_lists[bond_type_idx].append(
+            (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+        )
     return adjacency_lists
 
 
@@ -429,12 +436,15 @@ def featurise_atoms(
         atom_symbol = get_atom_symbol(atom)
 
         atom_features = [
-            atom_featuriser.featurise(atom) for atom_featuriser in atom_feature_extractors
+            atom_featuriser.featurise(atom)
+            for atom_featuriser in atom_feature_extractors
         ]
 
         if motif_vocabulary is not None:
             motif_or_atom_id = enclosing_motif_id.get(
-                atom_id, atom_type_feature_extractor.type_name_to_index(atom_symbol) + num_motifs
+                atom_id,
+                atom_type_feature_extractor.type_name_to_index(atom_symbol)
+                + num_motifs,
             )
 
             assert motif_or_atom_id < num_atom_classes
@@ -503,7 +513,9 @@ def molecule_to_graph(
     for atom in mol.GetAtoms():
         graph["node_types"].append(get_atom_symbol(atom))
 
-    node_features = featurise_atoms(mol, atom_feature_extractors, motif_vocabulary, motifs)
+    node_features = featurise_atoms(
+        mol, atom_feature_extractors, motif_vocabulary, motifs
+    )
 
     graph["node_features"] = [
         atom_features.tolist() for atom_features in node_features.real_valued_features
@@ -548,7 +560,11 @@ def _lazy_smiles_to_mols(
 
         for processed_datapoint in processed_smiles:
             if filter_failed and processed_datapoint["mol"] is None:
-                print("W: Failed to process {} - dropping".format(processed_datapoint["SMILES"]))
+                print(
+                    "W: Failed to process {} - dropping".format(
+                        processed_datapoint["SMILES"]
+                    )
+                )
             else:
                 yield processed_datapoint
 

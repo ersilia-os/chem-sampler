@@ -1,6 +1,6 @@
 from typing import Dict, Optional, Any, Iterable, Tuple, List
 
-import tensorflow as  tf
+import tensorflow as tf
 from tf2_gnn import GraphTaskModel
 import numpy as np
 
@@ -25,7 +25,9 @@ class MoLeRBaseModel(GraphTaskModel):
         return cls.__decoder_prefix
 
     @classmethod
-    def get_default_hyperparameters(cls, mp_style: Optional[str] = None) -> Dict[str, Any]:
+    def get_default_hyperparameters(
+        cls, mp_style: Optional[str] = None
+    ) -> Dict[str, Any]:
         base_hypers = super().get_default_hyperparameters(mp_style)
         base_hypers.update(
             {
@@ -67,9 +69,13 @@ class MoLeRBaseModel(GraphTaskModel):
         )
 
         # Get some information out from the dataset:
-        next_node_type_distribution = dataset.metadata.get("train_next_node_type_distribution")
+        next_node_type_distribution = dataset.metadata.get(
+            "train_next_node_type_distribution"
+        )
 
-        class_weight_factor = self._params.get("node_type_predictor_class_loss_weight_factor", 0.0)
+        class_weight_factor = self._params.get(
+            "node_type_predictor_class_loss_weight_factor", 0.0
+        )
 
         if not (0.0 <= class_weight_factor <= 1.0):
             raise ValueError(
@@ -109,7 +115,9 @@ class MoLeRBaseModel(GraphTaskModel):
         # Finally, the decoder layer, which does all kinds of important things:
         decoder_prefix = self.decoder_prefix()
         n = len(decoder_prefix)
-        decoder_hypers = {k[n:]: v for k, v in self._params.items() if k.startswith(decoder_prefix)}
+        decoder_hypers = {
+            k[n:]: v for k, v in self._params.items() if k.startswith(decoder_prefix)
+        }
         self._decoder_layer = MoLeRDecoder(
             decoder_hypers,
             name="MoLeRDecoder",
@@ -121,7 +129,9 @@ class MoLeRBaseModel(GraphTaskModel):
         )
 
         # Moving average variables, will be filled later:
-        self._logged_loss_smoothing_window_size = self._params["logged_loss_smoothing_window_size"]
+        self._logged_loss_smoothing_window_size = self._params[
+            "logged_loss_smoothing_window_size"
+        ]
 
         # Deal with Tensorboard's global state:
         tf.summary.experimental.set_step(0)
@@ -153,7 +163,9 @@ class MoLeRBaseModel(GraphTaskModel):
             )
             self._decoder_layer.build(
                 MoLeRDecoderInput(
-                    node_features=tf.TensorShape((None, input_shapes["partial_node_features"][-1])),
+                    node_features=tf.TensorShape(
+                        (None, input_shapes["partial_node_features"][-1])
+                    ),
                     node_categorical_features=tf.TensorShape((None,)),
                     adjacency_lists=partial_adjacency_lists,
                     num_graphs_in_batch=input_shapes["num_partial_graphs_in_batch"],
@@ -165,7 +177,9 @@ class MoLeRBaseModel(GraphTaskModel):
                     ],
                     candidate_edges=input_shapes["valid_edge_choices"],
                     candidate_edge_features=input_shapes["edge_features"],
-                    candidate_attachment_points=input_shapes["valid_attachment_point_choices"],
+                    candidate_attachment_points=input_shapes[
+                        "valid_attachment_point_choices"
+                    ],
                 )
             )
 
@@ -177,7 +191,9 @@ class MoLeRBaseModel(GraphTaskModel):
     ) -> Tuple[tf.Tensor, MoLeRDecoderMetrics]:
 
         decoder_metrics = self.decoder.compute_metrics(
-            batch_features=batch_features, batch_labels=batch_labels, task_output=task_output
+            batch_features=batch_features,
+            batch_labels=batch_labels,
+            task_output=task_output,
         )
 
         total_loss = (
@@ -208,7 +224,9 @@ class MoLeRBaseModel(GraphTaskModel):
         decoder_output = self._decoder_layer(
             MoLeRDecoderInput(
                 node_features=batch_features["partial_node_features"],
-                node_categorical_features=batch_features["partial_node_categorical_features"],
+                node_categorical_features=batch_features[
+                    "partial_node_categorical_features"
+                ],
                 adjacency_lists=partial_adjacency_lists,
                 num_graphs_in_batch=batch_features["num_partial_graphs_in_batch"],
                 node_to_graph_map=batch_features["node_to_partial_graph_map"],
@@ -219,7 +237,9 @@ class MoLeRBaseModel(GraphTaskModel):
                 ],
                 candidate_edges=batch_features["valid_edge_choices"],
                 candidate_edge_features=batch_features["edge_features"],
-                candidate_attachment_points=batch_features["valid_attachment_point_choices"],
+                candidate_attachment_points=batch_features[
+                    "valid_attachment_point_choices"
+                ],
             ),
             training=training,
         )
@@ -252,7 +272,9 @@ class MoLeRBaseModel(GraphTaskModel):
     def _dict_average(task_results, key):
         return np.average([r[key] for r in task_results])
 
-    def _get_graph_generation_losses(self, task_results: List[Any]) -> List[Tuple[str, str]]:
+    def _get_graph_generation_losses(
+        self, task_results: List[Any]
+    ) -> List[Tuple[str, str]]:
         """Average the reconstruction losses recorded in task_results"""
 
         average_node_classification_loss = self._dict_average(
@@ -271,7 +293,10 @@ class MoLeRBaseModel(GraphTaskModel):
             average_attachment_point_selection_loss = None
         graph_generation_losses = [
             ("Avg node class. loss:", f"{average_node_classification_loss: 7.4f}\n"),
-            ("Avg first node class. loss:", f"{average_first_node_classification_loss: 7.4f}\n"),
+            (
+                "Avg first node class. loss:",
+                f"{average_first_node_classification_loss: 7.4f}\n",
+            ),
             ("Avg edge selection loss:", f"{average_edge_loss: 7.4f}\n"),
             ("Avg edge type loss:", f"{average_edge_type_loss: 7.4f}\n"),
         ]
@@ -287,9 +312,13 @@ class MoLeRBaseModel(GraphTaskModel):
         return graph_generation_losses
 
     @staticmethod
-    def _format_graph_generation_losses(graph_generation_losses: List[Tuple[str, str]]) -> str:
+    def _format_graph_generation_losses(
+        graph_generation_losses: List[Tuple[str, str]]
+    ) -> str:
         result_string = ""
-        name_column_width = max(len(prefix) for (prefix, _) in graph_generation_losses) + 1
+        name_column_width = (
+            max(len(prefix) for (prefix, _) in graph_generation_losses) + 1
+        )
 
         for prefix, loss in graph_generation_losses:
             # Use extra spaces to align all graph generation losses.

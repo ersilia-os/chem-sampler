@@ -37,5 +37,7 @@ def test_topology_features(molecule):
 
     # Then:
     assert len(edge_features) == len(potential_edges)
-    expected_edge_features = np.array([[1, 0], [1, 1], [1, 0], [0, 0]], dtype=np.float32)
+    expected_edge_features = np.array(
+        [[1, 0], [1, 1], [1, 0], [0, 0]], dtype=np.float32
+    )
     np.testing.assert_array_equal(edge_features, expected_edge_features)

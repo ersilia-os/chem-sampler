@@ -8,7 +8,6 @@ logger = getLogger()
 
 
 class Dataset(object):
-
     def __init__(self, sent, pos, params):
 
         self.eos_index = params.eos_index
@@ -41,7 +40,9 @@ class Dataset(object):
         Sanity checks.
         """
         eos = self.eos_index
-        assert len(self.pos) == (self.sent[self.pos[:, 1]] == eos).sum()  # check sentences indices
+        assert (
+            len(self.pos) == (self.sent[self.pos[:, 1]] == eos).sum()
+        )  # check sentences indices
         # assert self.lengths.min() > 0                                     # check empty sentences
 
     def batch_sentences(self, sentences):
@@ -52,12 +53,14 @@ class Dataset(object):
         """
         # sentences = sorted(sentences, key=lambda x: len(x), reverse=True)
         lengths = torch.LongTensor([len(s) + 2 for s in sentences])
-        sent = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(self.pad_index)
+        sent = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(
+            self.pad_index
+        )
 
         sent[0] = self.eos_index
         for i, s in enumerate(sentences):
             if lengths[i] > 2:  # if sentence not empty
-                sent[1:lengths[i] - 1, i].copy_(torch.from_numpy(s.astype(np.int64)))
+                sent[1 : lengths[i] - 1, i].copy_(torch.from_numpy(s.astype(np.int64)))
             sent[lengths[i] - 1, i] = self.eos_index
 
         return sent, lengths
@@ -104,7 +107,7 @@ class Dataset(object):
         min_pos = self.pos.min()
         max_pos = self.pos.max()
         self.pos -= min_pos
-        self.sent = self.sent[min_pos:max_pos + 1]
+        self.sent = self.sent[min_pos : max_pos + 1]
 
         # sanity checks
         self.check()
@@ -118,13 +121,20 @@ class Dataset(object):
         for sentence_ids in batches:
             if 0 < self.max_batch_size < len(sentence_ids):
                 np.random.shuffle(sentence_ids)
-                sentence_ids = sentence_ids[:self.max_batch_size]
+                sentence_ids = sentence_ids[: self.max_batch_size]
             pos = self.pos[sentence_ids]
             sent = [self.sent[a:b] for a, b in pos]
             sent = self.batch_sentences(sent)
             yield (sent, sentence_ids) if return_indices else sent
 
-    def get_iterator(self, shuffle, group_by_size=False, n_sentences=-1, seed=None, return_indices=False):
+    def get_iterator(
+        self,
+        shuffle,
+        group_by_size=False,
+        n_sentences=-1,
+        seed=None,
+        return_indices=False,
+    ):
         """
         Return a sentences iterator.
         """
@@ -146,17 +156,21 @@ class Dataset(object):
 
         # group sentences by lengths
         if group_by_size:
-            indices = indices[np.argsort(lengths[indices], kind='mergesort')]
+            indices = indices[np.argsort(lengths[indices], kind="mergesort")]
 
         # create batches - either have a fixed number of sentences, or a similar number of tokens
         if self.tokens_per_batch == -1:
-            batches = np.array_split(indices, math.ceil(len(indices) * 1. / self.batch_size))
+            batches = np.array_split(
+                indices, math.ceil(len(indices) * 1.0 / self.batch_size)
+            )
         else:
             batch_ids = np.cumsum(lengths[indices]) // self.tokens_per_batch
             _, bounds = np.unique(batch_ids, return_index=True)
-            batches = [indices[bounds[i]:bounds[i + 1]] for i in range(len(bounds) - 1)]
+            batches = [
+                indices[bounds[i] : bounds[i + 1]] for i in range(len(bounds) - 1)
+            ]
             if bounds[-1] < len(indices):
-                batches.append(indices[bounds[-1]:])
+                batches.append(indices[bounds[-1] :])
 
         # optionally shuffle batches
         if shuffle:
@@ -172,7 +186,6 @@ class Dataset(object):
 
 
 class ParallelDataset(Dataset):
-
     def __init__(self, sent1, pos1, sent2, pos2, params):
 
         self.eos_index = params.eos_index
@@ -209,13 +222,17 @@ class ParallelDataset(Dataset):
         Sanity checks.
         """
         eos = self.eos_index
-        assert len(self.pos1) == len(self.pos2) > 0                          # check number of sentences
-        assert len(self.pos1) == (self.sent1[self.pos1[:, 1]] == eos).sum()  # check sentences indices
-        assert len(self.pos2) == (self.sent2[self.pos2[:, 1]] == eos).sum()  # check sentences indices
-        assert eos <= self.sent1.min() < self.sent1.max()                    # check dictionary indices
-        assert eos <= self.sent2.min() < self.sent2.max()                    # check dictionary indices
-        assert self.lengths1.min() > 0                                       # check empty sentences
-        assert self.lengths2.min() > 0                                       # check empty sentences
+        assert len(self.pos1) == len(self.pos2) > 0  # check number of sentences
+        assert (
+            len(self.pos1) == (self.sent1[self.pos1[:, 1]] == eos).sum()
+        )  # check sentences indices
+        assert (
+            len(self.pos2) == (self.sent2[self.pos2[:, 1]] == eos).sum()
+        )  # check sentences indices
+        assert eos <= self.sent1.min() < self.sent1.max()  # check dictionary indices
+        assert eos <= self.sent2.min() < self.sent2.max()  # check dictionary indices
+        assert self.lengths1.min() > 0  # check empty sentences
+        assert self.lengths2.min() > 0  # check empty sentences
 
     def remove_empty_sentences(self):
         """
@@ -270,8 +287,8 @@ class ParallelDataset(Dataset):
         max_pos2 = self.pos2.max()
         self.pos1 -= min_pos1
         self.pos2 -= min_pos2
-        self.sent1 = self.sent1[min_pos1:max_pos1 + 1]
-        self.sent2 = self.sent2[min_pos2:max_pos2 + 1]
+        self.sent1 = self.sent1[min_pos1 : max_pos1 + 1]
+        self.sent2 = self.sent2[min_pos2 : max_pos2 + 1]
 
         # sanity checks
         self.check()
@@ -285,14 +302,16 @@ class ParallelDataset(Dataset):
         for sentence_ids in batches:
             if 0 < self.max_batch_size < len(sentence_ids):
                 np.random.shuffle(sentence_ids)
-                sentence_ids = sentence_ids[:self.max_batch_size]
+                sentence_ids = sentence_ids[: self.max_batch_size]
             pos1 = self.pos1[sentence_ids]
             pos2 = self.pos2[sentence_ids]
             sent1 = self.batch_sentences([self.sent1[a:b] for a, b in pos1])
             sent2 = self.batch_sentences([self.sent2[a:b] for a, b in pos2])
             yield (sent1, sent2, sentence_ids) if return_indices else (sent1, sent2)
 
-    def get_iterator(self, shuffle, group_by_size=False, n_sentences=-1, return_indices=False):
+    def get_iterator(
+        self, shuffle, group_by_size=False, n_sentences=-1, return_indices=False
+    ):
         """
         Return a sentences iterator.
         """
@@ -311,17 +330,21 @@ class ParallelDataset(Dataset):
 
         # group sentences by lengths
         if group_by_size:
-            indices = indices[np.argsort(lengths[indices], kind='mergesort')]
+            indices = indices[np.argsort(lengths[indices], kind="mergesort")]
 
         # create batches - either have a fixed number of sentences, or a similar number of tokens
         if self.tokens_per_batch == -1:
-            batches = np.array_split(indices, math.ceil(len(indices) * 1. / self.batch_size))
+            batches = np.array_split(
+                indices, math.ceil(len(indices) * 1.0 / self.batch_size)
+            )
         else:
             batch_ids = np.cumsum(lengths[indices]) // self.tokens_per_batch
             _, bounds = np.unique(batch_ids, return_index=True)
-            batches = [indices[bounds[i]:bounds[i + 1]] for i in range(len(bounds) - 1)]
+            batches = [
+                indices[bounds[i] : bounds[i + 1]] for i in range(len(bounds) - 1)
+            ]
             if bounds[-1] < len(indices):
-                batches.append(indices[bounds[-1]:])
+                batches.append(indices[bounds[-1] :])
 
         # optionally shuffle batches
         if shuffle:

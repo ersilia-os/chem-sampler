@@ -9,10 +9,18 @@ from rdkit.Chem.rdchem import Atom, BondType, Mol, RWMol
 from tf2_gnn.data.utils import get_tied_edge_types, process_adjacency_lists
 
 from molecule_generation.chem.rdkit_helpers import remove_atoms_outside_frag
-from molecule_generation.preprocessing.cgvae_generation_trace import graph_sample_to_cgvae_trace
+from molecule_generation.preprocessing.cgvae_generation_trace import (
+    graph_sample_to_cgvae_trace,
+)
 from molecule_generation.preprocessing.generation_order import GenerationOrder, BFSOrder
-from molecule_generation.preprocessing.moler_generation_trace import graph_sample_to_MoLeR_trace
-from molecule_generation.preprocessing.graph_sample import Edge, GraphSample, GraphTraceStep
+from molecule_generation.preprocessing.moler_generation_trace import (
+    graph_sample_to_MoLeR_trace,
+)
+from molecule_generation.preprocessing.graph_sample import (
+    Edge,
+    GraphSample,
+    GraphTraceStep,
+)
 from molecule_generation.dataset.trace_sample import TraceSample
 from molecule_generation.chem.motif_utils import (
     MotifAnnotation,
@@ -146,7 +154,9 @@ def convert_graph_sample_to_adjacency_list(
     return adjacency_lists
 
 
-def correct_edge_to_multihot_encoding(correct_edges: np.ndarray, edges: np.ndarray) -> np.ndarray:
+def correct_edge_to_multihot_encoding(
+    correct_edges: np.ndarray, edges: np.ndarray
+) -> np.ndarray:
     """Convert a correct index list into a multi-hot encoding of the valid edge choices.
 
     Args:
@@ -288,14 +298,20 @@ def __inner_convert_graph_sample_to_graph_trace(
     try:
         if include_generation_trace:
             if MoLeR_style_trace:
-                generation_trace = graph_sample_to_MoLeR_trace(graph, generation_order_cls)
+                generation_trace = graph_sample_to_MoLeR_trace(
+                    graph, generation_order_cls
+                )
                 # Reset graph to what is used in the generation trace, which may have changed the node order:
                 graph = generation_trace.full_graph
             else:
-                assert generation_order_cls is BFSOrder, "For CGVAE only BFS order is supported."
+                assert (
+                    generation_order_cls is BFSOrder
+                ), "For CGVAE only BFS order is supported."
                 generation_trace = graph_sample_to_cgvae_trace(graph)
 
-            correct_first_node_type_choices = generation_trace.correct_first_node_type_choices
+            correct_first_node_type_choices = (
+                generation_trace.correct_first_node_type_choices
+            )
         else:
             generation_trace = []
             correct_first_node_type_choices = None
@@ -327,8 +343,12 @@ def __inner_convert_graph_sample_to_graph_trace(
             add_self_loop_edges,
         )
 
-        correct_attachment_point_choices.append(trace_step.correct_attachment_point_choice)
-        valid_attachment_point_choices.append(np.array(trace_step.valid_attachment_point_choices))
+        correct_attachment_point_choices.append(
+            trace_step.correct_attachment_point_choice
+        )
+        valid_attachment_point_choices.append(
+            np.array(trace_step.valid_attachment_point_choices)
+        )
         correct_node_type_choices.append(trace_step.correct_node_type_choices)
 
         edge_constraint_mask = constrain_edge_choices_based_on_valence(
@@ -351,7 +371,9 @@ def __inner_convert_graph_sample_to_graph_trace(
 
         focus_node_list.append(trace_step.focus_node)
         partial_adjacency_lists.append(partial_adjacency_list)
-        correct_edges, edge_types = numpyify_edge_choices_and_types(trace_step.correct_edge_choices)
+        correct_edges, edge_types = numpyify_edge_choices_and_types(
+            trace_step.correct_edge_choices
+        )
         onehot_edge_types = onehot_encoding(edge_types, graph.num_edge_types)
         edge_type_mask = constrain_edge_types_based_on_valence(
             start_node=trace_step.focus_node,
@@ -396,13 +418,15 @@ def __inner_convert_graph_sample_to_graph_trace(
         partial_node_categorical_feature_list.append(partial_node_categorical_features)
 
         # Calculate the features of potential edges:
-        constrained_distances = np.array(trace_step.distance_to_target, dtype=np.float32)[
-            edge_constraint_mask
-        ].reshape(-1, 1)
+        constrained_distances = np.array(
+            trace_step.distance_to_target, dtype=np.float32
+        )[edge_constraint_mask].reshape(-1, 1)
         topology_features = calculate_topology_features(
             constrained_edges, trace_step.partial_graph.mol
         )
-        edge_features = np.concatenate([constrained_distances, topology_features], axis=-1)
+        edge_features = np.concatenate(
+            [constrained_distances, topology_features], axis=-1
+        )
         edge_feature_list.append(edge_features)
 
         correct_edge_choices.append(multihot_correct_edges)
@@ -450,12 +474,16 @@ def convert_jsonl_file_to_graph_samples(
         f"Converting to graph samples with {num_processes} processes and chunksize {chunksize}."
     )
     with get_worker_pool(num_processes) as p:
-        yield from p.imap(_convert_single_jsonl_to_graph_sample, data, chunksize=chunksize)
+        yield from p.imap(
+            _convert_single_jsonl_to_graph_sample, data, chunksize=chunksize
+        )
 
 
 def _convert_single_jsonl_to_graph_sample(datum: Dict[str, Any]) -> GraphSample:
     """Convert from a standard datum loaded from the jsonl format to a GraphSample object."""
-    assert "graph" in datum.keys(), "The datum must contain graph information in the 'graph' key."
+    assert (
+        "graph" in datum.keys()
+    ), "The datum must contain graph information in the 'graph' key."
     graph = datum["graph"]
     assert {"node_types", "node_features", "adjacency_lists"}.issubset(graph.keys()), (
         f"The graph representation must contain keys 'node_features', 'node_types', and "
@@ -469,7 +497,9 @@ def _convert_single_jsonl_to_graph_sample(datum: Dict[str, Any]) -> GraphSample:
         if not adjacency_list:
             continue
         for edge in adjacency_list:
-            converted_adjacency_list.append(Edge(source=edge[0], target=edge[1], type=i))
+            converted_adjacency_list.append(
+                Edge(source=edge[0], target=edge[1], type=i)
+            )
 
     motifs = []
 

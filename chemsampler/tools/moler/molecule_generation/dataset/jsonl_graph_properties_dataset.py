@@ -20,7 +20,9 @@ class GraphWithPropertiesSample(GraphSample):
         node_features: List[np.ndarray],
         target_values: List[float],
     ):
-        super().__init__(adjacency_lists, type_to_node_to_num_incoming_edges, node_features)
+        super().__init__(
+            adjacency_lists, type_to_node_to_num_incoming_edges, node_features
+        )
         self._target_values = target_values
 
     @property
@@ -81,14 +83,14 @@ class JsonLGraphPropertiesDataset(JsonLGraphDataset[GraphWithPropertiesSample]):
         return super_hypers
 
     def __init__(
-        self,
-        params: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]] = None,
+        self, params: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(params, metadata=metadata)
         self._property_names = params["properties_to_use"]
         self._num_properties = len(self._property_names)
-        self._property_name_to_dataset_index: Dict[str, int] = {}  # Filled when loading data.
+        self._property_name_to_dataset_index: Dict[
+            str, int
+        ] = {}  # Filled when loading data.
         self._thresholds_for_classification: Dict[str, float] = {}
         self._property_name_to_type: Dict[str, PropertyTaskType] = {}
 
@@ -107,11 +109,17 @@ class JsonLGraphPropertiesDataset(JsonLGraphDataset[GraphWithPropertiesSample]):
                     "thresholds_for_classification"
                 ]
         for prop_name in self._property_names:
-            prop_type: Optional[str] = self.params["property_name_to_type"].get(prop_name)
+            prop_type: Optional[str] = self.params["property_name_to_type"].get(
+                prop_name
+            )
             if prop_type is not None:
-                self._property_name_to_type[prop_name] = PropertyTaskType[prop_type.upper()]
+                self._property_name_to_type[prop_name] = PropertyTaskType[
+                    prop_type.upper()
+                ]
             elif prop_name in self._thresholds_for_classification:
-                self._property_name_to_type[prop_name] = PropertyTaskType.BINARY_CLASSIFICATION
+                self._property_name_to_type[
+                    prop_name
+                ] = PropertyTaskType.BINARY_CLASSIFICATION
             else:
                 self._property_name_to_type[prop_name] = PropertyTaskType.REGRESSION
 
@@ -123,9 +131,14 @@ class JsonLGraphPropertiesDataset(JsonLGraphDataset[GraphWithPropertiesSample]):
                 prop: idx for idx, prop in enumerate(self.metadata["property_names"])
             }
 
-    def _process_raw_datapoint(self, datapoint: Dict[str, Any]) -> GraphWithPropertiesSample:
+    def _process_raw_datapoint(
+        self, datapoint: Dict[str, Any]
+    ) -> GraphWithPropertiesSample:
         node_features = datapoint["graph"]["node_features"]
-        type_to_adj_list, type_to_num_incoming_edges = self._process_raw_adjacency_lists(
+        (
+            type_to_adj_list,
+            type_to_num_incoming_edges,
+        ) = self._process_raw_adjacency_lists(
             raw_adjacency_lists=datapoint["graph"]["adjacency_lists"],
             num_nodes=len(node_features),
         )
@@ -172,7 +185,10 @@ class JsonLGraphPropertiesDataset(JsonLGraphDataset[GraphWithPropertiesSample]):
         return GraphBatchTFDataDescription(
             batch_features_types=data_description.batch_features_types,
             batch_features_shapes=data_description.batch_features_shapes,
-            batch_labels_types={**data_description.batch_labels_types, "target_values": tf.float32},
+            batch_labels_types={
+                **data_description.batch_labels_types,
+                "target_values": tf.float32,
+            },
             batch_labels_shapes={
                 **data_description.batch_labels_shapes,
                 "target_values": (None, self._num_properties),

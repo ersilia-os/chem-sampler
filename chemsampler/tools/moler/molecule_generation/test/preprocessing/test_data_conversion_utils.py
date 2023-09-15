@@ -59,7 +59,9 @@ def test_convert_graph_sample_to_adjacency_list_with_tie_no_self_loop(graph_samp
         np.array([[3, 4], [4, 3]], dtype=np.int32),
         np.array([[1, 2], [2, 1]], dtype=np.int32),
     ]
-    for calculated_adj_list, expected_adj_list in zip(adjacency_lists, expected_adjacency_lists):
+    for calculated_adj_list, expected_adj_list in zip(
+        adjacency_lists, expected_adjacency_lists
+    ):
         np.testing.assert_array_equal(calculated_adj_list, expected_adj_list)
 
 
@@ -81,7 +83,9 @@ def test_convert_graph_sample_to_adjacency_list_with_tie_with_self_loop(graph_sa
         np.array([[1, 2], [2, 1]], dtype=np.int32),
         np.array([[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]], dtype=np.int32),
     ]
-    for calculated_adj_list, expected_adj_list in zip(adjacency_lists, expected_adjacency_lists):
+    for calculated_adj_list, expected_adj_list in zip(
+        adjacency_lists, expected_adjacency_lists
+    ):
         np.testing.assert_array_equal(calculated_adj_list, expected_adj_list)
 
 
@@ -105,7 +109,9 @@ def test_convert_graph_sample_to_adjacency_list_no_tie_no_self_loop(graph_sample
         np.array([[4, 3]], dtype=np.int32),
         np.array([[2, 1]], dtype=np.int32),
     ]
-    for calculated_adj_list, expected_adj_list in zip(adjacency_lists, expected_adjacency_lists):
+    for calculated_adj_list, expected_adj_list in zip(
+        adjacency_lists, expected_adjacency_lists
+    ):
         np.testing.assert_array_equal(calculated_adj_list, expected_adj_list)
 
 
@@ -117,12 +123,18 @@ def test_convert_graph_sample_to_graph_trace_gives_correct_number_of_partial_gra
     add_self_loops = False
     tie_fwd_bkwd_edges = True
     num_edges = len(graph_sample.adjacency_list)
-    max_node_index = max([max(edge.source, edge.target) for edge in graph_sample.adjacency_list])
+    max_node_index = max(
+        [max(edge.source, edge.target) for edge in graph_sample.adjacency_list]
+    )
     num_nodes = max_node_index + 1
 
     # When:
     trace_sample = _convert_graph_sample_to_graph_trace(
-        graph_sample, num_edge_types, tie_fwd_bkwd_edges, add_self_loops, atom_feature_extractors
+        graph_sample,
+        num_edge_types,
+        tie_fwd_bkwd_edges,
+        add_self_loops,
+        atom_feature_extractors,
     )
 
     # Then:
@@ -136,8 +148,7 @@ def test_convert_graph_sample_to_graph_trace_gives_correct_number_of_partial_gra
 
 
 def test_convert_graph_sample_to_graph_trace_gives_correct_number_of_partial_properties(
-    graph_sample,
-    atom_feature_extractors,
+    graph_sample, atom_feature_extractors,
 ):
     # Given:
     num_edge_types = 3
@@ -146,7 +157,11 @@ def test_convert_graph_sample_to_graph_trace_gives_correct_number_of_partial_pro
 
     # When:
     trace_sample = _convert_graph_sample_to_graph_trace(
-        graph_sample, num_edge_types, tie_fwd_bkwd_edges, add_self_loops, atom_feature_extractors
+        graph_sample,
+        num_edge_types,
+        tie_fwd_bkwd_edges,
+        add_self_loops,
+        atom_feature_extractors,
     )
     num_partial_graphs = len(trace_sample.partial_adjacency_lists)
 
@@ -194,7 +209,22 @@ def test_simple_convert_adjacency_list_to_romol():
 
 def test_convert_adjacency_list_to_romol():
     # Given:
-    caffeine_atom_types = ["C", "N", "C", "N", "C", "C", "C", "O", "N", "C", "O", "N", "C", "C"]
+    caffeine_atom_types = [
+        "C",
+        "N",
+        "C",
+        "N",
+        "C",
+        "C",
+        "C",
+        "O",
+        "N",
+        "C",
+        "O",
+        "N",
+        "C",
+        "C",
+    ]
     # Caffeine has 14 heavy atoms in it. Let's make sure we've input the list correctly...
     assert len(caffeine_atom_types) == 14
     fragment_atom_types = ["F", "Cl", "C", "C", "N"]

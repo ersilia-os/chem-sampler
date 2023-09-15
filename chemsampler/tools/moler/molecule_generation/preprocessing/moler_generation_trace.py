@@ -113,7 +113,9 @@ def graph_sample_to_MoLeR_trace(
         graph_sample.adjacency_list, exploration_order
     )
 
-    valid_start_node_choices = [old_id_to_new_id_mapping[idx] for idx in valid_start_node_choices]
+    valid_start_node_choices = [
+        old_id_to_new_id_mapping[idx] for idx in valid_start_node_choices
+    ]
 
     all_valid_next_node_choices = [
         [old_id_to_new_id_mapping[idx] for idx in valid_next_node_choices]
@@ -187,7 +189,8 @@ def graph_sample_to_MoLeR_trace(
             node_symmetry_class[atom.atom_id] = atom.symmetry_class_id
 
     correct_first_node_type_choices: List[str] = [
-        node_types_for_next_type_prediction[node_idx] for node_idx in valid_start_node_choices
+        node_types_for_next_type_prediction[node_idx]
+        for node_idx in valid_start_node_choices
     ]
 
     def add_atom(atom_idx: int):
@@ -205,7 +208,9 @@ def graph_sample_to_MoLeR_trace(
         cur_partial_adjacency_list.append(edge)
 
     def edge_inside_motif(edge: Edge):
-        return equal_and_not_none(enclosing_motif_id[edge.source], enclosing_motif_id[edge.target])
+        return equal_and_not_none(
+            enclosing_motif_id[edge.source], enclosing_motif_id[edge.target]
+        )
 
     def add_generation_step(
         step_focus_node: int,
@@ -232,7 +237,10 @@ def graph_sample_to_MoLeR_trace(
 
         graph_distance_to_target.append(
             calculate_dist_from_focus_to_valid_target(
-                cur_partial_adjacency_list, step_focus_node, node_states, step_valid_edge_choices
+                cur_partial_adjacency_list,
+                step_focus_node,
+                node_states,
+                step_valid_edge_choices,
             )
         )
 
@@ -245,14 +253,18 @@ def graph_sample_to_MoLeR_trace(
     # Each motif is handled when we see its first node, which is the attachment point.
     seen_motif_ids: Set[int] = set()
 
-    for focus_node_idx, valid_next_node_choices in enumerate(all_valid_next_node_choices):
+    for focus_node_idx, valid_next_node_choices in enumerate(
+        all_valid_next_node_choices
+    ):
         current_motif_id = enclosing_motif_id[focus_node_idx]
 
         if current_motif_id is None:
             add_atom(focus_node_idx)
         elif current_motif_id not in seen_motif_ids:
             # New motif; add the entire motif into the partial graph.
-            nodes_to_add = sorted([atom.atom_id for atom in motifs[current_motif_id].atoms])
+            nodes_to_add = sorted(
+                [atom.atom_id for atom in motifs[current_motif_id].atoms]
+            )
 
             # The first motif node in `exploration_order` should be the attachment point.
             assert focus_node_idx == nodes_to_add[0]
@@ -308,12 +320,16 @@ def graph_sample_to_MoLeR_trace(
             continue
 
         node_states[focus_node_idx] = NodeState.FOCUS
-        edges_to_add = get_node_edges(node_idx_to_neighbours, focus_node_idx, node_states)
+        edges_to_add = get_node_edges(
+            node_idx_to_neighbours, focus_node_idx, node_states
+        )
         edges_to_open_nodes = get_open_edges(focus_node_idx, node_states)
 
         # Edges inside motifs should neither be added nor even considered.
         edges_to_add = [edge for edge in edges_to_add if not edge_inside_motif(edge)]
-        edges_to_open_nodes = [edge for edge in edges_to_open_nodes if not edge_inside_motif(edge)]
+        edges_to_open_nodes = [
+            edge for edge in edges_to_open_nodes if not edge_inside_motif(edge)
+        ]
 
         if focus_node_idx > 0 and current_motif_id is not None:
             # Motifs should be connected to a non-empty partial graph with exactly one edge.
@@ -334,7 +350,9 @@ def graph_sample_to_MoLeR_trace(
             edge = edges_to_add.pop()
 
             # Remove that edge from the 'edges_to_open_nodes' list.
-            edges_to_open_nodes.remove(Edge(source=edge.source, target=edge.target, type=-1))
+            edges_to_open_nodes.remove(
+                Edge(source=edge.source, target=edge.target, type=-1)
+            )
 
             add_edge(edge)
 
@@ -401,7 +419,9 @@ def graph_sample_to_MoLeR_trace(
 
 
 def get_open_attachment_points(
-    valid_attachment_points: List[int], adjacency_list: AdjacencyList, node_types: List[str]
+    valid_attachment_points: List[int],
+    adjacency_list: AdjacencyList,
+    node_types: List[str],
 ) -> List[int]:
     """Filter down attachment points to those that still have some valence left.
 
@@ -423,7 +443,9 @@ def get_open_attachment_points(
     open_attachment_points = []
 
     for node_idx in valid_attachment_points:
-        if node_idx_to_valency_map[node_idx] < _max_valence_for_single_node(node_types[node_idx]):
+        if node_idx_to_valency_map[node_idx] < _max_valence_for_single_node(
+            node_types[node_idx]
+        ):
             open_attachment_points.append(node_idx)
 
     return open_attachment_points
@@ -468,7 +490,9 @@ def _construct_exploration_order(
         assert num_nodes == 1
         return [0]
 
-    if isinstance(adjacency_list, np.ndarray) or isinstance(adjacency_list[0], np.ndarray):
+    if isinstance(adjacency_list, np.ndarray) or isinstance(
+        adjacency_list[0], np.ndarray
+    ):
         adjacency_list = _convert_np_to_edgecollection(adjacency_list)
 
     if symmetrise_adjacency_list:
@@ -543,15 +567,23 @@ def _construct_exploration_order(
     exploration_order_final: List[int] = []
     all_valid_next_node_choices_final: List[List[int]] = []
 
-    for new_nodes, valid_next_node_choices in zip(exploration_order, all_valid_next_node_choices):
+    for new_nodes, valid_next_node_choices in zip(
+        exploration_order, all_valid_next_node_choices
+    ):
         exploration_order_final += new_nodes
         all_valid_next_node_choices_final.append(valid_next_node_choices)
-        all_valid_next_node_choices_final.extend([[] for _ in range(len(new_nodes) - 1)])
+        all_valid_next_node_choices_final.extend(
+            [[] for _ in range(len(new_nodes) - 1)]
+        )
 
     # The lengths should still match.
     assert len(exploration_order_final) == len(all_valid_next_node_choices_final)
 
-    return exploration_order_final, valid_start_node_choices, all_valid_next_node_choices_final
+    return (
+        exploration_order_final,
+        valid_start_node_choices,
+        all_valid_next_node_choices_final,
+    )
 
 
 def reindex_list(lst: List, exploration_order: List[int]) -> List:
@@ -585,16 +617,21 @@ def reindex_motifs(
         for atom in motif.atoms:
             reindexed_atoms.append(
                 MotifAtomAnnotation(
-                    atom_id=idx_map[atom.atom_id], symmetry_class_id=atom.symmetry_class_id
+                    atom_id=idx_map[atom.atom_id],
+                    symmetry_class_id=atom.symmetry_class_id,
                 )
             )
 
-        reindexed_motifs.append(MotifAnnotation(motif_type=motif.motif_type, atoms=reindexed_atoms))
+        reindexed_motifs.append(
+            MotifAnnotation(motif_type=motif.motif_type, atoms=reindexed_atoms)
+        )
 
     return reindexed_motifs
 
 
-def reindex_adjacency_list(adjacency_list: List[Edge], exploration_order: List[int]) -> List[Edge]:
+def reindex_adjacency_list(
+    adjacency_list: List[Edge], exploration_order: List[int]
+) -> List[Edge]:
     """Update the given adjacency list so that the edges match the reindexing implied by the
     exploration order.
 
@@ -611,7 +648,9 @@ def reindex_adjacency_list(adjacency_list: List[Edge], exploration_order: List[i
     ]
 
 
-def _convert_np_to_edgecollection(arrays: Union[List[np.ndarray], np.ndarray]) -> EdgeCollection:
+def _convert_np_to_edgecollection(
+    arrays: Union[List[np.ndarray], np.ndarray]
+) -> EdgeCollection:
     """Convert a numpy array or list of arrays, representing adjacency lists, into an EdgeCollection."""
     if isinstance(arrays, np.ndarray):
         arrays = [arrays]
@@ -668,7 +707,9 @@ def calculate_dist_from_focus_to_valid_target(
     if len(adjacency_list) == 0:
         return [0] * len(valid_edges)
 
-    if isinstance(adjacency_list, np.ndarray) or isinstance(adjacency_list[0], np.ndarray):
+    if isinstance(adjacency_list, np.ndarray) or isinstance(
+        adjacency_list[0], np.ndarray
+    ):
         adjacency_list = _convert_np_to_edgecollection(adjacency_list)
 
     if isinstance(valid_edges, np.ndarray):
@@ -690,7 +731,9 @@ def calculate_dist_from_focus_to_valid_target(
     # are not yet connected to the graph given by the adjacency list in this function, we will not
     # find them in the BFS.
     valid_target_set = {
-        edge.target for edge in valid_edges if node_states[edge.target] in valid_target_node_states
+        edge.target
+        for edge in valid_edges
+        if node_states[edge.target] in valid_target_node_states
     }
 
     # Breadth first search of the graph defined by the given adjacency_list
@@ -802,7 +845,9 @@ def convert_lists_to_graph_trace_sample(
 
     # Double check that we have added the same number of all of the steps.
     n = len(partial_graphs)
-    assert len(focus_nodes) == n, "Must be the same number of focus nodes as partial graphs."
+    assert (
+        len(focus_nodes) == n
+    ), "Must be the same number of focus nodes as partial graphs."
     assert (
         len(correct_edge_choices) == n
     ), "Must have the same number of correct edge choices as partial graphs."
@@ -918,7 +963,9 @@ def get_node_edges(
     return locked_edges
 
 
-def get_open_edges(focus_node_idx: int, node_states: Dict[int, NodeState]) -> EdgeCollection:
+def get_open_edges(
+    focus_node_idx: int, node_states: Dict[int, NodeState]
+) -> EdgeCollection:
     """Get the edges which have one end at the given focus node and the other end at an
     already visited node.
 
@@ -945,14 +992,18 @@ def get_open_edges(focus_node_idx: int, node_states: Dict[int, NodeState]) -> Ed
         stored in these edges!
 
     """
-    locked_nodes = [node for node, state in node_states.items() if state == NodeState.LOCKED]
+    locked_nodes = [
+        node for node, state in node_states.items() if state == NodeState.LOCKED
+    ]
     unlocked_edges = [
         Edge(source=focus_node_idx, target=target, type=-1) for target in locked_nodes
     ]
     return unlocked_edges
 
 
-def calculate_source_to_targets_dict(adjacency_list: AdjacencyList) -> Dict[int, EdgeCollection]:
+def calculate_source_to_targets_dict(
+    adjacency_list: AdjacencyList,
+) -> Dict[int, EdgeCollection]:
     """Convert an of adjacency list into a dict from source node to EdgeCollection.
 
     Example use:
@@ -980,7 +1031,9 @@ def __symmetrize_adjacency_list(adjacency_list):
     for edge in adjacency_list:
         new_adjacency_list.append(edge)
         if edge.source != edge.target:
-            new_adjacency_list.append(Edge(source=edge.target, target=edge.source, type=edge.type))
+            new_adjacency_list.append(
+                Edge(source=edge.target, target=edge.source, type=edge.type)
+            )
     return new_adjacency_list
 
 

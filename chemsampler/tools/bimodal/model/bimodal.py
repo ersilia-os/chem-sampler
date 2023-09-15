@@ -11,9 +11,8 @@ torch.manual_seed(1)
 np.random.seed(5)
 
 
-class BIMODAL():
-
-    def __init__(self, molecule_size=7, encoding_dim=55, lr=.01, hidden_units=128):
+class BIMODAL:
+    def __init__(self, molecule_size=7, encoding_dim=55, lr=0.01, hidden_units=128):
 
         self._molecule_size = molecule_size
         self._input_dim = encoding_dim
@@ -32,43 +31,47 @@ class BIMODAL():
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():
             self._lstm = self._lstm.cuda()
-            print('GPU available')
+            print("GPU available")
 
         # Adam optimizer
-        self._optimizer = torch.optim.Adam(self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999)
+        )
         # Cross entropy loss
-        self._loss = nn.CrossEntropyLoss(reduction='mean')
+        self._loss = nn.CrossEntropyLoss(reduction="mean")
 
     def build(self, name=None):
         """Build new model or load model by name
         :param name:    model name
         """
 
-        if (name is None):
+        if name is None:
             self._lstm = BiDirLSTM(self._input_dim, self._hidden_units, self._layer)
 
         else:
-            self._lstm = torch.load(name + '.dat', map_location=self._device)
+            self._lstm = torch.load(name + ".dat", map_location=self._device)
 
         if torch.cuda.is_available():
             self._lstm = self._lstm.cuda()
 
-        self._optimizer = torch.optim.Adam(self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999)
+        )
 
     def print_model(self):
-        '''Print name and shape of all tensors'''
+        """Print name and shape of all tensors"""
         for name, p in self._lstm.state_dict().items():
             print(name)
             print(p.shape)
 
     def train(self, data, label, epochs=1, batch_size=1):
-        '''Train the model
+        """Train the model
         :param  data:   data array (n_samples, molecule_size, encoding_length)
         :param  label:  label array (n_samples, molecule_size)
         :param  epochs: number of epochs for the training
         :param  batch_size: batch size for the training
         :return statistic:  array storing computed losses (epochs, batch size)
-        '''
+        """
 
         # Number of samples
         n_samples = data.shape[0]
@@ -111,7 +114,9 @@ class BIMODAL():
                 self._lstm.new_sequence(batch_end - batch_start, self._device)
 
                 # Current batch
-                batch_data = torch.from_numpy(data[:, batch_start:batch_end, :].astype('float32')).to(self._device)
+                batch_data = torch.from_numpy(
+                    data[:, batch_start:batch_end, :].astype("float32")
+                ).to(self._device)
 
                 # Initialize start and end position of sequence read by the model
                 start = self._molecule_size // 2
@@ -122,9 +127,9 @@ class BIMODAL():
 
                     # Select direction for next prediction
                     if j % 2 == 0:
-                        dir = 'right'
+                        dir = "right"
                     else:
-                        dir = 'left'
+                        dir = "left"
 
                     # Predict next token
                     pred = self._lstm(batch_data[start:end], dir, self._device)
@@ -154,12 +159,12 @@ class BIMODAL():
         return statistic
 
     def validate(self, data, label, batch_size=128):
-        ''' Validation of model and compute error
+        """Validation of model and compute error
         :param data:    test data (n_samples, molecule_size, encoding_size)
         :param label:   label data (n_samples_molecules_size)
         :param batch_size:  batch size for validation
         :return:            mean loss over test data
-        '''
+        """
 
         # Use train mode to get loss consistent with training
         self._lstm.train()
@@ -173,7 +178,7 @@ class BIMODAL():
             n_samples = data.shape[0]
 
             # Change axes from (n_samples, molecule_size, encoding_dim) to (molecule_size , n_samples, encoding_dim)
-            data = np.swapaxes(data, 0, 1).astype('float32')
+            data = np.swapaxes(data, 0, 1).astype("float32")
 
             # Initialize loss for complete validation set
             tot_loss = 0
@@ -191,7 +196,9 @@ class BIMODAL():
                 batch_end = min((n + 1) * batch_size, n_samples)
 
                 # Data used in this batch
-                batch_data = torch.from_numpy(data[:, batch_start:batch_end, :].astype('float32')).to(self._device)
+                batch_data = torch.from_numpy(
+                    data[:, batch_start:batch_end, :].astype("float32")
+                ).to(self._device)
 
                 # Initialize loss for molecule
                 molecule_loss = 0
@@ -207,9 +214,9 @@ class BIMODAL():
 
                     # Select direction for next prediction
                     if j % 2 == 0:
-                        dir = 'right'
+                        dir = "right"
                     if j % 2 == 1:
-                        dir = 'left'
+                        dir = "left"
 
                     # Predict next token
                     pred = self._lstm(batch_data[start:end], dir, self._device)
@@ -232,11 +239,11 @@ class BIMODAL():
             return tot_loss / n_iter
 
     def sample(self, middle_token, T=1):
-        '''Generate new molecule
+        """Generate new molecule
         :param middle_token:    starting sequence
         :param T:               sampling temperature
         :return molecule:       newly generated molecule (molecule_length, encoding_length)
-        '''
+        """
 
         # Prepare model
         self._lstm.eval()
@@ -250,7 +257,7 @@ class BIMODAL():
             seq[self._molecule_size // 2, 0] = middle_token
 
             # Create tensor for data and select correct device
-            seq = torch.from_numpy(seq.astype('float32')).to(self._device)
+            seq = torch.from_numpy(seq.astype("float32")).to(self._device)
 
             # Define start/end values for reading
             start = self._molecule_size // 2
@@ -261,9 +268,9 @@ class BIMODAL():
 
                 # Select direction for next prediction
                 if j % 2 == 0:
-                    dir = 'right'
+                    dir = "right"
                 if j % 2 == 1:
-                    dir = 'left'
+                    dir = "left"
 
                 pred = self._lstm(seq[start:end], dir, self._device)
 
@@ -282,13 +289,13 @@ class BIMODAL():
         return seq.cpu().numpy().reshape(1, self._molecule_size, self._output_dim)
 
     def sample_token(self, out, T=1.0):
-        ''' Sample token
+        """Sample token
         :param out: output values from model
         :param T:   sampling temperature
         :return:    index of predicted token
-        '''
+        """
         # Explicit conversion to float64 avoiding truncation errors
-        out = out.astype('float64')
+        out = out.astype("float64")
 
         # Compute probabilities with specific temperature
         out_T = out / T
@@ -298,5 +305,5 @@ class BIMODAL():
         char = np.random.multinomial(1, p, size=1)
         return np.argmax(char)
 
-    def save(self, name='test_model'):
-        torch.save(self._lstm, name + '.dat')
+    def save(self, name="test_model"):
+        torch.save(self._lstm, name + ".dat")

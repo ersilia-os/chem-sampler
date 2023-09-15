@@ -26,9 +26,13 @@ def save_smiles_embeddings(
 
 
 def get_argparser() -> argparse.ArgumentParser:
-    parser = get_model_loading_parser(description="Encode SMILES strings using a trained model.")
+    parser = get_model_loading_parser(
+        description="Encode SMILES strings using a trained model."
+    )
     parser.add_argument(
-        "SMILES_PATH", type=str, help="Path to a *.smiles file containing SMILES strings to encode."
+        "SMILES_PATH",
+        type=str,
+        help="Path to a *.smiles file containing SMILES strings to encode.",
     )
     parser.add_argument(
         "OUTPUT_PATH",

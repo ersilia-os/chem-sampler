@@ -2,7 +2,11 @@ import pathlib
 import pickle
 from typing import Tuple, Union, Dict, Any
 
-from tf2_gnn.cli_utils.model_utils import get_model, get_model_file_path, load_weights_verbosely
+from tf2_gnn.cli_utils.model_utils import (
+    get_model,
+    get_model_file_path,
+    load_weights_verbosely,
+)
 
 from molecule_generation.dataset.in_memory_trace_dataset import InMemoryTraceDataset
 from molecule_generation.models.cgvae import CGVAE
@@ -55,7 +59,9 @@ def load_vae_model_and_dataset(
     load_weights_verbosely(weight_file, model)
 
     if not isinstance(model, (CGVAE, MoLeRVae, MoLeRGenerator)):
-        raise ValueError(f"Model loaded from {trained_model_path} not a CGVAE or MoLeR model!")
+        raise ValueError(
+            f"Model loaded from {trained_model_path} not a CGVAE or MoLeR model!"
+        )
 
     return dummy_dataset, model
 

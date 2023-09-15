@@ -18,10 +18,15 @@ from molecule_generation.utils.moler_visualisation_utils import (
 
 
 class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
-    def render_property_data(self, prop_infos: Dict[str, PropertyPredictionInformation]) -> None:
+    def render_property_data(
+        self, prop_infos: Dict[str, PropertyPredictionInformation]
+    ) -> None:
         print("= Molecule properties")
         for prop_name, prop_info in prop_infos.items():
-            print(f" Property {prop_name:>15}:" f" Pred = {prop_info.prediction:7.3f}", end="")
+            print(
+                f" Property {prop_name:>15}:" f" Pred = {prop_info.prediction:7.3f}",
+                end="",
+            )
             if prop_info.ground_truth is None:
                 print()
             else:
@@ -36,15 +41,22 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
         print(f"  - Atom/motif choices for {choice_descr}")
         if atom_info.true_type_idx is not None:
             correct_choices_str = ", ".join(
-                [self.dataset._node_type_index_to_string[idx] for idx in atom_info.true_type_idx]
+                [
+                    self.dataset._node_type_index_to_string[idx]
+                    for idx in atom_info.true_type_idx
+                ]
             )
             print(f"    Correct: {correct_choices_str}")
 
-        for _, prob, descr in self.get_atom_and_motif_types_to_render(atom_info, prob_threshold):
+        for _, prob, descr in self.get_atom_and_motif_types_to_render(
+            atom_info, prob_threshold
+        ):
             print(f"     {prob:.3f} - {descr}")
 
     def render_attachment_point_selection_step(
-        self, step: int, attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo
+        self,
+        step: int,
+        attachment_point_info: MoleculeGenerationAttachmentPointChoiceInfo,
     ) -> None:
         print(f" -- Step {step} - selecting attachment point")
         print("  - Attachment point choices")
@@ -58,7 +70,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
             if correct_choice is None:
                 correctness_info = ""
             else:
-                correctness_info = f" {'[in' if not candidate == correct_choice else '  ['}correct]"
+                correctness_info = (
+                    f" {'[in' if not candidate == correct_choice else '  ['}correct]"
+                )
 
             print(f"    Node {candidate:2}: prob {prob:.3f} {correctness_info}")
 
@@ -78,7 +92,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
             if edge_info.correct is None:
                 correctness_info = ""
             else:
-                correctness_info = f" {'[in' if not edge_info.correct else '  ['}correct]"
+                correctness_info = (
+                    f" {'[in' if not edge_info.correct else '  ['}correct]"
+                )
             print(
                 f"    Edge {step_info.focus_node_idx:2} -- {edge_info.target_node_idx:2}:   "
                 f"prob {np.exp(edge_info.logprob):5.3f}, score {edge_info.score:7.3f}"
@@ -88,7 +104,9 @@ class TextGraphGenerationVisualiser(GraphGenerationVisualiser):
         if step_info.no_edge_correct is None:
             correctness_info = ""
         else:
-            correctness_info = f" {'[in' if not step_info.no_edge_correct else '  ['}correct]"
+            correctness_info = (
+                f" {'[in' if not step_info.no_edge_correct else '  ['}correct]"
+            )
         print(
             f"    No further edge: "
             f"prob {np.exp(step_info.no_edge_logprob):5.3f}, score {step_info.no_edge_score:7.3f}"
@@ -111,7 +129,8 @@ def run_from_args(args) -> None:
 
 def get_argparser() -> argparse.ArgumentParser():
     parser = get_model_loading_parser(
-        description="Visualise MoLeR molecule generation as text.", include_extra_args=False
+        description="Visualise MoLeR molecule generation as text.",
+        include_extra_args=False,
     )
     parser.add_argument(
         "SMILES_OR_PATH",

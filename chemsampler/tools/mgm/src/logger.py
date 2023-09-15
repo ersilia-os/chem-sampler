@@ -10,8 +10,7 @@ import time
 from datetime import timedelta
 
 
-class LogFormatter():
-
+class LogFormatter:
     def __init__(self):
         self.start_time = time.time()
 
@@ -20,12 +19,12 @@ class LogFormatter():
 
         prefix = "%s - %s - %s" % (
             record.levelname,
-            time.strftime('%x %X'),
-            timedelta(seconds=elapsed_seconds)
+            time.strftime("%x %X"),
+            timedelta(seconds=elapsed_seconds),
         )
         message = record.getMessage()
-        message = message.replace('\n', '\n' + ' ' * (len(prefix) + 3))
-        return "%s - %s" % (prefix, message) if message else ''
+        message = message.replace("\n", "\n" + " " * (len(prefix) + 3))
+        return "%s - %s" % (prefix, message) if message else ""
 
 
 def create_logger(filepath, rank):
@@ -39,7 +38,7 @@ def create_logger(filepath, rank):
     # create file handler and set level to debug
     if filepath is not None:
         if rank > 0:
-            filepath = '%s-%i' % (filepath, rank)
+            filepath = "%s-%i" % (filepath, rank)
         file_handler = logging.FileHandler(filepath, "a")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(log_formatter)
@@ -61,6 +60,7 @@ def create_logger(filepath, rank):
     # reset logger elapsed time
     def reset_time():
         log_formatter.start_time = time.time()
+
     logger.reset_time = reset_time
 
     return logger

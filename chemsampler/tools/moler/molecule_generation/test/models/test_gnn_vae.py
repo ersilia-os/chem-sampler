@@ -16,16 +16,10 @@ from molecule_generation.models.cgvae import CGVAE
 def dataset():
     dataset_params = JSONLCGVAETraceDataset.get_default_hyperparameters()
     dataset_params["graph_properties"] = {
-        "sa_score": {
-            "type": "regression",
-            "loss_weight_factor": 1.0,
-        },
+        "sa_score": {"type": "regression", "loss_weight_factor": 1.0,},
     }
     dataset_params.update(
-        {
-            "max_nodes_per_batch": 50,
-            "max_partial_nodes_per_batch": 50,
-        }
+        {"max_nodes_per_batch": 50, "max_partial_nodes_per_batch": 50,}
     )
     dataset = JSONLCGVAETraceDataset(dataset_params)
     data_path = RichPath.create(
@@ -50,10 +44,7 @@ def test_train_improvement(dataset):
     warnings.warn = ignore_warn
 
     model_params = CGVAE.get_default_hyperparameters()
-    model = CGVAE(
-        model_params,
-        dataset=dataset,
-    )
+    model = CGVAE(model_params, dataset=dataset,)
     data_description = dataset.get_batch_tf_data_description()
     model.build(data_description.batch_features_shapes)
 
@@ -76,9 +67,7 @@ def test_train_improvement(dataset):
             train1_metric, _ = model.compute_epoch_metrics(train1_results)
 
             valid1_loss, _, valid1_results = model.run_on_data_iterator(
-                data_iterator=iter(valid_data.tf_dataset),
-                training=False,
-                quiet=True,
+                data_iterator=iter(valid_data.tf_dataset), training=False, quiet=True,
             )
             valid1_metric, _ = model.compute_epoch_metrics(valid1_results)
 

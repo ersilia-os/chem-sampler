@@ -64,7 +64,9 @@ class MoLeRGenerator(MoLeRBaseModel):
         batch_labels: Dict[str, tf.Tensor],
     ) -> Dict[str, tf.Tensor]:
         total_loss, decoder_metrics = self._compute_decoder_loss_and_metrics(
-            batch_features=batch_features, task_output=task_output, batch_labels=batch_labels
+            batch_features=batch_features,
+            task_output=task_output,
+            batch_labels=batch_labels,
         )
 
         return {
@@ -85,7 +87,9 @@ class MoLeRGenerator(MoLeRBaseModel):
     def compute_epoch_metrics(self, task_results: List[Any]) -> Tuple[float, str]:
 
         average_loss = self._dict_average(task_results, "loss")
-        result_string = f"\n" f"Avg weighted sum. of graph losses: {average_loss: 7.4f}\n"
+        result_string = (
+            f"\n" f"Avg weighted sum. of graph losses: {average_loss: 7.4f}\n"
+        )
 
         graph_generation_losses = self._get_graph_generation_losses(task_results)
         result_string += self._format_graph_generation_losses(graph_generation_losses)

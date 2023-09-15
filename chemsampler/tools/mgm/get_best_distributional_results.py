@@ -3,28 +3,30 @@ import os
 import sys
 
 import pandas as pd
-pd.set_option('display.max_rows', None)
+
+pd.set_option("display.max_rows", None)
 
 results_dir = sys.argv[1]
 
 results_list, hps = [], []
 max_num_iters = 400
-incomplete_path = os.path.join(results_dir, 'distribution_results_{}_{}.json') 
-for n in range(1, max_num_iters+1):
-    for s in [n]:#range(n+1):
-        a = n - s 
+incomplete_path = os.path.join(results_dir, "distribution_results_{}_{}.json")
+for n in range(1, max_num_iters + 1):
+    for s in [n]:  # range(n+1):
+        a = n - s
         complete_path = incomplete_path.format(s, a)
-        if not os.path.exists(complete_path): continue
+        if not os.path.exists(complete_path):
+            continue
         with open(complete_path) as f:
             benchmark_output = json.load(f)
-        hps.append('{}_{}'.format(s, a))
+        hps.append("{}_{}".format(s, a))
         results_dict = {}
-        for result in benchmark_output['results']:
-            results_dict[result['benchmark_name']] = result['score']
+        for result in benchmark_output["results"]:
+            results_dict[result["benchmark_name"]] = result["score"]
         results_list.append(results_dict)
 
 df = pd.DataFrame(results_list, index=hps)
 print(df)
 best_results = pd.concat([pd.DataFrame(df.max()), pd.DataFrame(df.idxmax())], axis=1)
-best_results.columns = ['Max Value', 'Configuration']
+best_results.columns = ["Max Value", "Configuration"]
 print(best_results)

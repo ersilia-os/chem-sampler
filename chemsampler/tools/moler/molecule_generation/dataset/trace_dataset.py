@@ -40,7 +40,9 @@ class TraceDataset(GraphDataset[TraceSample]):
         super_params.update(these_hypers)
         return super_params
 
-    def __init__(self, params: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, params: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None
+    ):
         logger.info("Initialising TraceDataset.")
         super().__init__(params, metadata=metadata)
 
@@ -52,7 +54,9 @@ class TraceDataset(GraphDataset[TraceSample]):
         self._num_edge_types += int(params["add_self_loop_edges"])
 
         # Prepare data for the graph property prediction:
-        self._graph_property_names = list(self._params.get("graph_properties", {}).keys())
+        self._graph_property_names = list(
+            self._params.get("graph_properties", {}).keys()
+        )
 
         # Prepare fields that we will lazily fill:
         self._node_feature_shape = None
@@ -87,7 +91,9 @@ class TraceDataset(GraphDataset[TraceSample]):
             "partial_node_categorical_features": [],
             # More adjacency lists are appended in the `_finalise_batch` method, depending on the
             # parameters `tie_fwd_bkwd_edges` and `add_self_loop_edges`.
-            "partial_adjacency_lists": [[] for _ in range(self.num_edge_types_to_classify)],
+            "partial_adjacency_lists": [
+                [] for _ in range(self.num_edge_types_to_classify)
+            ],
             "correct_edge_choices": [],
             "num_correct_edge_choices": [],
             "stop_node_label": [],
@@ -131,7 +137,9 @@ class TraceDataset(GraphDataset[TraceSample]):
     def _include_trace_step_in_batch(self, trace_step: TraceStep) -> bool:
         return random.uniform(0, 1) < self._params["trace_element_keep_prob"]
 
-    def _add_graph_to_batch(self, raw_batch: Dict[str, Any], graph_sample: TraceSample) -> None:
+    def _add_graph_to_batch(
+        self, raw_batch: Dict[str, Any], graph_sample: TraceSample
+    ) -> None:
         """Add the full graph and partial graphs to the batch.
 
         A similar batching strategy to that for the full graphs is implemented here for the partial
@@ -147,9 +155,13 @@ class TraceDataset(GraphDataset[TraceSample]):
         original_graph_id_in_batch = raw_batch["num_graphs_in_batch"]
 
         if self.uses_categorical_features:
-            raw_batch["node_categorical_features"].extend(graph_sample.node_categorical_features)
+            raw_batch["node_categorical_features"].extend(
+                graph_sample.node_categorical_features
+            )
 
-        raw_batch["node_types"].extend(self.node_types_to_indices(graph_sample.node_types))
+        raw_batch["node_types"].extend(
+            self.node_types_to_indices(graph_sample.node_types)
+        )
 
         for trace_step in graph_sample:
             partial_graph_id_in_batch = raw_batch["num_partial_graphs_in_batch"]
@@ -220,12 +232,16 @@ class TraceDataset(GraphDataset[TraceSample]):
             raw_batch["partial_node_to_original_node_map"].append(
                 np.arange(num_nodes_in_partial_graph) + raw_batch["num_nodes_in_batch"]
             )
-            raw_batch["partial_graph_to_original_graph_map"].append(original_graph_id_in_batch)
+            raw_batch["partial_graph_to_original_graph_map"].append(
+                original_graph_id_in_batch
+            )
 
             # And finally, the correct node type choices. Here, we have an empty list of
             # correct choices for all steps where we didn't choose a node, so we skip that:
             if trace_step.correct_node_type_choices is not None:
-                raw_batch["partial_graphs_requiring_node_choices"].append(partial_graph_id_in_batch)
+                raw_batch["partial_graphs_requiring_node_choices"].append(
+                    partial_graph_id_in_batch
+                )
                 raw_batch["correct_node_type_choices"].append(
                     self.node_types_to_multi_hot(trace_step.correct_node_type_choices)
                 )
@@ -241,7 +257,9 @@ class TraceDataset(GraphDataset[TraceSample]):
         for property_name in self._graph_property_names:
             property_value = graph_sample.graph_property_values.get(property_name)
             if property_value is not None:
-                raw_batch["graph_property_to_values"][property_name].append(property_value)
+                raw_batch["graph_property_to_values"][property_name].append(
+                    property_value
+                )
                 raw_batch["graph_property_to_graph_ids"][property_name].append(
                     original_graph_id_in_batch
                 )
@@ -251,7 +269,9 @@ class TraceDataset(GraphDataset[TraceSample]):
         """Generate a (num_nodes, 2) array of self loop edges."""
         return np.repeat(np.arange(num_nodes, dtype=np.int32), 2).reshape(-1, 2)
 
-    def _finalise_batch(self, raw_batch: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _finalise_batch(
+        self, raw_batch: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         batch_features, batch_labels = super()._finalise_batch(raw_batch)
 
         # Features first.
@@ -263,7 +283,9 @@ class TraceDataset(GraphDataset[TraceSample]):
             raw_batch["node_to_partial_graph_map"], dtype=np.int32
         )
 
-        batch_features["focus_nodes"] = safe_make_array(raw_batch["focus_nodes"], dtype=np.int32)
+        batch_features["focus_nodes"] = safe_make_array(
+            raw_batch["focus_nodes"], dtype=np.int32
+        )
 
         batch_features["partial_node_features"] = safe_concat(
             raw_batch["partial_node_features"],
@@ -285,9 +307,9 @@ class TraceDataset(GraphDataset[TraceSample]):
             num_nodes = raw_batch["num_nodes_in_batch"]
             num_partial_nodes = raw_batch["num_partial_nodes_in_batch"]
             adjacency_list_idx = len(raw_batch["partial_adjacency_lists"])
-            batch_features[f"adjacency_list_{adjacency_list_idx}"] = self._generate_self_loops(
-                num_nodes
-            )
+            batch_features[
+                f"adjacency_list_{adjacency_list_idx}"
+            ] = self._generate_self_loops(num_nodes)
             batch_features[
                 f"partial_adjacency_list_{adjacency_list_idx}"
             ] = self._generate_self_loops(num_partial_nodes)
@@ -300,7 +322,9 @@ class TraceDataset(GraphDataset[TraceSample]):
             raw_batch["partial_graph_to_original_graph_map"], dtype=np.int32
         )
 
-        batch_features["num_partial_graphs_in_batch"] = raw_batch["num_partial_graphs_in_batch"]
+        batch_features["num_partial_graphs_in_batch"] = raw_batch[
+            "num_partial_graphs_in_batch"
+        ]
 
         batch_features["partial_graphs_requiring_node_choices"] = safe_make_array(
             raw_batch["partial_graphs_requiring_node_choices"], dtype=np.int32
@@ -333,7 +357,9 @@ class TraceDataset(GraphDataset[TraceSample]):
             raw_batch["correct_attachment_point_choices"], dtype=np.int32
         )
 
-        batch_labels["stop_node_label"] = np.array(raw_batch["stop_node_label"], dtype=np.int32)
+        batch_labels["stop_node_label"] = np.array(
+            raw_batch["stop_node_label"], dtype=np.int32
+        )
 
         batch_labels["correct_edge_types"] = safe_concat(
             raw_batch["correct_edge_types"],
@@ -387,7 +413,9 @@ class TraceDataset(GraphDataset[TraceSample]):
         batch_features_types["focus_nodes"] = tf.int32
         batch_features_shapes["focus_nodes"] = (None,)
         batch_features_types["partial_node_features"] = tf.float32
-        batch_features_shapes["partial_node_features"] = (None,) + self.partial_node_feature_shape
+        batch_features_shapes["partial_node_features"] = (
+            None,
+        ) + self.partial_node_feature_shape
         batch_features_types["partial_node_categorical_features"] = tf.int32
         batch_features_shapes["partial_node_categorical_features"] = (None,)
         for edge_type_idx in range(self.num_edge_types):
@@ -418,15 +446,24 @@ class TraceDataset(GraphDataset[TraceSample]):
         batch_labels_types["stop_node_label"] = tf.int32
         batch_labels_shapes["stop_node_label"] = (None,)
         batch_labels_types["correct_edge_types"] = tf.int32
-        batch_labels_shapes["correct_edge_types"] = (None, self.num_edge_types_to_classify)
+        batch_labels_shapes["correct_edge_types"] = (
+            None,
+            self.num_edge_types_to_classify,
+        )
         batch_labels_types["valid_edge_types"] = tf.int32
-        batch_labels_shapes["valid_edge_types"] = (None, self.num_edge_types_to_classify)
+        batch_labels_shapes["valid_edge_types"] = (
+            None,
+            self.num_edge_types_to_classify,
+        )
         batch_labels_types["correct_attachment_point_choices"] = tf.int32
         batch_labels_shapes["correct_attachment_point_choices"] = (None,)
         batch_labels_types["correct_node_type_choices"] = tf.float32
         batch_labels_shapes["correct_node_type_choices"] = (None, self.num_node_types)
         batch_labels_types["correct_first_node_type_choices"] = tf.float32
-        batch_labels_shapes["correct_first_node_type_choices"] = (None, self.num_node_types)
+        batch_labels_shapes["correct_first_node_type_choices"] = (
+            None,
+            self.num_node_types,
+        )
 
         # Declare information about potentially provided graph properties and their values.
         batch_features_types["graph_properties_present"] = tf.string
@@ -500,10 +537,18 @@ class TraceDataset(GraphDataset[TraceSample]):
         datum = self._load_one_sample(data_fold)
 
         setattr(self, "_node_feature_shape", (len(datum.node_features[0]),))
-        setattr(self, "_partial_node_feature_shape", (len(datum.partial_node_features[0][0]),))
-        setattr(self, "_node_categorical_num_classes", datum.node_categorical_num_classes)
+        setattr(
+            self,
+            "_partial_node_feature_shape",
+            (len(datum.partial_node_features[0][0]),),
+        )
+        setattr(
+            self, "_node_categorical_num_classes", datum.node_categorical_num_classes
+        )
 
-        self.metadata["_node_categorical_num_classes"] = self._node_categorical_num_classes
+        self.metadata[
+            "_node_categorical_num_classes"
+        ] = self._node_categorical_num_classes
 
     def _get_cached_property(self, name: str) -> Any:
         if not self._loaded_feature_shapes:

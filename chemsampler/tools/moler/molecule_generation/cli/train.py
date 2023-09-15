@@ -13,13 +13,18 @@ import tf2_gnn.cli_utils as cli
 import tf2_gnn.cli_utils.training_utils as training_utils
 from dpu_utils.utils import RichPath
 
-from molecule_generation.dataset.jsonl_abstract_trace_dataset import JSONLAbstractTraceDataset
+from molecule_generation.dataset.jsonl_abstract_trace_dataset import (
+    JSONLAbstractTraceDataset,
+)
 from molecule_generation.dataset.jsonl_cgvae_trace_dataset import JSONLCGVAETraceDataset
 from molecule_generation.dataset.jsonl_moler_trace_dataset import JSONLMoLeRTraceDataset
 from molecule_generation.models.cgvae import CGVAE
 from molecule_generation.models.moler_vae import MoLeRVae
 from molecule_generation.models.moler_generator import MoLeRGenerator
-from molecule_generation.utils.cli_utils import setup_logging, supress_tensorflow_warnings
+from molecule_generation.utils.cli_utils import (
+    setup_logging,
+    supress_tensorflow_warnings,
+)
 
 
 # Register some tasks, replacing the standard ones:
@@ -74,10 +79,7 @@ cli.register_task(
 )
 
 dataset_params.update(
-    {
-        "max_nodes_per_batch": 20000,
-        "max_partial_nodes_per_batch": 25000,
-    }
+    {"max_nodes_per_batch": 20000, "max_partial_nodes_per_batch": 25000,}
 )
 cli.register_task(
     task_name="CGVAE",
@@ -90,7 +92,9 @@ cli.register_task(
 # Use different dataset configuration for MoLeR, which has a different loss scale
 # (everything is roughly 1/14 of the CGVAE losses).
 moler_dataset_params = dict(dataset_params)
-moler_dataset_params["graph_properties"] = dict(dataset_params.get("graph_properties", {}))
+moler_dataset_params["graph_properties"] = dict(
+    dataset_params.get("graph_properties", {})
+)
 for prop_name, prop_config in dataset_params["graph_properties"].items():
     moler_dataset_params["graph_properties"][prop_name] = dict(prop_config)
     moler_dataset_params["graph_properties"][prop_name]["loss_weight_factor"] = 0.02
@@ -144,7 +148,10 @@ def run_from_args(args: argparse.Namespace) -> Tuple[str, str, str]:
         trained_model_file=args.load_saved_model,
         cli_data_hyperparameter_overrides=args.data_param_override,
         cli_model_hyperparameter_overrides=args.model_param_override,
-        folds_to_load={training_utils.DataFold.TRAIN, training_utils.DataFold.VALIDATION},
+        folds_to_load={
+            training_utils.DataFold.TRAIN,
+            training_utils.DataFold.VALIDATION,
+        },
         load_weights_only=args.load_weights_only,
     )
     if not isinstance(loaded_model_dataset[0], JSONLAbstractTraceDataset):
@@ -160,8 +167,12 @@ def run_from_args(args: argparse.Namespace) -> Tuple[str, str, str]:
         )
     model: Union[CGVAE, MoLeRVae, MoLeRGenerator] = loaded_model_dataset[1]
 
-    log(f"Dataset parameters: {json.dumps(training_utils.unwrap_tf_tracked_data(dataset._params))}")
-    log(f"Model parameters: {json.dumps(training_utils.unwrap_tf_tracked_data(model._params))}")
+    log(
+        f"Dataset parameters: {json.dumps(training_utils.unwrap_tf_tracked_data(dataset._params))}"
+    )
+    log(
+        f"Model parameters: {json.dumps(training_utils.unwrap_tf_tracked_data(model._params))}"
+    )
 
     if args.azureml_logging:
         from azureml.core.run import Run
@@ -172,7 +183,9 @@ def run_from_args(args: argparse.Namespace) -> Tuple[str, str, str]:
 
     # Set up tensorboard logging.
     if args.tensorboard or args.profile:
-        writer = tf.summary.create_file_writer(os.path.join(args.save_dir, "tensorboard"))
+        writer = tf.summary.create_file_writer(
+            os.path.join(args.save_dir, "tensorboard")
+        )
         writer.set_as_default()
         tf.summary.experimental.set_step(0)
 
@@ -199,24 +212,35 @@ def run_from_args(args: argparse.Namespace) -> Tuple[str, str, str]:
         # the number of kept generation trace steps, and we normalise KL losses based on
         # the number of graphs in a batch.
         orig_keep_prob = dataset._params["trace_element_keep_prob"]
-        orig_non_carbon_keep_prob = dataset._params.get("trace_element_non_carbon_keep_prob")
+        orig_non_carbon_keep_prob = dataset._params.get(
+            "trace_element_non_carbon_keep_prob"
+        )
         dataset._params["trace_element_keep_prob"] = 1.0
         dataset._params["trace_element_non_carbon_keep_prob"] = 1.0
 
         log(f"Restoring best model state from {trained_model_path}.")
         training_utils.load_weights_verbosely(trained_model_path, model)
         try:
-            with dataset.get_context_managed_tf_dataset(training_utils.DataFold.TEST) as test_data:
+            with dataset.get_context_managed_tf_dataset(
+                training_utils.DataFold.TEST
+            ) as test_data:
                 _, _, test_results = model.run_on_data_iterator(
-                    iter(test_data.tf_dataset), training=False, quiet=args.quiet, aml_run=aml_run
+                    iter(test_data.tf_dataset),
+                    training=False,
+                    quiet=args.quiet,
+                    aml_run=aml_run,
                 )
-                test_metric, test_metric_string = model.compute_epoch_metrics(test_results)
+                test_metric, test_metric_string = model.compute_epoch_metrics(
+                    test_results
+                )
                 log(test_metric_string)
                 if aml_run is not None:
                     aml_run.log("task_test_metric", float(test_metric))
         finally:
             dataset._params["trace_element_keep_prob"] = orig_keep_prob
-            dataset._params["trace_element_non_carbon_keep_prob"] = orig_non_carbon_keep_prob
+            dataset._params[
+                "trace_element_non_carbon_keep_prob"
+            ] = orig_non_carbon_keep_prob
 
     return run_id, trained_model_path, log_file
 
@@ -234,7 +258,9 @@ def train(
     profile: bool = False,
 ):
     save_file = os.path.join(save_dir, f"{run_id}_best.pkl")
-    num_train_steps_between_valid = 5 if profile else model._params["num_train_steps_between_valid"]
+    num_train_steps_between_valid = (
+        5 if profile else model._params["num_train_steps_between_valid"]
+    )
     log_fun(f"Num train steps between valid: {num_train_steps_between_valid}")
     # None here means use the entire valid dataset:
     num_valid_steps = num_train_steps_between_valid if profile else None
@@ -242,7 +268,9 @@ def train(
 
     # Prepare training data, which essentially generates an endless, repeating dataset,
     # for which we only need a single iterator:
-    with dataset.get_context_managed_tf_dataset(training_utils.DataFold.TRAIN) as train_data:
+    with dataset.get_context_managed_tf_dataset(
+        training_utils.DataFold.TRAIN
+    ) as train_data:
         train_data_iter = iter(train_data.tf_dataset)
 
         # Prepare validation data, for which we will create a fresh iterator with every use:
@@ -256,9 +284,13 @@ def train(
                 max_num_steps=num_valid_steps,
                 aml_run=aml_run,
             )
-            best_valid_metric, best_val_str = model.compute_epoch_metrics(initial_valid_results)
+            best_valid_metric, best_val_str = model.compute_epoch_metrics(
+                initial_valid_results
+            )
             log_fun(f"Initial valid metric: {best_val_str}.")
-            training_utils.save_model(save_file, model, dataset, store_weights_in_pkl=True)
+            training_utils.save_model(
+                save_file, model, dataset, store_weights_in_pkl=True
+            )
 
             # If profiling, we want only 2 epochs.
             if profile:
@@ -282,8 +314,12 @@ def train(
                 if profile and epoch == 2:
                     tf.profiler.experimental.stop(save_dir)
 
-                train_metric, train_metric_string = model.compute_epoch_metrics(train_results)
-                log_fun(f"== Results after {epoch * num_train_steps_between_valid} training steps")
+                train_metric, train_metric_string = model.compute_epoch_metrics(
+                    train_results
+                )
+                log_fun(
+                    f"== Results after {epoch * num_train_steps_between_valid} training steps"
+                )
                 log_fun(
                     f" Train:  {train_loss:.4f} loss | {train_metric_string} | {train_speed:.2f} graphs/s",
                 )
@@ -298,7 +334,9 @@ def train(
                 )
                 tf.summary.scalar("valid_loss", data=valid_loss, step=epoch)
 
-                valid_metric, valid_metric_string = model.compute_epoch_metrics(valid_results)
+                valid_metric, valid_metric_string = model.compute_epoch_metrics(
+                    valid_results
+                )
                 log_fun(
                     f" Valid:  {valid_loss:.4f} loss | {valid_metric_string} | {valid_speed:.2f} graphs/s",
                 )
@@ -314,7 +352,9 @@ def train(
                     log_fun(
                         f"  (Best results so far, target metric decreased from {best_valid_metric:.5f} to {valid_metric:.5f}.)",
                     )
-                    training_utils.save_model(save_file, model, dataset, store_weights_in_pkl=True)
+                    training_utils.save_model(
+                        save_file, model, dataset, store_weights_in_pkl=True
+                    )
                     best_valid_metric = valid_metric
                     best_valid_epoch = epoch
                 elif epoch - best_valid_epoch >= patience:

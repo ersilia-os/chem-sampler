@@ -9,126 +9,168 @@ import configparser
 import matplotlib
 import sys
 
-sys.path.insert(1, '../model/')
+sys.path.insert(1, "../model/")
 from helper import clean_molecule, check_valid
 
-matplotlib.use('TkAgg')
-matplotlib.rcParams.update({'font.size': 14})
+matplotlib.use("TkAgg")
+matplotlib.rcParams.update({"font.size": 14})
 import matplotlib.pyplot as plt
 from matplotlib.ticker import StrMethodFormatter
 import os
 
 
-class Evaluator():
-
+class Evaluator:
     def __init__(self, experiment_name):
 
         # Read parameter used during training
         self._config = configparser.ConfigParser()
-        self._config.read('../experiments/' + experiment_name + '.ini')
+        self._config.read("../experiments/" + experiment_name + ".ini")
 
-        self._model_type = self._config['MODEL']['model']
+        self._model_type = self._config["MODEL"]["model"]
         self._experiment_name = experiment_name
 
-        self._file_name = self._config['DATA']['data']
-        self._encoding_size = int(self._config['DATA']['encoding_size'])
-        self._molecular_size = int(self._config['DATA']['molecular_size'])
+        self._file_name = self._config["DATA"]["data"]
+        self._encoding_size = int(self._config["DATA"]["encoding_size"])
+        self._molecular_size = int(self._config["DATA"]["molecular_size"])
 
-        self._epochs = int(self._config['TRAINING']['epochs'])
-        self._n_folds = int(self._config['TRAINING']['n_folds'])
-        self._learning_rate = float(self._config['TRAINING']['learning_rate'])
-        self._batch_size = int(self._config['TRAINING']['batch_size'])
+        self._epochs = int(self._config["TRAINING"]["epochs"])
+        self._n_folds = int(self._config["TRAINING"]["n_folds"])
+        self._learning_rate = float(self._config["TRAINING"]["learning_rate"])
+        self._batch_size = int(self._config["TRAINING"]["batch_size"])
 
-        self._samples = int(self._config['EVALUATION']['samples'])
-        self._T = float(self._config['EVALUATION']['temp'])
-        self._starting_token = self._config['EVALUATION']['starting_token']
+        self._samples = int(self._config["EVALUATION"]["samples"])
+        self._T = float(self._config["EVALUATION"]["temp"])
+        self._starting_token = self._config["EVALUATION"]["starting_token"]
 
-        if os.path.isfile('../data/' + self._file_name + '.csv'):
-            self._data = pd.read_csv('../data/' + self._file_name + '.csv', header=None).values[:, 0]
-        elif os.path.isfile('../data/' + self._file_name + '.tar.xz'):
+        if os.path.isfile("../data/" + self._file_name + ".csv"):
+            self._data = pd.read_csv(
+                "../data/" + self._file_name + ".csv", header=None
+            ).values[:, 0]
+        elif os.path.isfile("../data/" + self._file_name + ".tar.xz"):
             # Skip first line since empty and last line since nan
-            self._data = pd.read_csv('../data/' + self._file_name + '.tar.xz', compression='xz', header=None).values[
-                         1:-1, 0]
+            self._data = pd.read_csv(
+                "../data/" + self._file_name + ".tar.xz", compression="xz", header=None
+            ).values[1:-1, 0]
         # Clean data from start, end and padding token
         for i, mol_dat in enumerate(self._data):
             self._data[i] = clean_molecule(mol_dat, self._model_type)
 
-    def eval_training_validation(self, stor_dir='.'):
-        '''
+    def eval_training_validation(self, stor_dir="."):
+        """
         Plot training and validation loss within one figure
         :return:
-        '''
+        """
         stat = np.zeros((self._n_folds, self._epochs))
         val = np.zeros((self._n_folds, self._epochs))
         plt.figure()
-        plt.set_cmap('tab10')
-        plt.gca().yaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}'))
+        plt.set_cmap("tab10")
+        plt.gca().yaxis.set_major_formatter(StrMethodFormatter("{x:,.2f}"))
 
         for i in range(self._n_folds):
-            tmp = pd.read_csv(stor_dir + '/' + self._experiment_name + '/statistic/stat_fold_' + str(i + 1) + '.csv',
-                              header=None).values[:,
-                  1:]
+            tmp = pd.read_csv(
+                stor_dir
+                + "/"
+                + self._experiment_name
+                + "/statistic/stat_fold_"
+                + str(i + 1)
+                + ".csv",
+                header=None,
+            ).values[:, 1:]
             stat[i, :] = np.mean(tmp, axis=-1)
-            plt.plot(np.arange(self._epochs) + 1, stat[i, :], '-', label='Fold ' + str(i + 1) + ' Training',
-                     color='C' + str(i))
+            plt.plot(
+                np.arange(self._epochs) + 1,
+                stat[i, :],
+                "-",
+                label="Fold " + str(i + 1) + " Training",
+                color="C" + str(i),
+            )
 
         for i in range(self._n_folds):
-            val[i, :] = pd.read_csv(stor_dir + '/' + self._experiment_name + '/validation/val_fold_' + str(i + 1) + '.csv',
-                                    header=None).values[:, 1]
+            val[i, :] = pd.read_csv(
+                stor_dir
+                + "/"
+                + self._experiment_name
+                + "/validation/val_fold_"
+                + str(i + 1)
+                + ".csv",
+                header=None,
+            ).values[:, 1]
 
-            plt.plot(np.arange(self._epochs) + 1, val[i, :], ':', label='Fold ' + str(i + 1) + ' Validation',
-                     color='C' + str(i))
+            plt.plot(
+                np.arange(self._epochs) + 1,
+                val[i, :],
+                ":",
+                label="Fold " + str(i + 1) + " Validation",
+                color="C" + str(i),
+            )
 
         plt.legend()
-        plt.title('Statistic Training')
-        plt.ylabel('Loss Per Token')
-        plt.xlabel('Epoch')
-        plt.savefig(self._experiment_name + '/statistic/all_statistic.png')
+        plt.title("Statistic Training")
+        plt.ylabel("Loss Per Token")
+        plt.xlabel("Epoch")
+        plt.savefig(self._experiment_name + "/statistic/all_statistic.png")
         plt.close()
 
-    def eval_training(self, stor_dir='.'):
-        '''Plot training loss
+    def eval_training(self, stor_dir="."):
+        """Plot training loss
         :return:
-        '''
+        """
         stat = np.zeros((self._n_folds, self._epochs))
         plt.figure(0)
 
         for i in range(self._n_folds):
-            tmp = pd.read_csv(stor_dir + '/' + self._experiment_name + '/statistic/stat_fold_' + str(i + 1) + '.csv',
-                              header=None).values[:,
-                  1:]
+            tmp = pd.read_csv(
+                stor_dir
+                + "/"
+                + self._experiment_name
+                + "/statistic/stat_fold_"
+                + str(i + 1)
+                + ".csv",
+                header=None,
+            ).values[:, 1:]
 
             stat[i, :] = np.mean(tmp, axis=-1)
-            plt.plot(np.arange(1, self._epochs + 1), stat[i, :], label='Fold ' + str(i + 1))
+            plt.plot(
+                np.arange(1, self._epochs + 1), stat[i, :], label="Fold " + str(i + 1)
+            )
         plt.legend()
-        plt.title('Training Loss')
-        plt.ylabel('Loss')
-        plt.xlabel('Epoch')
-        plt.savefig(self._experiment_name + '/statistic/statistic.png')
+        plt.title("Training Loss")
+        plt.ylabel("Loss")
+        plt.xlabel("Epoch")
+        plt.savefig(self._experiment_name + "/statistic/statistic.png")
         plt.close()
 
-    def eval_validation(self, stor_dir='.'):
-        '''Plot validation loss
+    def eval_validation(self, stor_dir="."):
+        """Plot validation loss
         :return:
-        '''
+        """
         val = np.zeros((self._n_folds, self._epochs))
         plt.figure(1)
 
         for i in range(self._n_folds):
-            val[i, :] = pd.read_csv(stor_dir + '/' + self._experiment_name + '/validation/val_fold_' + str(i + 1) + '.csv',
-                                    header=None).values[:, 1]
-            plt.plot(np.arange(1, self._epochs + 1), val[i, :], label='Fold ' + str(i + 1))
+            val[i, :] = pd.read_csv(
+                stor_dir
+                + "/"
+                + self._experiment_name
+                + "/validation/val_fold_"
+                + str(i + 1)
+                + ".csv",
+                header=None,
+            ).values[:, 1]
+            plt.plot(
+                np.arange(1, self._epochs + 1), val[i, :], label="Fold " + str(i + 1)
+            )
         plt.legend()
-        plt.title('Validation Loss')
-        plt.ylabel('Loss')
-        plt.xlabel('Epoch')
-        plt.savefig(self._experiment_name + '/validation/validation.png')
+        plt.title("Validation Loss")
+        plt.ylabel("Loss")
+        plt.xlabel("Epoch")
+        plt.savefig(self._experiment_name + "/validation/validation.png")
         plt.close()
 
     def check_with_training_data(self, mol):
-        '''Remove molecules that are within the training set and return number
+        """Remove molecules that are within the training set and return number
         :return mol:    SMILES not contained in the training
-        '''
+        """
         to_delete = []
         for i, m in enumerate(mol):
             if m in self._data:
@@ -138,10 +180,10 @@ class Evaluator():
 
         return mol
 
-    def eval_molecule(self, stor_dir='.'):
-        '''Plot percentage of novel, valid and unique SMILES
+    def eval_molecule(self, stor_dir="."):
+        """Plot percentage of novel, valid and unique SMILES
         :return:
-        '''
+        """
 
         valid = np.zeros((self._n_folds, self._epochs))
         unique = np.zeros((self._n_folds, self._epochs))
@@ -150,10 +192,21 @@ class Evaluator():
         for i in range(self._n_folds):
             for j in range(self._epochs):
 
-                mol = pd.read_csv(
-                    stor_dir + '/' + self._experiment_name + '/molecules/molecule_fold_' + str(
-                        i + 1) + '_epochs_' + str(j) + '.csv',
-                    header=None).values[:, 1].astype(str)
+                mol = (
+                    pd.read_csv(
+                        stor_dir
+                        + "/"
+                        + self._experiment_name
+                        + "/molecules/molecule_fold_"
+                        + str(i + 1)
+                        + "_epochs_"
+                        + str(j)
+                        + ".csv",
+                        header=None,
+                    )
+                    .values[:, 1]
+                    .astype(str)
+                )
 
                 # Remove padding
                 for k, m in enumerate(mol):
@@ -199,21 +252,47 @@ class Evaluator():
 
         # PLot
         plt.figure(1)
-        plt.errorbar(np.arange(1, self._epochs + 1), mean_unique, yerr=std_unique, capsize=3, label='unique')
-        plt.errorbar(np.arange(1, self._epochs + 1), mean_valid, yerr=std_valid, capsize=3,
-                     label='valid & unique')
-        plt.errorbar(np.arange(1, self._epochs + 1), mean_novel, yerr=std_novel, capsize=3,
-                     label='novel, valid & unique', linestyle=':')
+        plt.errorbar(
+            np.arange(1, self._epochs + 1),
+            mean_unique,
+            yerr=std_unique,
+            capsize=3,
+            label="unique",
+        )
+        plt.errorbar(
+            np.arange(1, self._epochs + 1),
+            mean_valid,
+            yerr=std_valid,
+            capsize=3,
+            label="valid & unique",
+        )
+        plt.errorbar(
+            np.arange(1, self._epochs + 1),
+            mean_novel,
+            yerr=std_novel,
+            capsize=3,
+            label="novel, valid & unique",
+            linestyle=":",
+        )
         plt.yticks(np.arange(0, 110, step=10))
         plt.legend()
         plt.ylim(0, 105)
-        plt.title('SMILES T=' + str(self._T))
-        plt.ylabel('% SMILES')
-        plt.xlabel('Epoch')
-        plt.savefig(stor_dir + '/' + self._experiment_name + '/molecules/novel_valid_unique_molecules.png')
+        plt.title("SMILES T=" + str(self._T))
+        plt.ylabel("% SMILES")
+        plt.xlabel("Epoch")
+        plt.savefig(
+            stor_dir
+            + "/"
+            + self._experiment_name
+            + "/molecules/novel_valid_unique_molecules.png"
+        )
 
         # Store data
-        data = np.vstack((mean_unique, std_unique, mean_valid, std_valid, mean_novel, std_novel))
-        pd.DataFrame(data).to_csv(self._experiment_name + '/molecules/' + self._experiment_name + '_data.csv')
+        data = np.vstack(
+            (mean_unique, std_unique, mean_valid, std_valid, mean_novel, std_novel)
+        )
+        pd.DataFrame(data).to_csv(
+            self._experiment_name + "/molecules/" + self._experiment_name + "_data.csv"
+        )
 
         plt.show()

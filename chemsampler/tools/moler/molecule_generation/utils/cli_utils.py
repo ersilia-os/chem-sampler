@@ -36,7 +36,9 @@ def get_model_loading_parser(
 
 def add_debug_flag(parser: argparse.ArgumentParser) -> None:
     """Add a --debug CLI flag to turn on debugging."""
-    parser.add_argument("--debug", dest="debug", action="store_true", help="Enable debug routines.")
+    parser.add_argument(
+        "--debug", dest="debug", action="store_true", help="Enable debug routines."
+    )
 
 
 def setup_logging() -> None:

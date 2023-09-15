@@ -45,7 +45,9 @@ def batch_decoder_states(
         _finalise_batch(old_batch, uses_categorical_features)
         yield (
             old_batch,
-            decoder_states[graph_id_offset : graph_id_offset + old_batch["graphs_in_batch"]],
+            decoder_states[
+                graph_id_offset : graph_id_offset + old_batch["graphs_in_batch"]
+            ],
         )
         graph_id_offset += old_batch["graphs_in_batch"]
         return _get_empty_batch()
@@ -104,7 +106,9 @@ def _finalise_batch(batch: Dict[str, Any], uses_categorical_features: bool) -> N
         if num_edges == 0:
             batch["adjacency_lists"][edge_type_idx] = np.zeros((0, 2), dtype=np.int32)
         else:
-            batch["adjacency_lists"][edge_type_idx] = np.concatenate(type_adj_lists, axis=0)
+            batch["adjacency_lists"][edge_type_idx] = np.concatenate(
+                type_adj_lists, axis=0
+            )
 
     # Insert self-loops (cf. TraceDataset._finalise_batch)
     batch["adjacency_lists"].append(

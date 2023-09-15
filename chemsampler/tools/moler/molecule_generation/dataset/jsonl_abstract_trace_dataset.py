@@ -55,7 +55,9 @@ class JSONLAbstractTraceDataset(TraceDataset):
         self._loaded_data: Dict[DataFold, List[RichPath]] = {}
         self._no_parallelism = no_parallelism
 
-    def load_data(self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None) -> None:
+    def load_data(
+        self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None
+    ) -> None:
         logger.info(f"Loading data from {path}.")
 
         if not self._metadata:
@@ -63,7 +65,9 @@ class JSONLAbstractTraceDataset(TraceDataset):
             logger.info(f"Loading metadata from {metadata_path}")
             self._metadata = metadata_path.read_by_file_suffix()
         else:
-            logger.warning("Using metadata passed to constructor, not that saved with the dataset.")
+            logger.warning(
+                "Using metadata passed to constructor, not that saved with the dataset."
+            )
 
         self._atom_type_featuriser = next(
             featuriser
@@ -71,7 +75,9 @@ class JSONLAbstractTraceDataset(TraceDataset):
             if featuriser.name == "AtomType"
         )
 
-        self._node_type_index_to_string = self._atom_type_featuriser.index_to_atom_type_map.copy()
+        self._node_type_index_to_string = (
+            self._atom_type_featuriser.index_to_atom_type_map.copy()
+        )
 
         if folds_to_load is None:
             folds_to_load = {DataFold.TRAIN, DataFold.TEST, DataFold.VALIDATION}
@@ -80,13 +86,17 @@ class JSONLAbstractTraceDataset(TraceDataset):
             """Find all file paths in directory that start with fold_prefix."""
             return [
                 path
-                for path in directory.get_filtered_files_in_dir(f"**/{fold_prefix}*.pkl.gz")
+                for path in directory.get_filtered_files_in_dir(
+                    f"**/{fold_prefix}*.pkl.gz"
+                )
                 if path.is_file()
             ]
 
         if DataFold.TRAIN in folds_to_load:
             self._loaded_data[DataFold.TRAIN] = find_fold_files(path, "train")
-            logger.debug(f"Loaded {len(self._loaded_data[DataFold.TRAIN])} training shards.")
+            logger.debug(
+                f"Loaded {len(self._loaded_data[DataFold.TRAIN])} training shards."
+            )
 
         if DataFold.TEST in folds_to_load:
             self._loaded_data[DataFold.TEST] = find_fold_files(path, "test")
@@ -94,7 +104,9 @@ class JSONLAbstractTraceDataset(TraceDataset):
 
         if DataFold.VALIDATION in folds_to_load:
             self._loaded_data[DataFold.VALIDATION] = find_fold_files(path, "valid")
-            logger.debug(f"Loaded {len(self._loaded_data[DataFold.VALIDATION])} validation shards.")
+            logger.debug(
+                f"Loaded {len(self._loaded_data[DataFold.VALIDATION])} validation shards."
+            )
 
     def node_type_to_index(self, node_type: str) -> int:
         return self._atom_type_featuriser.type_name_to_index(node_type)
@@ -124,8 +136,7 @@ class JSONLAbstractTraceDataset(TraceDataset):
         return self.get_context_managed_tf_dataset(data_fold).tf_dataset
 
     def get_context_managed_tf_dataset(
-        self,
-        data_fold: DataFold,
+        self, data_fold: DataFold,
     ) -> ContextManagedTfDataset:
         """Construct a TensorFlow dataset for the specified data fold.
 
@@ -138,7 +149,9 @@ class JSONLAbstractTraceDataset(TraceDataset):
         graph_sample_iterator = self._graph_iterator(data_fold)
 
         dataset = tf.data.Dataset.from_generator(
-            generator=lambda: self.graph_batch_iterator_from_graph_iterator(graph_sample_iterator),
+            generator=lambda: self.graph_batch_iterator_from_graph_iterator(
+                graph_sample_iterator
+            ),
             output_types=(
                 data_description.batch_features_types,
                 data_description.batch_labels_types,

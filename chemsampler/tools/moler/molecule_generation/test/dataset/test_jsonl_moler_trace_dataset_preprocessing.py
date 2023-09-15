@@ -82,7 +82,9 @@ def loaded_dataset() -> JSONLMoLeRTraceDataset:
     data_path = RichPath.create(
         os.path.join(os.path.dirname(__file__), "..", "test_datasets", "moler_traces")
     )
-    dataset.load_data(data_path, folds_to_load={DataFold.TRAIN, DataFold.VALIDATION, DataFold.TEST})
+    dataset.load_data(
+        data_path, folds_to_load={DataFold.TRAIN, DataFold.VALIDATION, DataFold.TEST}
+    )
     yield dataset
 
 

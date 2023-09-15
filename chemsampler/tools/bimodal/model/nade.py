@@ -11,10 +11,16 @@ torch.manual_seed(1)
 np.random.seed(5)
 
 
-class NADE():
-
-    def __init__(self, molecule_size=7, encoding_dim=55, lr=.01, hidden_units=256, generation='random',
-                 missing_token=np.zeros((55))):
+class NADE:
+    def __init__(
+        self,
+        molecule_size=7,
+        encoding_dim=55,
+        lr=0.01,
+        hidden_units=256,
+        generation="random",
+        missing_token=np.zeros((55)),
+    ):
 
         self._molecule_size = molecule_size
         self._input_dim = encoding_dim
@@ -29,7 +35,9 @@ class NADE():
 
         # Build new model
         self._lstm_fordir = OneOutLSTM(self._input_dim, self._hidden_units, self._layer)
-        self._lstm_backdir = OneOutLSTM(self._input_dim, self._hidden_units, self._layer)
+        self._lstm_backdir = OneOutLSTM(
+            self._input_dim, self._hidden_units, self._layer
+        )
 
         # Check availability of GPUs
         self._gpu = torch.cuda.is_available()
@@ -39,36 +47,52 @@ class NADE():
             self._lstm_backdir = self._lstm_backdir.cuda()
 
         # Adam optimizer
-        self._optimizer = torch.optim.Adam(list(self._lstm_fordir.parameters()) + list(self._lstm_backdir.parameters()),
-                                           lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            list(self._lstm_fordir.parameters())
+            + list(self._lstm_backdir.parameters()),
+            lr=self._lr,
+            betas=(0.9, 0.999),
+        )
         # Cross entropy loss
-        self._loss = nn.CrossEntropyLoss(reduction='mean')
+        self._loss = nn.CrossEntropyLoss(reduction="mean")
 
     def build(self, name=None):
         """Build new model or load model by name"""
 
-        if (name is None):
-            self._lstm_fordir = OneOutLSTM(self._input_dim, self._hidden_units, self._layer)
-            self._lstm_backdir = OneOutLSTM(self._input_dim, self._hidden_units, self._layer)
+        if name is None:
+            self._lstm_fordir = OneOutLSTM(
+                self._input_dim, self._hidden_units, self._layer
+            )
+            self._lstm_backdir = OneOutLSTM(
+                self._input_dim, self._hidden_units, self._layer
+            )
 
         else:
-            self._lstm_fordir = torch.load(name + '_fordir.dat', map_location=self._device)
-            self._lstm_backdir = torch.load(name + '_backdir.dat', map_location=self._device)
+            self._lstm_fordir = torch.load(
+                name + "_fordir.dat", map_location=self._device
+            )
+            self._lstm_backdir = torch.load(
+                name + "_backdir.dat", map_location=self._device
+            )
 
         if torch.cuda.is_available():
             self._lstm_fordir = self._lstm_fordir.cuda()
             self._lstm_backdir = self._lstm_backdir.cuda()
 
-        self._optimizer = torch.optim.Adam(list(self._lstm_fordir.parameters()) + list(self._lstm_backdir.parameters()),
-                                           lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            list(self._lstm_fordir.parameters())
+            + list(self._lstm_backdir.parameters()),
+            lr=self._lr,
+            betas=(0.9, 0.999),
+        )
 
     def train(self, data, label, epochs=1, batch_size=1):
-        '''Train the model
+        """Train the model
         :param  data:   data array (n_samples, molecule_length, encoding_length)
                 label:  label array (n_samples, molecule_length)
                 epochs: number of epochs for the training
         :return statistic:  array storing computed losses (epochs, batchs)
-        '''
+        """
 
         # Number of samples
         n_samples = data.shape[0]
@@ -109,21 +133,28 @@ class NADE():
                 molecule_loss = 0
 
                 # Compute data for this batch
-                batch_data = torch.from_numpy(data[:, batch_start:batch_end, :].astype('float32')).to(self._device)
+                batch_data = torch.from_numpy(
+                    data[:, batch_start:batch_end, :].astype("float32")
+                ).to(self._device)
 
                 # Different cases for training
-                if self._generation == 'random':
+                if self._generation == "random":
 
                     # Initialize loss for molecule
                     tot_loss = torch.zeros(1).to(self._device)
 
                     # Reset model with correct batch size
-                    self._lstm_fordir.new_sequence(batch_end - batch_start, self._device)
-                    self._lstm_backdir.new_sequence(batch_end - batch_start, self._device)
+                    self._lstm_fordir.new_sequence(
+                        batch_end - batch_start, self._device
+                    )
+                    self._lstm_backdir.new_sequence(
+                        batch_end - batch_start, self._device
+                    )
 
                     # Output for each position
-                    position_out = torch.zeros(self._molecule_size, batch_end - batch_start, self._input_dim).to(
-                        self._device)
+                    position_out = torch.zeros(
+                        self._molecule_size, batch_end - batch_start, self._input_dim
+                    ).to(self._device)
 
                     # Forward iteration over molecules (Token at position n-2 and n-1 not read since no prediction for next tokens)
                     for j in range(self._molecule_size - 2):
@@ -131,7 +162,9 @@ class NADE():
                         input = batch_data[j].view(1, batch_end - batch_start, -1)
 
                         # Probabilities for forward and backward token
-                        position_out[j + 1] = torch.add(position_out[j + 1], self._lstm_fordir(input))
+                        position_out[j + 1] = torch.add(
+                            position_out[j + 1], self._lstm_fordir(input)
+                        )
 
                     # Backward iteration over molecules (Token at position 0 and 1 not read since no prediction for next tokens)
                     for j in range(self._molecule_size - 1, 1, -1):
@@ -139,12 +172,16 @@ class NADE():
                         input = batch_data[j].view(1, batch_end - batch_start, -1)
 
                         # Probabilities for forward and backward token
-                        position_out[j - 1] = torch.add(position_out[j - 1], self._lstm_backdir(input))
+                        position_out[j - 1] = torch.add(
+                            position_out[j - 1], self._lstm_backdir(input)
+                        )
 
                         # Compute loss for token from 1 to n-2 (loss not computed for first (0) and last token (n-1))
                     for j in range(1, self._molecule_size - 1):
                         # Cross-entropy loss
-                        loss = self._loss(position_out[j], label[batch_start:batch_end, j])
+                        loss = self._loss(
+                            position_out[j], label[batch_start:batch_end, j]
+                        )
 
                         # Sum loss over molecule
                         molecule_loss += loss.item()
@@ -161,18 +198,26 @@ class NADE():
                     # Perform optimization step
                     self._optimizer.step()
 
-                elif self._generation == 'fixed':
+                elif self._generation == "fixed":
                     # Prepare missing data for this batch
-                    missing_data = np.repeat(self._missing, batch_end - batch_start, axis=0)
+                    missing_data = np.repeat(
+                        self._missing, batch_end - batch_start, axis=0
+                    )
                     missing_data = np.swapaxes(missing_data, 0, 1)
-                    missing_data = torch.from_numpy(missing_data.astype('float32')).to(self._device)
+                    missing_data = torch.from_numpy(missing_data.astype("float32")).to(
+                        self._device
+                    )
 
                     # The losses for position p and position molecule_size-p-1 are computed within a single loop iteration
                     for p in range(1, int(np.ceil(self._molecule_size / 2))):
 
                         # Initialize new sequence
-                        self._lstm_fordir.new_sequence(batch_end - batch_start, self._device)
-                        self._lstm_backdir.new_sequence(batch_end - batch_start, self._device)
+                        self._lstm_fordir.new_sequence(
+                            batch_end - batch_start, self._device
+                        )
+                        self._lstm_backdir.new_sequence(
+                            batch_end - batch_start, self._device
+                        )
 
                         # Iteration forward direction
                         # Read tokens until position p
@@ -192,7 +237,9 @@ class NADE():
 
                         # Iteration backward direction
                         # Read backwards until position molecule_size-1-p
-                        for j in range(self._molecule_size - 1, self._molecule_size - p - 1, -1):
+                        for j in range(
+                            self._molecule_size - 1, self._molecule_size - p - 1, -1
+                        ):
                             input = batch_data[j].view(1, batch_end - batch_start, -1)
                             out = self._lstm_backdir(input)
                         pred_2 = torch.add(pred_2, out)
@@ -209,7 +256,12 @@ class NADE():
 
                         # Compute loss for position molecule_size-1-p if it is not equal to position p. They are equal in the case of an odd SMILES length for the middle token.
                         if p != self._molecule_size - 1 - p:
-                            loss_2 = self._loss(pred_2[0], label[batch_start:batch_end, self._molecule_size - p - 1])
+                            loss_2 = self._loss(
+                                pred_2[0],
+                                label[
+                                    batch_start:batch_end, self._molecule_size - p - 1
+                                ],
+                            )
                             loss_2.backward()  # Accumulate gradients
                             molecule_loss += loss_2.item()
                             del loss_2, pred_2  # Delete to reduce memory usage
@@ -225,12 +277,12 @@ class NADE():
         return statistic
 
     def validate(self, data, label, batch_size=128):
-        ''' Validation of model and compute error
+        """Validation of model and compute error
         :param data:    test data (n_samples, molecule_size, encoding_size)
         :param label:   label data (n_samples, molecule_size)
         :param batch_size:  batch size for validation
         :return:        mean loss over test data
-        '''
+        """
 
         # Use train mode to get loss consistent with training
         self._lstm_fordir.train()
@@ -263,21 +315,28 @@ class NADE():
                 batch_end = min((n + 1) * batch_size, n_samples)
 
                 # Data used in this batch
-                batch_data = torch.from_numpy(data[:, batch_start:batch_end, :].astype('float32')).to(self._device)
+                batch_data = torch.from_numpy(
+                    data[:, batch_start:batch_end, :].astype("float32")
+                ).to(self._device)
 
                 # Output for each position
-                position_out = torch.zeros(self._molecule_size, batch_end - batch_start, self._input_dim).to(
-                    self._device)
+                position_out = torch.zeros(
+                    self._molecule_size, batch_end - batch_start, self._input_dim
+                ).to(self._device)
 
                 # Initialize loss for molecule
                 molecule_loss = 0
 
                 # Different cases for validation
-                if self._generation == 'random':
+                if self._generation == "random":
 
                     # Reset model with correct batch size and device
-                    self._lstm_fordir.new_sequence(batch_end - batch_start, self._device)
-                    self._lstm_backdir.new_sequence(batch_end - batch_start, self._device)
+                    self._lstm_fordir.new_sequence(
+                        batch_end - batch_start, self._device
+                    )
+                    self._lstm_backdir.new_sequence(
+                        batch_end - batch_start, self._device
+                    )
 
                     # Forward iteration over molecules (Token at position n-2 and n-1 not read since no prediction for next tokens)
                     for j in range(self._molecule_size - 2):
@@ -285,7 +344,9 @@ class NADE():
                         input = batch_data[j].view(1, batch_end - batch_start, -1)
 
                         # Probabilities for forward and backward token
-                        position_out[j + 1] = torch.add(position_out[j + 1], self._lstm_fordir(input))
+                        position_out[j + 1] = torch.add(
+                            position_out[j + 1], self._lstm_fordir(input)
+                        )
 
                     # Backward iteration over molecules (Token at position 0 and 1 not read since no prediction for next tokens)
                     for j in range(self._molecule_size - 1, 1, -1):
@@ -293,12 +354,16 @@ class NADE():
                         input = batch_data[j].view(1, batch_end - batch_start, -1)
 
                         # Probabilities for forward and backward token
-                        position_out[j - 1] = torch.add(position_out[j - 1], self._lstm_backdir(input))
+                        position_out[j - 1] = torch.add(
+                            position_out[j - 1], self._lstm_backdir(input)
+                        )
 
                     # Compute loss for token from 1 ro n-2 (loss not computed for first (0) and last token (n-1))
                     for j in range(1, self._molecule_size - 1):
                         # Cross-entropy loss
-                        loss = self._loss(position_out[j], label[batch_start:batch_end, j])
+                        loss = self._loss(
+                            position_out[j], label[batch_start:batch_end, j]
+                        )
 
                         # Sum loss over molecule
                         molecule_loss += loss.item()
@@ -306,19 +371,27 @@ class NADE():
                     # Add loss per token to total loss (start token and end token not counted)
                     tot_loss += molecule_loss / (self._molecule_size - 2)
 
-                elif self._generation == 'fixed':
+                elif self._generation == "fixed":
 
                     # Prepare missing data for this batch
-                    missing_data = np.repeat(self._missing, batch_end - batch_start, axis=0)
+                    missing_data = np.repeat(
+                        self._missing, batch_end - batch_start, axis=0
+                    )
                     missing_data = np.swapaxes(missing_data, 0, 1)
-                    missing_data = torch.from_numpy(missing_data.astype('float32')).to(self._device)
+                    missing_data = torch.from_numpy(missing_data.astype("float32")).to(
+                        self._device
+                    )
 
                     # The losses for position p and position molecule_size-p-1 are computed within a single loop iteration
                     for p in range(1, int(np.ceil(self._molecule_size / 2))):
 
                         # Reset model with correct batch size and device
-                        self._lstm_fordir.new_sequence(batch_end - batch_start, self._device)
-                        self._lstm_backdir.new_sequence(batch_end - batch_start, self._device)
+                        self._lstm_fordir.new_sequence(
+                            batch_end - batch_start, self._device
+                        )
+                        self._lstm_backdir.new_sequence(
+                            batch_end - batch_start, self._device
+                        )
 
                         # Iteration forward direction
                         # Read until position p
@@ -338,7 +411,9 @@ class NADE():
 
                         # Iteration backward direction
                         # Read backwards until position molecule_size-1-p
-                        for j in range(self._molecule_size - 1, self._molecule_size - p - 1, -1):
+                        for j in range(
+                            self._molecule_size - 1, self._molecule_size - p - 1, -1
+                        ):
                             input = batch_data[j].view(1, batch_end - batch_start, -1)
                             out = self._lstm_backdir(input)
                         pred_2 = torch.add(pred_2, out)
@@ -354,7 +429,12 @@ class NADE():
 
                         # Compute loss for position molecule_size-1-p if it is not equal to position p. They are equal in the case of an odd SMILES length for the middle token.
                         if p != self._molecule_size - 1 - p:
-                            loss_2 = self._loss(pred_2[0], label[batch_start:batch_end, self._molecule_size - p - 1])
+                            loss_2 = self._loss(
+                                pred_2[0],
+                                label[
+                                    batch_start:batch_end, self._molecule_size - p - 1
+                                ],
+                            )
                             molecule_loss += loss_2.item()
                             del loss_2, pred_2
 
@@ -367,11 +447,11 @@ class NADE():
         return tot_loss / n_iter
 
     def sample(self, seq, T=1):
-        '''Generate new molecule
+        """Generate new molecule
         :param seq: starting sequence
         :param T:   sampling temperature
         :return     newly generated molecule (1, molecule_length, encoding_length)
-        '''
+        """
 
         # Prepare model
         self._lstm_fordir.eval()
@@ -382,15 +462,19 @@ class NADE():
             # Output array with merged forward and backward directions
 
             # Change axes from (1, molecule_size, encoding_dim) to (molecule_size , 1, encoding_dim)
-            seq = np.swapaxes(seq, 0, 1).astype('float32')
+            seq = np.swapaxes(seq, 0, 1).astype("float32")
 
             # Create tensor for data and select correct device
             seq = torch.from_numpy(seq).to(self._device)
 
             # Construct specific order for the generation
-            if self._generation == 'random':
-                order = np.random.choice(np.arange(self._molecule_size - 2) + 1, self._molecule_size - 2, replace=False)
-            elif self._generation == 'fixed':
+            if self._generation == "random":
+                order = np.random.choice(
+                    np.arange(self._molecule_size - 2) + 1,
+                    self._molecule_size - 2,
+                    replace=False,
+                )
+            elif self._generation == "fixed":
                 order = np.zeros(self._molecule_size - 2).astype(int)
                 order[0::2] = np.arange(1, len(order[0::2]) + 1)
                 order[1::2] = np.arange(self._molecule_size - 2, len(order[0::2]), -1)
@@ -430,13 +514,13 @@ class NADE():
         return np.swapaxes(seq.cpu().numpy(), 0, 1)
 
     def sample_token(self, out, T=1.0):
-        ''' Sample token
+        """Sample token
         :param out: output values from model
         :param T:   sampling temperature
         :return:    index of predicted token
-        '''
+        """
         # Explicit conversion to float64 avoiding truncation errors
-        out = out.astype('float64')
+        out = out.astype("float64")
 
         # Compute probabilities with specific temperature
         out_T = out / T
@@ -446,6 +530,6 @@ class NADE():
         char = np.random.multinomial(1, p, size=1)
         return np.argmax(char)
 
-    def save(self, name='test_model'):
-        torch.save(self._lstm_fordir, name + '_fordir.dat')
-        torch.save(self._lstm_backdir, name + '_backdir.dat')
+    def save(self, name="test_model"):
+        torch.save(self._lstm_fordir, name + "_fordir.dat")
+        torch.save(self._lstm_backdir, name + "_backdir.dat")

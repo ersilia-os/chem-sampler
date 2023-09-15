@@ -9,13 +9,18 @@ def generate_smiles(params, model, dico, number_samples, sample_temperature=1.0)
     while len(gen_smiles) < number_samples:
         # run generation of molecules ( regular sampling)
         with torch.no_grad():
-            gen, gen_len = model.generate_unconditional(params, max_len=params.max_len, bs=params.batch_size,
-                                                        sample_temperature=sample_temperature)
+            gen, gen_len = model.generate_unconditional(
+                params,
+                max_len=params.max_len,
+                bs=params.batch_size,
+                sample_temperature=sample_temperature,
+            )
         for b in range(len(gen_len)):
-            gen_b = gen[:,b][:gen_len[b]]
-            smiles_b = ''.join([dico[symbol.item()] for symbol in gen_b[1:-1]])
+            gen_b = gen[:, b][: gen_len[b]]
+            smiles_b = "".join([dico[symbol.item()] for symbol in gen_b[1:-1]])
             gen_smiles.append(smiles_b)
     return gen_smiles[:number_samples]
+
 
 class ARMockGenerator(DistributionMatchingGenerator):
     """

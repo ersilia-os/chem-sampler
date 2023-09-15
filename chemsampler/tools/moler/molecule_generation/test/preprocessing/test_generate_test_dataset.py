@@ -5,7 +5,9 @@ import shutil
 import pytest
 from dpu_utils.utils import RichPath, LocalPath
 
-from molecule_generation.test.test_datasets.generate_test_dataset import main as generate_main
+from molecule_generation.test.test_datasets.generate_test_dataset import (
+    main as generate_main,
+)
 
 
 @pytest.fixture(scope="module")
@@ -14,8 +16,12 @@ def tmp_test_directory() -> LocalPath:
 
     Gets cleaned up after the tests have finished.
     """
-    tmp_directory: LocalPath = RichPath.create(os.path.join(os.path.dirname(__file__), "tmp"))
-    assert not tmp_directory.exists(), "Tried to create a temporary directory that already exists."
+    tmp_directory: LocalPath = RichPath.create(
+        os.path.join(os.path.dirname(__file__), "tmp")
+    )
+    assert (
+        not tmp_directory.exists()
+    ), "Tried to create a temporary directory that already exists."
     tmp_directory.make_as_dir()
     yield tmp_directory
     # Tear down.

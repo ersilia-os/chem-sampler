@@ -58,7 +58,9 @@ class ShardedDataReader(Iterable[T]):
 
     def get_example_datum(self) -> T:
         if len(self._shard_paths) == 0:
-            raise ValueError("No shards passed to ParallelShardReader. No example datum available")
+            raise ValueError(
+                "No shards passed to ParallelShardReader. No example datum available"
+            )
         path = self._shard_paths[0]
         data = path.read_by_file_suffix()
         datum = next(iter(data))
@@ -121,7 +123,8 @@ class ParallelShardedDataIterator(Iterator[T]):
             Queue(max_num_shards_per_worker) for _ in range(self._num_workers)
         ]
         self._output_queues: List[Queue[T]] = [
-            Queue(self._context_iterable._max_queue_size) for _ in range(self._num_workers)
+            Queue(self._context_iterable._max_queue_size)
+            for _ in range(self._num_workers)
         ]
 
         # Set off the processes reading their shards.
@@ -260,14 +263,18 @@ class ParallelShardedDataIterator(Iterator[T]):
                     worker_process = self._processes[self._next_worker_idx]
                     # Check if our dear child is still alive, if not, bail out:
                     if not worker_process.is_alive():
-                        raise Exception(f"Worker {worker_process.pid} got killed; giving up.")
+                        raise Exception(
+                            f"Worker {worker_process.pid} got killed; giving up."
+                        )
 
             # Check if the input queue is finished.
             if next_element is Empty:
                 self._worker_is_finished_flags[self._next_worker_idx] = True
                 continue
             # Check if we have some other error.
-            if isinstance(next_element, tuple) and isinstance(next_element[0], Exception):
+            if isinstance(next_element, tuple) and isinstance(
+                next_element[0], Exception
+            ):
                 raise next_element[0].with_traceback(next_element[1])
 
             # If everything is good, we have found our next element.

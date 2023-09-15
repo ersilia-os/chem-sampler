@@ -1,5 +1,15 @@
 """Decoding layer for a MoLeR."""
-from typing import Any, Dict, List, Optional, Tuple, NamedTuple, Union, Iterable, Generator
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    NamedTuple,
+    Union,
+    Iterable,
+    Generator,
+)
 import itertools
 from dataclasses import dataclass
 
@@ -19,7 +29,10 @@ from molecule_generation.chem.atom_feature_utils import (
     AtomTypeFeatureExtractor,
 )
 from molecule_generation.chem.molecule_dataset_utils import BOND_DICT
-from molecule_generation.chem.rdkit_helpers import compute_canonical_atom_order, get_atom_symbol
+from molecule_generation.chem.rdkit_helpers import (
+    compute_canonical_atom_order,
+    get_atom_symbol,
+)
 from molecule_generation.chem.motif_utils import (
     find_motifs_from_vocabulary,
     MotifVocabulary,
@@ -191,7 +204,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         if "max_nodes_per_batch" not in params:
             # Backwards-compatibility with old checkpoints that do not have "max_nodes_per_batch" parameter
-            params["max_nodes_per_batch"] = self.get_default_params()["max_nodes_per_batch"]
+            params["max_nodes_per_batch"] = self.get_default_params()[
+                "max_nodes_per_batch"
+            ]
         self._params = params
         self._num_edge_types_to_classify = params["num_edge_types_to_classify"]
         self._atom_featurisers = atom_featurisers
@@ -206,7 +221,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         if self.uses_motifs:
             # Record the set of atom types, which will be a subset of all node types.
             atom_type_featuriser: AtomTypeFeatureExtractor = next(
-                featuriser for featuriser in atom_featurisers if featuriser.name == "AtomType"
+                featuriser
+                for featuriser in atom_featurisers
+                if featuriser.name == "AtomType"
             )
 
             self._atom_types = set(atom_type_featuriser.index_to_atom_type_map.values())
@@ -220,7 +237,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             weighting_fun="softmax",
             scoring_mlp_layers=[l // 2 for l in self._params["graph_repr_mlp_layers"]],
             scoring_mlp_dropout_rate=self._params["graph_repr_dropout_rate"],
-            transformation_mlp_layers=[l // 2 for l in self._params["graph_repr_mlp_layers"]],
+            transformation_mlp_layers=[
+                l // 2 for l in self._params["graph_repr_mlp_layers"]
+            ],
             transformation_mlp_dropout_rate=self._params["graph_repr_dropout_rate"],
         )
         self._weighted_sum_of_nodes_to_graph_repr = WeightedSumGraphRepresentation(
@@ -229,7 +248,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             weighting_fun="sigmoid",
             scoring_mlp_layers=[l // 2 for l in self._params["graph_repr_mlp_layers"]],
             scoring_mlp_dropout_rate=self._params["graph_repr_dropout_rate"],
-            transformation_mlp_layers=[l // 2 for l in self._params["graph_repr_mlp_layers"]],
+            transformation_mlp_layers=[
+                l // 2 for l in self._params["graph_repr_mlp_layers"]
+            ],
             transformation_mlp_dropout_rate=self._params["graph_repr_dropout_rate"],
             transformation_mlp_result_upper_bound=5,
         )
@@ -284,7 +305,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 self._node_categorical_features_embedding = None
             else:
                 # Older models use one hot vectors instead of dense embeddings, simulate that here.
-                self._params["categorical_features_embedding_dim"] = node_categorical_num_classes
+                self._params[
+                    "categorical_features_embedding_dim"
+                ] = node_categorical_num_classes
                 self._node_categorical_features_embedding = np.eye(
                     node_categorical_num_classes, dtype=np.float32
                 )
@@ -300,7 +323,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             **kwargs,
         )
 
-    def compute_metrics(self, *, batch_features, batch_labels, task_output) -> MoLeRDecoderMetrics:
+    def compute_metrics(
+        self, *, batch_features, batch_labels, task_output
+    ) -> MoLeRDecoderMetrics:
 
         node_classification_loss = self.compute_node_type_selection_loss(
             node_type_logits=task_output.node_type_logits,
@@ -309,7 +334,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
         first_node_classification_loss = self.compute_first_node_type_selection_loss(
             first_node_type_logits=task_output.first_node_type_logits,
-            first_node_type_multihot_labels=batch_labels["correct_first_node_type_choices"],
+            first_node_type_multihot_labels=batch_labels[
+                "correct_first_node_type_choices"
+            ],
         )
 
         edge_loss = self.compute_edge_candidate_selection_loss(
@@ -334,8 +361,12 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 num_graphs_in_batch=batch_features["num_partial_graphs_in_batch"],
                 node_to_graph_map=batch_features["node_to_partial_graph_map"],
                 attachment_point_selection_logits=task_output.attachment_point_selection_logits,
-                attachment_point_candidate_choices=batch_features["valid_attachment_point_choices"],
-                attachment_point_correct_choices=batch_labels["correct_attachment_point_choices"],
+                attachment_point_candidate_choices=batch_features[
+                    "valid_attachment_point_choices"
+                ],
+                attachment_point_correct_choices=batch_labels[
+                    "correct_attachment_point_choices"
+                ],
             )
         else:
             attachment_point_selection_loss = None
@@ -375,7 +406,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             node_features_dim += self._params["categorical_features_embedding_dim"]
 
         initial_node_feature_shape = tf.TensorShape(dims=(None, node_features_dim))
-        input_molecule_representation_size = tensor_shapes.input_molecule_representations[-1]
+        input_molecule_representation_size = tensor_shapes.input_molecule_representations[
+            -1
+        ]
 
         with tf.name_scope("decoder_gnn"):
             # No need to generalise input shapes here. Taken care of by GNN layer.
@@ -389,7 +422,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             )
 
         # We get the initial GNN input (after projection) + results for all layers:
-        node_repr_size = self._params["gnn_hidden_dim"] * (1 + self._params["gnn_num_layers"])
+        node_repr_size = self._params["gnn_hidden_dim"] * (
+            1 + self._params["gnn_num_layers"]
+        )
 
         # Build the individual layers, which we've initialised in __init__():
         node_to_graph_repr_input = NodesToGraphRepresentationInput(
@@ -399,9 +434,13 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )
         with tf.name_scope("graph_representation_computation"):
             with tf.name_scope("weighted_avg"):
-                self._weighted_avg_of_nodes_to_graph_repr.build(node_to_graph_repr_input)
+                self._weighted_avg_of_nodes_to_graph_repr.build(
+                    node_to_graph_repr_input
+                )
             with tf.name_scope("weighted_sum"):
-                self._weighted_sum_of_nodes_to_graph_repr.build(node_to_graph_repr_input)
+                self._weighted_sum_of_nodes_to_graph_repr.build(
+                    node_to_graph_repr_input
+                )
 
         # Edge candidates are represented by a graph-global representation,
         # the representations of source and target nodes, and edge features:
@@ -423,13 +462,16 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             )
 
         with tf.name_scope("edge_type_selector"):
-            self._edge_type_selector.build(input_shape=[None, edge_candidate_representation_size])
+            self._edge_type_selector.build(
+                input_shape=[None, edge_candidate_representation_size]
+            )
 
         with tf.name_scope("node_type_selector"):
             self._node_type_selector.build(
                 input_shape=[
                     None,
-                    self._params["graph_repr_size"] + input_molecule_representation_size,
+                    self._params["graph_repr_size"]
+                    + input_molecule_representation_size,
                 ]
             )
 
@@ -450,7 +492,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                     ]
                 )
 
-        if self.uses_categorical_features and self._node_categorical_features_embedding is None:
+        if (
+            self.uses_categorical_features
+            and self._node_categorical_features_embedding is None
+        ):
             with tf.name_scope("node_categorical_features_embedding"):
                 self._node_categorical_features_embedding = self.add_weight(
                     name="categorical_features_embedding",
@@ -464,13 +509,20 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         with tf.name_scope("distance_embedding"):
             self._distance_embedding = self.add_weight(
                 name="distance_embedding",
-                shape=(self._params.get("distance_truncation", _COMPAT_DISTANCE_TRUNCATION), 1),
+                shape=(
+                    self._params.get(
+                        "distance_truncation", _COMPAT_DISTANCE_TRUNCATION
+                    ),
+                    1,
+                ),
                 trainable=True,
             )
 
         super().build(tensor_shapes)
 
-    def call(self, input: MoLeRDecoderInput, training: bool = False) -> MoLeRDecoderOutput:
+    def call(
+        self, input: MoLeRDecoderInput, training: bool = False
+    ) -> MoLeRDecoderOutput:
         """
         Call graph generation model for training and batch evaluation purposes, using
         teacher forcing to a correct choice to efficiently batch training.
@@ -495,7 +547,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         """
         # Because pick_node_type and pick_edge share operations on the partial graphs, and
         # we want to avoid duplicating them during training, we do this first:
-        graph_representations, node_representations = self.calculate_node_and_graph_representations(
+        (
+            graph_representations,
+            node_representations,
+        ) = self.calculate_node_and_graph_representations(
             node_features=input.node_features,
             node_categorical_features=input.node_categorical_features,
             adjacency_lists=input.adjacency_lists,
@@ -577,7 +632,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
         node_is_in_focus_bit = tf.scatter_nd(
             indices=tf.expand_dims(nodes_to_set_in_focus_bit, axis=-1),
-            updates=tf.ones(shape=(tf.shape(nodes_to_set_in_focus_bit)[0], 1), dtype=tf.float32),
+            updates=tf.ones(
+                shape=(tf.shape(nodes_to_set_in_focus_bit)[0], 1), dtype=tf.float32
+            ),
             shape=(tf.shape(node_features)[0], 1),
         )
 
@@ -586,7 +643,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             # focus node. The line above will then add `1` to its position twice - correcting it here.
             node_is_in_focus_bit = tf.minimum(node_is_in_focus_bit, 1.0)
 
-        initial_node_features = tf.concat([initial_node_features, node_is_in_focus_bit], axis=-1)
+        initial_node_features = tf.concat(
+            [initial_node_features, node_is_in_focus_bit], axis=-1
+        )
 
         # Encode the graphs we are extending using a GNN:
         encoder_input = GNNInput(
@@ -649,7 +708,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         """
         original_and_calculated_graph_representations = tf.concat(
             [
-                tf.gather(input_molecule_representations, graphs_requiring_node_choices),
+                tf.gather(
+                    input_molecule_representations, graphs_requiring_node_choices
+                ),
                 tf.gather(graph_representations, graphs_requiring_node_choices),
             ],
             axis=-1,
@@ -660,9 +721,7 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )
 
     def pick_first_node_type(
-        self,
-        input_molecule_representations: tf.Tensor,
-        training: bool = False,
+        self, input_molecule_representations: tf.Tensor, training: bool = False,
     ) -> tf.Tensor:
         """
         Pick the first node type of the next node, given
@@ -677,7 +736,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             A tensor which represents first node classification logits, which have shape [PG, NT].
             The columns represent the logits for the first node type in each input graph.
         """
-        return self._first_node_type_selector(input_molecule_representations, training=training)
+        return self._first_node_type_selector(
+            input_molecule_representations, training=training
+        )
 
     def pick_edge(
         self,
@@ -731,7 +792,11 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )  # shape: [PG, VD*(num_layers+1)]
 
         graph_and_focus_node_representations = tf.concat(
-            [input_molecule_representations, graph_representations, focus_node_representations],
+            [
+                input_molecule_representations,
+                graph_representations,
+                focus_node_representations,
+            ],
             axis=-1,
         )  # shape: [PG, MD + PD + VD*(num_layers+1)]
 
@@ -786,7 +851,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )  # shape: [CE + PG, MD + PD + 2 * VD*(num_layers+1) + FD]
 
         edge_candidate_logits = tf.squeeze(
-            self._edge_candidate_scorer(edge_candidate_and_stop_features, training=training),
+            self._edge_candidate_scorer(
+                edge_candidate_and_stop_features, training=training
+            ),
             axis=-1,
         )  # shape: [CE + PG]
         edge_type_logits = self._edge_type_selector(
@@ -830,8 +897,7 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         assert self.uses_motifs
 
         original_and_calculated_graph_representations = tf.concat(
-            [input_molecule_representations, graph_representations],
-            axis=-1,
+            [input_molecule_representations, graph_representations], axis=-1,
         )  # Shape: [PG, MD + PD]
 
         # Map attachment point candidates to their respective partial graphs.
@@ -853,7 +919,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )  # Shape: [CA, MD + PD + VD*(num_layers+1)]
 
         attachment_point_selection_logits = tf.squeeze(
-            self._attachment_point_selector(attachment_point_representations, training=training),
+            self._attachment_point_selector(
+                attachment_point_representations, training=training
+            ),
             axis=-1,
         )  # Shape: [CA]
 
@@ -861,9 +929,7 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
     @tf.function(experimental_relax_shapes=True)
     def compute_node_type_selection_loss(
-        self,
-        node_type_logits: tf.Tensor,
-        node_type_multihot_labels: tf.Tensor,
+        self, node_type_logits: tf.Tensor, node_type_multihot_labels: tf.Tensor,
     ) -> tf.Tensor:
         # We have only made predictions for a subset of NTP graphs, but our labels also only
         # cover these.
@@ -894,7 +960,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )  # Shape [NTP]
 
         if self._node_type_loss_weights is not None:
-            per_correct_node_decision_normalised_neglogprob *= self._node_type_loss_weights[:-1]
+            per_correct_node_decision_normalised_neglogprob *= self._node_type_loss_weights[
+                :-1
+            ]
             per_correct_no_node_decision_neglogprob *= self._node_type_loss_weights[-1]
 
         # Loss is the sum of the masked (no) node decisions, averaged over number of decisions made:
@@ -913,7 +981,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         first_node_type_logits: tf.Tensor,
         first_node_type_multihot_labels: tf.Tensor,
     ) -> tf.Tensor:
-        per_graph_logprobs = tf.nn.log_softmax(first_node_type_logits, axis=-1)  # Shape: [PG, NT]
+        per_graph_logprobs = tf.nn.log_softmax(
+            first_node_type_logits, axis=-1
+        )  # Shape: [PG, NT]
         per_graph_num_correct_choices = tf.math.reduce_sum(
             first_node_type_multihot_labels, keepdims=True, axis=-1
         )  # Shape [PG, 1]
@@ -948,7 +1018,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         # First, we construct full labels for all edge decisions, which are the concat of
         # edge candidate logits and the logits for choosing no edge:
         edge_correctness_labels = tf.concat(
-            [edge_candidate_correctness_labels, tf.cast(no_edge_selected_labels, tf.float32)],
+            [
+                edge_candidate_correctness_labels,
+                tf.cast(no_edge_selected_labels, tf.float32),
+            ],
             axis=0,
         )  # Shape: [CE + PG]
 
@@ -991,10 +1064,14 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             per_graph_num_correct_edge_choices, 1
         )  # Shape: [PG]
         per_edge_candidate_num_correct_choices = tf.nn.embedding_lookup(
-            tf.cast(per_graph_num_correct_edge_choices, tf.float32), edge_candidate_to_graph_map
+            tf.cast(per_graph_num_correct_edge_choices, tf.float32),
+            edge_candidate_to_graph_map,
         )  # Shape: [CE]
         per_correct_edge_neglogprob = -(
-            (edge_candidate_logprobs + tf.math.log(per_edge_candidate_num_correct_choices))
+            (
+                edge_candidate_logprobs
+                + tf.math.log(per_edge_candidate_num_correct_choices)
+            )
             * edge_correctness_labels
             / per_edge_candidate_num_correct_choices
         )  # Shape: [CE]
@@ -1025,7 +1102,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         # to valency constraints), 0 otherwise.
         # We want to multiply the selection probabilities by this mask. Because the logits are in
         # log space, we instead subtract a large value from the logits wherever this mask is zero.
-        scaled_edge_mask = (1 - tf.cast(valid_edge_types, dtype=tf.float32)) * tf.constant(
+        scaled_edge_mask = (
+            1 - tf.cast(valid_edge_types, dtype=tf.float32)
+        ) * tf.constant(
             BIG_NUMBER, dtype=tf.float32
         )  # Shape: [CCE, ET]
         masked_edge_type_logits = (
@@ -1091,7 +1170,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         node_type: str,
         logprob: float,
         choice_info: Optional[
-            Union[MoleculeGenerationAtomChoiceInfo, MoleculeGenerationAttachmentPointChoiceInfo]
+            Union[
+                MoleculeGenerationAtomChoiceInfo,
+                MoleculeGenerationAttachmentPointChoiceInfo,
+            ]
         ],
     ) -> Tuple[MoLeRDecoderState, bool]:
         # If we are running with motifs, we need to check whether `node_type` is an atom or a motif.
@@ -1192,7 +1274,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             mol_ids = range(len(graph_representations))
 
         decoder_states: List[MoLeRDecoderState] = []
-        for graph_repr, init_mol, mol_id in zip(graph_representations, initial_molecules, mol_ids):
+        for graph_repr, init_mol, mol_id in zip(
+            graph_representations, initial_molecules, mol_ids
+        ):
             num_free_bond_slots = [0] * len(init_mol.GetAtoms())
 
             atom_ids_to_remove = []
@@ -1213,7 +1297,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                         # This is a very odd case: either the scaffold we got is disconnected, or
                         # it consists of just a single * atom.
                         scaffold = Chem.MolToSmiles(init_mol)
-                        raise ValueError(f"Scaffold {scaffold} contains a [*] atom with no bonds.")
+                        raise ValueError(
+                            f"Scaffold {scaffold} contains a [*] atom with no bonds."
+                        )
 
                     [bond] = bonds
                     begin_idx = bond.GetBeginAtomIdx()
@@ -1230,7 +1316,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 # No explicit attachment points, so assume we can connect anywhere.
                 num_free_bond_slots = None
             else:
-                num_free_bond_slots = [num_free_bond_slots[idx] for idx in atom_ids_to_keep]
+                num_free_bond_slots = [
+                    num_free_bond_slots[idx] for idx in atom_ids_to_keep
+                ]
                 init_mol = Chem.RWMol(init_mol)
 
                 # Remove atoms starting from largest index, so that we don't have to account for
@@ -1241,7 +1329,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 # Determine how the scaffold atoms will get reordered when we canonicalize it, so we can
                 # permute `num_free_bond_slots` appropriately.
                 canonical_ordering = compute_canonical_atom_order(init_mol)
-                num_free_bond_slots = [num_free_bond_slots[idx] for idx in canonical_ordering]
+                num_free_bond_slots = [
+                    num_free_bond_slots[idx] for idx in canonical_ordering
+                ]
 
             # Now canonicalize, which renumbers all the atoms, but we've applied the same
             # renumbering to `num_free_bond_slots` earlier.
@@ -1258,7 +1348,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             # make sure that `init_mol`s have correct atom features (e.g. charges).
             for atom in init_mol.GetAtoms():
                 init_atom_types.append(get_atom_symbol(atom))
-            adjacency_lists: List[List[Tuple[int, int]]] = [[] for _ in range(len(BOND_DICT))]
+            adjacency_lists: List[List[Tuple[int, int]]] = [
+                [] for _ in range(len(BOND_DICT))
+            ]
             for bond in init_mol.GetBonds():
                 bond_type_idx = BOND_DICT[str(bond.GetBondType())]
                 adjacency_lists[bond_type_idx].append(
@@ -1304,7 +1396,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
         # Step 0: Pick first node types for states that do not have an initial molecule.
         first_node_pick_results = self._decoder_pick_first_atom_types(
-            decoder_states=decoder_states_empty, num_samples=beam_size, sampling_mode=sampling_mode
+            decoder_states=decoder_states_empty,
+            num_samples=beam_size,
+            sampling_mode=sampling_mode,
         )
 
         # print("I: Picked first node types:", [picks for picks, _ in first_node_pick_results])
@@ -1353,7 +1447,11 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             new_decoder_states: List[MoLeRDecoderState] = []
             num_steps += 1
             # Step 1: Split decoder states into subsets, dependent on what they need next:
-            require_atom_states, require_bond_states, require_attachment_point_states = [], [], []
+            (
+                require_atom_states,
+                require_bond_states,
+                require_attachment_point_states,
+            ) = ([], [], [])
             for decoder_state in decoder_states:
                 # No focus atom => needs a new atom
                 if decoder_state.focus_atom is None:
@@ -1422,22 +1520,32 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                     attachment_pick_results,
                     attachment_pick_logits,
                 ) = self._decoder_pick_attachment_points(
-                    decoder_states=require_attachment_point_states, sampling_mode=sampling_mode
+                    decoder_states=require_attachment_point_states,
+                    sampling_mode=sampling_mode,
                 )
 
-                for decoder_state, attachment_point_picks, attachment_point_logits in zip(
+                for (
+                    decoder_state,
+                    attachment_point_picks,
+                    attachment_point_logits,
+                ) in zip(
                     require_attachment_point_states,
                     attachment_pick_results,
                     attachment_pick_logits,
                 ):
-                    for (attachment_point_pick, attachment_point_logprob) in attachment_point_picks:
+                    for (
+                        attachment_point_pick,
+                        attachment_point_logprob,
+                    ) in attachment_point_picks:
                         attachment_point_choice_info = None
                         if store_generation_traces:
                             attachment_point_choice_info = MoleculeGenerationAttachmentPointChoiceInfo(
                                 partial_molecule_adjacency_lists=decoder_state.adjacency_lists,
                                 motif_nodes=decoder_state.atoms_to_mark_as_visited,
                                 candidate_attachment_points=decoder_state.candidate_attachment_points,
-                                candidate_idx_to_prob=tf.nn.softmax(attachment_point_logits),
+                                candidate_idx_to_prob=tf.nn.softmax(
+                                    attachment_point_logits
+                                ),
                                 correct_attachment_point_idx=None,
                             )
 
@@ -1454,7 +1562,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 assert not require_attachment_point_states
 
             # Step 3: Pick fresh bonds and populate the next round of decoding steps:
-            require_bond_states = restrict_to_beam_size_per_mol(require_bond_states, beam_size)
+            require_bond_states = restrict_to_beam_size_per_mol(
+                require_bond_states, beam_size
+            )
             bond_pick_results = self._decoder_pick_new_bond_types(
                 decoder_states=require_bond_states,
                 store_generation_traces=store_generation_traces,
@@ -1505,7 +1615,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                         )
 
             # Everything is done, restrict to the beam width, and go back to the loop start:
-            decoder_states = restrict_to_beam_size_per_mol(new_decoder_states, beam_size)
+            decoder_states = restrict_to_beam_size_per_mol(
+                new_decoder_states, beam_size
+            )
 
         return decoder_states
 
@@ -1542,7 +1654,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         def init_atom_choice_batch(batch: Dict[str, Any]):
             batch["prior_focus_atoms"] = []
 
-        def add_state_to_atom_choice_batch(batch: Dict[str, Any], decoder_state: MoLeRDecoderState):
+        def add_state_to_atom_choice_batch(
+            batch: Dict[str, Any], decoder_state: MoLeRDecoderState
+        ):
             batch["prior_focus_atoms"].append(
                 decoder_state.prior_focus_atom + batch["nodes_in_batch"]
             )
@@ -1559,7 +1673,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         return itertools.chain.from_iterable(atom_type_pick_generator)
 
     def _pick_new_atom_types_for_batch(
-        self, batch: Dict[str, Any], num_samples: int, sampling_mode: DecoderSamplingMode
+        self,
+        batch: Dict[str, Any],
+        num_samples: int,
+        sampling_mode: DecoderSamplingMode,
     ):
         graph_representations, _ = self.calculate_node_and_graph_representations(
             node_features=batch["node_features"],
@@ -1588,7 +1705,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         atom_type_logprobs = tf.nn.log_softmax(
             node_type_logits[:, 1:], axis=1
         ).numpy()  # Shape [G, NT]
-        atom_type_pick_results: List[Tuple[List[Tuple[Optional[str], float]], np.ndarray]] = []
+        atom_type_pick_results: List[
+            Tuple[List[Tuple[Optional[str], float]], np.ndarray]
+        ] = []
         # Iterate over each of the rows independently, sampling for each input state:
         for state_atom_type_logprobs in atom_type_logprobs:
             picked_atom_type_indices = sample_indices_from_logprobs(
@@ -1598,14 +1717,20 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             this_state_results: List[Tuple[Optional[str], float]] = []
             for picked_atom_type_idx in picked_atom_type_indices:
                 pick_logprob: float = state_atom_type_logprobs[picked_atom_type_idx]
-                picked_atom_type_idx += 1  # Revert the stripping out of the UNK (index 0) type
+                picked_atom_type_idx += (
+                    1  # Revert the stripping out of the UNK (index 0) type
+                )
                 # This is the case in which we picked the "no further nodes" virtual node type:
                 if picked_atom_type_idx >= self._num_node_types:
                     this_state_results.append((None, pick_logprob))
                 else:
-                    picked_atom_type = self._index_to_node_type_map[picked_atom_type_idx]
+                    picked_atom_type = self._index_to_node_type_map[
+                        picked_atom_type_idx
+                    ]
                     this_state_results.append((picked_atom_type, pick_logprob))
-            atom_type_pick_results.append((this_state_results, state_atom_type_logprobs))
+            atom_type_pick_results.append(
+                (this_state_results, state_atom_type_logprobs)
+            )
         return atom_type_pick_results
 
     def _decoder_pick_first_atom_types(
@@ -1647,7 +1772,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
                 return first_node_type_picks, first_node_type_logprobs
 
-            return [generate_result_that_picks_carbon() for _ in range(len(decoder_states))]
+            return [
+                generate_result_that_picks_carbon() for _ in range(len(decoder_states))
+            ]
 
         # We only need the molecule representations.
         molecule_representations = np.stack(
@@ -1675,8 +1802,12 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             this_state_results: List[Tuple[Optional[str], float]] = []
 
             for picked_atom_type_idx in picked_atom_type_indices:
-                pick_logprob: float = state_first_atom_type_logprobs[picked_atom_type_idx]
-                picked_atom_type_idx += 1  # Revert the stripping out of the UNK (index 0) type
+                pick_logprob: float = state_first_atom_type_logprobs[
+                    picked_atom_type_idx
+                ]
+                picked_atom_type_idx += (
+                    1  # Revert the stripping out of the UNK (index 0) type
+                )
 
                 this_state_results.append(
                     (self._index_to_node_type_map[picked_atom_type_idx], pick_logprob)
@@ -1730,16 +1861,27 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         def init_edge_batch(batch: Dict[str, Any]):
             batch["focus_atoms"] = []
             batch["candidate_edge_targets"] = []
-            batch["candidate_edge_targets_offset"] = []  # needed to get original target node ID
+            batch[
+                "candidate_edge_targets_offset"
+            ] = []  # needed to get original target node ID
             batch["candidate_edge_type_masks"] = []
             batch["candidate_edge_features"] = []
             batch["decoder_state_to_num_candidate_edges"] = []
 
-        def add_state_to_edge_batch(batch: Dict[str, Any], decoder_state: MoLeRDecoderState):
-            batch["focus_atoms"].append(decoder_state.focus_atom + batch["nodes_in_batch"])
-            candidate_targets, candidate_bond_type_mask = decoder_state.get_bond_candidate_targets()
+        def add_state_to_edge_batch(
+            batch: Dict[str, Any], decoder_state: MoLeRDecoderState
+        ):
+            batch["focus_atoms"].append(
+                decoder_state.focus_atom + batch["nodes_in_batch"]
+            )
+            (
+                candidate_targets,
+                candidate_bond_type_mask,
+            ) = decoder_state.get_bond_candidate_targets()
             num_edge_candidates = len(candidate_targets)
-            batch["candidate_edge_targets"].append(candidate_targets + batch["nodes_in_batch"])
+            batch["candidate_edge_targets"].append(
+                candidate_targets + batch["nodes_in_batch"]
+            )
             batch["candidate_edge_targets_offset"].append(batch["nodes_in_batch"])
             batch["candidate_edge_type_masks"].append(candidate_bond_type_mask)
             batch["candidate_edge_features"].append(
@@ -1754,7 +1896,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         )
 
         picked_edges_generator = (
-            self._pick_edges_for_batch(b, d, num_samples, sampling_mode, store_generation_traces)
+            self._pick_edges_for_batch(
+                b, d, num_samples, sampling_mode, store_generation_traces
+            )
             for b, d in batch_generator
         )
         return itertools.chain.from_iterable(picked_edges_generator)
@@ -1767,7 +1911,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         sampling_mode: DecoderSamplingMode,
         store_generation_traces: bool,
     ):
-        graph_representations, node_representations = self.calculate_node_and_graph_representations(
+        (
+            graph_representations,
+            node_representations,
+        ) = self.calculate_node_and_graph_representations(
             node_features=batch["node_features"],
             node_categorical_features=batch["node_categorical_features"],
             adjacency_lists=batch["adjacency_lists"],
@@ -1778,8 +1925,12 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             training=False,
         )
 
-        batch_candidate_edge_targets = np.concatenate(batch["candidate_edge_targets"], axis=0)
-        batch_candidate_edge_type_masks = np.concatenate(batch["candidate_edge_type_masks"], axis=0)
+        batch_candidate_edge_targets = np.concatenate(
+            batch["candidate_edge_targets"], axis=0
+        )
+        batch_candidate_edge_type_masks = np.concatenate(
+            batch["candidate_edge_type_masks"], axis=0
+        )
 
         edge_candidate_logits, edge_type_logits = self.pick_edge(
             input_molecule_representations=batch["molecule_representations"],
@@ -1789,9 +1940,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             graph_to_focus_node_map=batch["focus_atoms"],
             node_to_graph_map=batch["node_to_graph_map"],
             candidate_edge_targets=batch_candidate_edge_targets,
-            candidate_edge_features=np.concatenate(batch["candidate_edge_features"], axis=0).astype(
-                np.float32
-            ),
+            candidate_edge_features=np.concatenate(
+                batch["candidate_edge_features"], axis=0
+            ).astype(np.float32),
             training=False,
         )  # Shape [VE + PG, 1], [VE, ET]
 
@@ -1815,13 +1966,17 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
             # Find the edge targets for this decoder state, in the original node index:
             edge_targets = batch_candidate_edge_targets[
-                edge_candidate_offset : edge_candidate_offset + decoder_state_num_edge_candidates
+                edge_candidate_offset : edge_candidate_offset
+                + decoder_state_num_edge_candidates
             ]
-            edge_targets_orig_idx = edge_targets - batch["candidate_edge_targets_offset"][state_idx]
+            edge_targets_orig_idx = (
+                edge_targets - batch["candidate_edge_targets_offset"][state_idx]
+            )
 
             # Get logits for edge candidates for this decoder state:
             decoder_state_edge_candidate_logits = edge_candidate_logits[
-                edge_candidate_offset : edge_candidate_offset + decoder_state_num_edge_candidates
+                edge_candidate_offset : edge_candidate_offset
+                + decoder_state_num_edge_candidates
             ]
             decoder_state_no_edge_logit = edge_candidate_logits[
                 num_total_edge_candidates + state_idx
@@ -1829,7 +1984,11 @@ class MoLeRDecoder(tf.keras.layers.Layer):
 
             decoder_state_edge_cand_logprobs = tf.nn.log_softmax(
                 tf.concat(
-                    [decoder_state_edge_candidate_logits, [decoder_state_no_edge_logit]], axis=0
+                    [
+                        decoder_state_edge_candidate_logits,
+                        [decoder_state_no_edge_logit],
+                    ],
+                    axis=0,
                 )
             )
 
@@ -1845,8 +2004,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                     edge_candidate_offset : edge_candidate_offset
                     + decoder_state_num_edge_candidates
                 ]
-                masked_candidate_edge_type_logits = candidate_edge_type_logits - BIG_NUMBER * (
-                    1 - candidate_edge_type_mask
+                masked_candidate_edge_type_logits = (
+                    candidate_edge_type_logits
+                    - BIG_NUMBER * (1 - candidate_edge_type_mask)
                 )
 
                 # Loop over the edge candidates themselves.
@@ -1884,7 +2044,9 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 num_samples, sampling_mode, decoder_state_edge_cand_logprobs
             )
             for picked_edge_cand_idx in picked_edge_cand_indices:
-                picked_cand_logprob = decoder_state_edge_cand_logprobs[picked_edge_cand_idx]
+                picked_cand_logprob = decoder_state_edge_cand_logprobs[
+                    picked_edge_cand_idx
+                ]
                 # Handle case of having no edge is better:
                 if picked_edge_cand_idx == len(decoder_state_edge_cand_logprobs) - 1:
                     this_state_results.append((None, picked_cand_logprob))
@@ -1906,12 +2068,18 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                     )
                     for picked_edge_type in picked_edge_types:
                         picked_edge_logprob = (
-                            picked_cand_logprob + cand_edge_type_logprobs[picked_edge_type]
+                            picked_cand_logprob
+                            + cand_edge_type_logprobs[picked_edge_type]
                         )
                         this_state_results.append(
-                            ((picked_edge_partner, picked_edge_type), picked_edge_logprob)
+                            (
+                                (picked_edge_partner, picked_edge_type),
+                                picked_edge_logprob,
+                            )
                         )
-            picked_edges.append((this_state_results, molecule_generation_edge_choice_info))
+            picked_edges.append(
+                (this_state_results, molecule_generation_edge_choice_info)
+            )
             edge_candidate_offset += decoder_state_num_edge_candidates
 
         return picked_edges
@@ -1954,7 +2122,8 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             batch: Dict[str, Any], decoder_state: MoLeRDecoderState
         ):
             batch["candidate_attachment_points"].append(
-                np.array(decoder_state.candidate_attachment_points) + batch["nodes_in_batch"]
+                np.array(decoder_state.candidate_attachment_points)
+                + batch["nodes_in_batch"]
             )
 
         attachment_point_pick_results = []
@@ -1965,7 +2134,10 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             init_batch_callback=init_attachment_point_choice_batch,
             add_state_to_batch_callback=add_state_to_attachment_point_choice_batch,
         ):
-            pick_results_for_batch, logits_for_batch = self._pick_attachment_points_for_batch(
+            (
+                pick_results_for_batch,
+                logits_for_batch,
+            ) = self._pick_attachment_points_for_batch(
                 batch=batch,
                 decoder_states=decoder_states_batch,
                 num_samples=num_samples,
@@ -1984,11 +2156,19 @@ class MoLeRDecoder(tf.keras.layers.Layer):
         sampling_mode: DecoderSamplingMode,
     ):
         focus_atoms = np.array(
-            [attachment_points[0] for attachment_points in batch["candidate_attachment_points"]]
+            [
+                attachment_points[0]
+                for attachment_points in batch["candidate_attachment_points"]
+            ]
         )
-        candidate_attachment_points = np.concatenate(batch["candidate_attachment_points"], axis=0)
+        candidate_attachment_points = np.concatenate(
+            batch["candidate_attachment_points"], axis=0
+        )
 
-        graph_representations, node_representations = self.calculate_node_and_graph_representations(
+        (
+            graph_representations,
+            node_representations,
+        ) = self.calculate_node_and_graph_representations(
             node_features=batch["node_features"],
             node_categorical_features=batch["node_categorical_features"],
             adjacency_lists=batch["adjacency_lists"],
@@ -2024,8 +2204,12 @@ class MoLeRDecoder(tf.keras.layers.Layer):
             logits_by_graph[graph_id].append(logit)
 
         attachment_point_pick_results: List[List[Tuple[int, float]]] = []
-        for old_decoder_state, attachment_point_logits in zip(decoder_states, logits_by_graph):
-            attachment_point_logprobs = tf.nn.log_softmax(attachment_point_logits).numpy()
+        for old_decoder_state, attachment_point_logits in zip(
+            decoder_states, logits_by_graph
+        ):
+            attachment_point_logprobs = tf.nn.log_softmax(
+                attachment_point_logits
+            ).numpy()
             picked_att_point_indices = sample_indices_from_logprobs(
                 num_samples, sampling_mode, attachment_point_logprobs
             )
@@ -2035,9 +2219,13 @@ class MoLeRDecoder(tf.keras.layers.Layer):
                 attachment_point_pick = old_decoder_state.candidate_attachment_points[
                     attachment_point_pick_idx
                 ]
-                attachment_point_logprob = attachment_point_logprobs[attachment_point_pick_idx]
+                attachment_point_logprob = attachment_point_logprobs[
+                    attachment_point_pick_idx
+                ]
 
-                this_state_results.append((attachment_point_pick, attachment_point_logprob))
+                this_state_results.append(
+                    (attachment_point_pick, attachment_point_logprob)
+                )
             attachment_point_pick_results.append(this_state_results)
 
         return attachment_point_pick_results, logits_by_graph

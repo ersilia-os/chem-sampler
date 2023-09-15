@@ -11,9 +11,8 @@ torch.manual_seed(1)
 np.random.seed(5)
 
 
-class FBRNN():
-
-    def __init__(self, molecule_size=7, encoding_dim=55, lr=.01, hidden_units=256):
+class FBRNN:
+    def __init__(self, molecule_size=7, encoding_dim=55, lr=0.01, hidden_units=256):
 
         self._molecule_size = molecule_size
         self._input_dim = 2 * encoding_dim
@@ -33,38 +32,42 @@ class FBRNN():
             self._lstm = self._lstm.cuda()
 
         # Adam optimizer
-        self._optimizer = torch.optim.Adam(self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999)
+        )
 
         # Cross entropy loss
-        self._loss = nn.CrossEntropyLoss(reduction='mean')
+        self._loss = nn.CrossEntropyLoss(reduction="mean")
 
     def build(self, name=None):
         """Build new model or load model by name"""
-        if (name is None):
+        if name is None:
             self._lstm = TwoOutLSTM_v2(self._input_dim, self._hidden_units, self._layer)
 
         else:
-            self._lstm = torch.load(name + '.dat', map_location=self._device)
+            self._lstm = torch.load(name + ".dat", map_location=self._device)
 
         if torch.cuda.is_available():
             self._lstm = self._lstm.cuda()
 
-        self._optimizer = torch.optim.Adam(self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999))
+        self._optimizer = torch.optim.Adam(
+            self._lstm.parameters(), lr=self._lr, betas=(0.9, 0.999)
+        )
 
     def print_model(self):
-        '''Print name and shape of all tensors'''
+        """Print name and shape of all tensors"""
         for name, p in self._lstm.state_dict().items():
             print(name)
             print(p.shape)
 
     def train(self, data, label, epochs=1, batch_size=1):
-        '''Train the model
+        """Train the model
         :param  data:   data array (n_samples, molecule_length, encoding_length)
         :param label:   label array (n_samples, molecule_length)
         :param  epochs: number of epochs for the training
         :param batch_size:  batch size for training
         :return statistic:  array storing computed losses (epochs, batch)
-        '''
+        """
 
         # Compute tensor of labels
         label = torch.from_numpy(label).to(self._device)
@@ -117,12 +120,16 @@ class FBRNN():
                     forward, back = self._lstm(input)
 
                     # Mean cross-entropy loss forward prediction
-                    loss_forward = self._loss(forward.view(batch_end - batch_start, -1),
-                                              label[batch_start:batch_end, self._molecule_size // 2 + 1 + j])
+                    loss_forward = self._loss(
+                        forward.view(batch_end - batch_start, -1),
+                        label[batch_start:batch_end, self._molecule_size // 2 + 1 + j],
+                    )
 
                     # Mean cross-entropy loss backward prediction
-                    loss_back = self._loss(back.view(batch_end - batch_start, -1),
-                                           label[batch_start:batch_end, self._molecule_size // 2 - 1 - j])
+                    loss_back = self._loss(
+                        back.view(batch_end - batch_start, -1),
+                        label[batch_start:batch_end, self._molecule_size // 2 - 1 - j],
+                    )
 
                     # Add losses from both sides
                     loss_tot = torch.add(loss_forward, loss_back)
@@ -136,7 +143,9 @@ class FBRNN():
                 molecule_loss.backward(retain_graph=True)
 
                 # Store statistics: loss per token (middle token not included)
-                statistic[i, n] = molecule_loss.cpu().detach().numpy()[0] / (self._molecule_size - 1)
+                statistic[i, n] = molecule_loss.cpu().detach().numpy()[0] / (
+                    self._molecule_size - 1
+                )
 
                 # Perform optimization step and reset gradients
                 self._optimizer.step()
@@ -144,12 +153,12 @@ class FBRNN():
         return statistic
 
     def validate(self, data, label, batch_size=128):
-        ''' Validation of model and compute error
+        """Validation of model and compute error
         :param data:    test data (n_samples, molecule_size, encoding_size)
         :param label:   label data (n_samples, molecule_size)
         :param batch_size:  batch size for validation
         :return:        mean loss over test data
-        '''
+        """
 
         # Use train mode to get loss consistent with training
         self._lstm.train()
@@ -199,12 +208,16 @@ class FBRNN():
                     forward, back = self._lstm(input)
 
                     # Mean cross-entropy loss forward prediction
-                    loss_forward = self._loss(forward.view(batch_end - batch_start, -1),
-                                              label[batch_start:batch_end, self._molecule_size // 2 + 1 + j])
+                    loss_forward = self._loss(
+                        forward.view(batch_end - batch_start, -1),
+                        label[batch_start:batch_end, self._molecule_size // 2 + 1 + j],
+                    )
 
                     # Mean Cross-entropy loss backward prediction
-                    loss_back = self._loss(back.view(batch_end - batch_start, -1),
-                                           label[batch_start:batch_end, self._molecule_size // 2 - 1 - j])
+                    loss_back = self._loss(
+                        back.view(batch_end - batch_start, -1),
+                        label[batch_start:batch_end, self._molecule_size // 2 - 1 - j],
+                    )
 
                     # Add losses from both sides
                     loss_tot = torch.add(loss_forward, loss_back)
@@ -212,15 +225,17 @@ class FBRNN():
                     # Add to molecule loss
                     molecule_loss = torch.add(molecule_loss, loss_tot)
 
-                tot_loss += molecule_loss.cpu().detach().numpy()[0] / (self._molecule_size - 1)
+                tot_loss += molecule_loss.cpu().detach().numpy()[0] / (
+                    self._molecule_size - 1
+                )
         return tot_loss / n_iter
 
-    def sample(self, middle_token='G', T=1):
-        '''Generate new molecule
+    def sample(self, middle_token="G", T=1):
+        """Generate new molecule
         :param middle_token:    starting token for the generation
         :param T:               sampling temperature
         :return molecule:       newly generated molecule (molecule_size, encoding_length)
-        '''
+        """
 
         # Prepare model
         self._lstm.eval()
@@ -234,14 +249,18 @@ class FBRNN():
             molecule = np.zeros((1, self._molecule_size, self._input_dim // 2))
 
             # Set middle token as first output
-            output[0, :self._input_dim // 2] = middle_token[:]
-            output[0, self._input_dim // 2:] = middle_token[:]
+            output[0, : self._input_dim // 2] = middle_token[:]
+            output[0, self._input_dim // 2 :] = middle_token[:]
 
             # Set middle token for molecule
             molecule[0, self._molecule_size // 2] = middle_token[:]
 
             # Prepare input as tensor at correct device
-            input = torch.from_numpy(np.array(output[0, :]).astype(np.float32)).view(1, 1, -1).to(self._device)
+            input = (
+                torch.from_numpy(np.array(output[0, :]).astype(np.float32))
+                .view(1, 1, -1)
+                .to(self._device)
+            )
 
             # Prepare model
             self._lstm.new_sequence(device=self._device)
@@ -252,8 +271,12 @@ class FBRNN():
                 forward, back = self._lstm(input)
 
                 # Conversion to numpy and creation of new token by sampling from the obtained probability distribution
-                token_forward = self.sample_token(np.squeeze(forward.cpu().detach().numpy()), T)
-                token_back = self.sample_token(np.squeeze(back.cpu().detach().numpy()), T)
+                token_forward = self.sample_token(
+                    np.squeeze(forward.cpu().detach().numpy()), T
+                )
+                token_back = self.sample_token(
+                    np.squeeze(back.cpu().detach().numpy()), T
+                )
 
                 # Set selected tokens
                 molecule[0, self._molecule_size // 2 + 1 + j, token_forward] = 1.0
@@ -262,43 +285,57 @@ class FBRNN():
                 # Prepare input of next step
                 output[j + 1, token_forward] = 1.0
                 output[j + 1, self._input_dim // 2 + token_back] = 1.0
-                input = torch.from_numpy(output[j + 1, :].astype(np.float32)).view(1, 1, -1).to(self._device)
+                input = (
+                    torch.from_numpy(output[j + 1, :].astype(np.float32))
+                    .view(1, 1, -1)
+                    .to(self._device)
+                )
 
         return molecule
 
     def prepare_data(self, data):
-        '''Reshape data to get two tokens as single input
+        """Reshape data to get two tokens as single input
         :params data:           data array (n_samples, molecule_length, encoding_length)
         :return cominde_input:  reshape data (n_samples, molecule_size//2 +1, 2*encoding_length)
-        '''
+        """
 
         # Number of samples
         n_samples = data.shape[0]
 
         # Reshaped data array
-        combined_input = np.zeros((n_samples, self._molecule_size // 2 + 1, self._input_dim)).astype(np.float32)
+        combined_input = np.zeros(
+            (n_samples, self._molecule_size // 2 + 1, self._input_dim)
+        ).astype(np.float32)
 
         for i in range(n_samples):
             # First Input is two times the token in the middle
-            combined_input[i, 0, :self._input_dim // 2] = data[i, self._molecule_size // 2, :]
-            combined_input[i, 0, self._input_dim // 2:] = data[i, self._molecule_size // 2, :]
+            combined_input[i, 0, : self._input_dim // 2] = data[
+                i, self._molecule_size // 2, :
+            ]
+            combined_input[i, 0, self._input_dim // 2 :] = data[
+                i, self._molecule_size // 2, :
+            ]
 
             # Merge two tokens to a single input
             for j in range(self._molecule_size // 2):
-                combined_input[i, j + 1, :self._input_dim // 2] = data[i, self._molecule_size // 2 + 1 + j, :]
-                combined_input[i, j + 1, self._input_dim // 2:] = data[i, self._molecule_size // 2 - 1 - j, :]
+                combined_input[i, j + 1, : self._input_dim // 2] = data[
+                    i, self._molecule_size // 2 + 1 + j, :
+                ]
+                combined_input[i, j + 1, self._input_dim // 2 :] = data[
+                    i, self._molecule_size // 2 - 1 - j, :
+                ]
 
         return combined_input
 
     def sample_token(self, out, T=1.0):
-        ''' Sample token
+        """Sample token
         :param out: output values from model
         :param T:   sampling temperature
         :return:    index of predicted token
-        '''
+        """
 
         # Explicit conversion to float64 avoiding truncation errors
-        out = out.astype('float64')
+        out = out.astype("float64")
 
         # Compute probabilities with specific temperature
         out_T = out / T - max(out / T)
@@ -308,5 +345,5 @@ class FBRNN():
         char = np.random.multinomial(1, p, size=1)
         return np.argmax(char)
 
-    def save(self, name='test_model'):
-        torch.save(self._lstm, name + '.dat')
+    def save(self, name="test_model"):
+        torch.save(self._lstm, name + ".dat")

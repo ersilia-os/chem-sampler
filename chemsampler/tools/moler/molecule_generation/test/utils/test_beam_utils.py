@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 from rdkit.Chem import Mol, RWMol
 
-from molecule_generation.utils.beam_utils import ExtensionType, Ray, RayExtension, extend_beam
+from molecule_generation.utils.beam_utils import (
+    ExtensionType,
+    Ray,
+    RayExtension,
+    extend_beam,
+)
 from molecule_generation.preprocessing.cgvae_generation_trace import NodeState
 
 

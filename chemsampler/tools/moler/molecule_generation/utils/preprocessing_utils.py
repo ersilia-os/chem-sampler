@@ -55,13 +55,19 @@ class DataStatistics:
         return train_dataset_statistics
 
 
-def save_data(featurised_data: FeaturisedData, output_dir: str, quiet: bool = False) -> None:
+def save_data(
+    featurised_data: FeaturisedData, output_dir: str, quiet: bool = False
+) -> None:
     os.makedirs(output_dir, exist_ok=True)
     train_data_statistics = DataStatistics()
 
     for fold_name, data_fold, len_data_fold in zip(
         ["train", "valid", "test"],
-        [featurised_data.train_data, featurised_data.valid_data, featurised_data.test_data],
+        [
+            featurised_data.train_data,
+            featurised_data.valid_data,
+            featurised_data.test_data,
+        ],
         [
             featurised_data.len_train_data,
             featurised_data.len_valid_data,
@@ -79,7 +85,9 @@ def save_data(featurised_data: FeaturisedData, output_dir: str, quiet: bool = Fa
 
         print(f" Wrote {num_written} datapoints to {filename}.")
 
-    save_metadata(featurised_data, output_dir, extra_metadata=train_data_statistics.output())
+    save_metadata(
+        featurised_data, output_dir, extra_metadata=train_data_statistics.output()
+    )
 
 
 def save_metadata(

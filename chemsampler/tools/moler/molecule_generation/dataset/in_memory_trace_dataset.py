@@ -114,7 +114,9 @@ class InMemoryTraceDataset(TraceDataset):
         self._motif_vocabulary = self.metadata.get("motif_vocabulary")
         self._generation_order_cls = self.metadata.get("generation_order", BFSOrder)
 
-        node_categorical_num_classes = self.metadata.get("_node_categorical_num_classes")
+        node_categorical_num_classes = self.metadata.get(
+            "_node_categorical_num_classes"
+        )
 
         if self._motif_vocabulary is not None:
             self._motif_to_node_type_index = get_motif_type_to_node_type_index_map(
@@ -128,7 +130,9 @@ class InMemoryTraceDataset(TraceDataset):
             if node_categorical_num_classes is None:
                 # Fill in the number of categorical classes and fix feature shape for older models.
                 node_categorical_num_classes = len(self._node_type_index_to_string)
-                node_feature_shape = (node_feature_shape[0] - node_categorical_num_classes,)
+                node_feature_shape = (
+                    node_feature_shape[0] - node_categorical_num_classes,
+                )
         else:
             self._motif_to_node_type_index = {}
 
@@ -197,7 +201,9 @@ class InMemoryTraceDataset(TraceDataset):
             multihot[idx] = 1.0
         return multihot
 
-    def load_data(self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None) -> None:
+    def load_data(
+        self, path: RichPath, folds_to_load: Optional[Set[DataFold]] = None
+    ) -> None:
         raise ValueError("Attempting to load data from a path into DummyGraphDataset!")
 
     def load_data_from_list(

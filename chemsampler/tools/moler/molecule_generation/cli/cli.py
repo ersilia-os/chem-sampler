@@ -2,14 +2,19 @@ import argparse
 from dpu_utils.utils import run_and_debug
 
 from molecule_generation.cli import encode, preprocess, sample, train, visualise
-from molecule_generation.utils.cli_utils import setup_logging, supress_tensorflow_warnings
+from molecule_generation.utils.cli_utils import (
+    setup_logging,
+    supress_tensorflow_warnings,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Training, inference and visualization CLI for the MoLeR model."
     )
-    subparsers = parser.add_subparsers(help="Subcommand to run.", dest="command", required=True)
+    subparsers = parser.add_subparsers(
+        help="Subcommand to run.", dest="command", required=True
+    )
 
     commands = {
         "encode": encode,
@@ -32,7 +37,10 @@ def main():
     supress_tensorflow_warnings()
     setup_logging()
 
-    run_and_debug(lambda: commands[args.command].run_from_args(args), getattr(args, "debug", False))
+    run_and_debug(
+        lambda: commands[args.command].run_from_args(args),
+        getattr(args, "debug", False),
+    )
 
 
 if __name__ == "__main__":

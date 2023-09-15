@@ -62,8 +62,7 @@ def _get_first_samples(lst: List[T], ratio: float) -> List[T]:
 
 
 def load_smiles_data(
-    data_path: Pathlike,
-    n_datapoints: Optional[int] = None,
+    data_path: Pathlike, n_datapoints: Optional[int] = None,
 ) -> Tuple[SmilesDataSet, SmilesDataSet, SmilesDataSet]:
     """Loads data sets from a given directory.
 
@@ -110,17 +109,23 @@ def load_smiles_data(
 
 
 def get_argparser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Preprocess a dataset of SMILES strings.")
+    parser = argparse.ArgumentParser(
+        description="Preprocess a dataset of SMILES strings."
+    )
     parser.add_argument(
         "INPUT_DIR",
         type=str,
         help="Directory which contains all the raw data components, including any labels.",
     )
     parser.add_argument(
-        "OUTPUT_DIR", type=str, help="Directory which will hold the resulting preprocessed data."
+        "OUTPUT_DIR",
+        type=str,
+        help="Directory which will hold the resulting preprocessed data.",
     )
     parser.add_argument(
-        "TRACE_DIR", type=str, help="Directory in which we want to save the trace datasets."
+        "TRACE_DIR",
+        type=str,
+        help="Directory in which we want to save the trace datasets.",
     )
     parser.add_argument(
         "--num-datapoints",
@@ -169,7 +174,9 @@ def get_argparser() -> argparse.ArgumentParser:
     # On *nix, try to also use amount of host memory, as each worker roughly needs 6GB:
     try:
         mem_size = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        default_num_processes = min(default_num_processes, int(mem_size / (6 * 1024**3)))
+        default_num_processes = min(
+            default_num_processes, int(mem_size / (6 * 1024 ** 3))
+        )
     except Exception:
         pass  # This may happen on non-Unices; ignore
     parser.add_argument(
@@ -202,7 +209,9 @@ def _featurised_data_exists(output_dir: Pathlike) -> bool:
     # Check if featurised data already exists.
     output_dir = RichPath.create(str(output_dir))
     fold_names = ["train", "valid", "test"]
-    return all(output_dir.join(f"{fold_name}.jsonl.gz").is_file() for fold_name in fold_names)
+    return all(
+        output_dir.join(f"{fold_name}.jsonl.gz").is_file() for fold_name in fold_names
+    )
 
 
 def run_smiles_preprocessing(
@@ -253,7 +262,9 @@ def run_smiles_preprocessing(
                 f"{original_generation_order_cls.__name__} coming from the pretrained model."
             )
 
-        original_motif_extraction_settings = original_dataset_metadata["motif_vocabulary"].settings
+        original_motif_extraction_settings = original_dataset_metadata[
+            "motif_vocabulary"
+        ].settings
         if original_motif_extraction_settings != motif_extraction_settings:
             logger.warning(
                 f"The motif extraction settings {motif_extraction_settings} chosen will have no "
@@ -291,7 +302,9 @@ def run_smiles_preprocessing(
 
         if original_dataset_metadata is not None:
             featurisation_kwargs = {
-                "atom_feature_extractors": original_dataset_metadata["feature_extractors"],
+                "atom_feature_extractors": original_dataset_metadata[
+                    "feature_extractors"
+                ],
                 "motif_vocabulary": original_dataset_metadata["motif_vocabulary"],
             }
         else:
@@ -307,12 +320,12 @@ def run_smiles_preprocessing(
             quiet=quiet,
             **featurisation_kwargs,
         )
-        logger.info(f"Completed initializing feature extractors; featurising and saving data now.")
+        logger.info(
+            f"Completed initializing feature extractors; featurising and saving data now."
+        )
 
         save_data(
-            featurised_data,
-            output_dir=output_dir,
-            quiet=quiet,
+            featurised_data, output_dir=output_dir, quiet=quiet,
         )
 
     # Now, convert data to traces.

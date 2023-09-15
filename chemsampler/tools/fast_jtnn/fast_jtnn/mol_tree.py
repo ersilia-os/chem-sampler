@@ -1,19 +1,27 @@
 import rdkit
 import rdkit.Chem as Chem
-from .chemutils import get_clique_mol, tree_decomp, get_mol, get_smiles, set_atommap, enum_assemble, decode_stereo
+from .chemutils import (
+    get_clique_mol,
+    tree_decomp,
+    get_mol,
+    get_smiles,
+    set_atommap,
+    enum_assemble,
+    decode_stereo,
+)
 from .vocab import *
 import sys
 import argparse
 
-class MolTreeNode(object):
 
+class MolTreeNode(object):
     def __init__(self, smiles, clique=[]):
         self.smiles = smiles
         self.mol = get_mol(self.smiles)
 
-        self.clique = [x for x in clique] #copy
+        self.clique = [x for x in clique]  # copy
         self.neighbors = []
-        
+
     def add_neighbor(self, nei_node):
         self.neighbors.append(nei_node)
 
@@ -26,10 +34,10 @@ class MolTreeNode(object):
 
         for nei_node in self.neighbors:
             clique.extend(nei_node.clique)
-            if nei_node.is_leaf: #Leaf node, no need to mark 
+            if nei_node.is_leaf:  # Leaf node, no need to mark
                 continue
             for cidx in nei_node.clique:
-                #allow singleton node override the atom mapping
+                # allow singleton node override the atom mapping
                 if cidx not in self.clique or len(nei_node.clique) == 1:
                     atom = original_mol.GetAtomWithIdx(cidx)
                     atom.SetAtomMapNum(nei_node.nid)
@@ -42,16 +50,17 @@ class MolTreeNode(object):
             original_mol.GetAtomWithIdx(cidx).SetAtomMapNum(0)
 
         return self.label
-    
+
     def assemble(self):
         neighbors = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() > 1]
-        neighbors = sorted(neighbors, key=lambda x:x.mol.GetNumAtoms(), reverse=True)
+        neighbors = sorted(neighbors, key=lambda x: x.mol.GetNumAtoms(), reverse=True)
         singletons = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() == 1]
         neighbors = singletons + neighbors
 
-        cands,aroma = enum_assemble(self, neighbors)
-        new_cands = [cand for i,cand in enumerate(cands) if aroma[i] >= 0]
-        if len(new_cands) > 0: cands = new_cands
+        cands, aroma = enum_assemble(self, neighbors)
+        new_cands = [cand for i, cand in enumerate(cands) if aroma[i] >= 0]
+        if len(new_cands) > 0:
+            cands = new_cands
 
         if len(cands) > 0:
             self.cands, _ = list(zip(*cands))
@@ -59,39 +68,40 @@ class MolTreeNode(object):
         else:
             self.cands = []
 
-class MolTree(object):
 
+class MolTree(object):
     def __init__(self, smiles):
         self.smiles = smiles
         self.mol = get_mol(smiles)
 
-        #Stereo Generation (currently disabled)
-        #mol = Chem.MolFromSmiles(smiles)
-        #self.smiles3D = Chem.MolToSmiles(mol, isomericSmiles=True)
-        #self.smiles2D = Chem.MolToSmiles(mol)
-        #self.stereo_cands = decode_stereo(self.smiles2D)
+        # Stereo Generation (currently disabled)
+        # mol = Chem.MolFromSmiles(smiles)
+        # self.smiles3D = Chem.MolToSmiles(mol, isomericSmiles=True)
+        # self.smiles2D = Chem.MolToSmiles(mol)
+        # self.stereo_cands = decode_stereo(self.smiles2D)
 
         cliques, edges = tree_decomp(self.mol)
         self.nodes = []
         root = 0
-        for i,c in enumerate(cliques):
+        for i, c in enumerate(cliques):
             cmol = get_clique_mol(self.mol, c)
             node = MolTreeNode(get_smiles(cmol), c)
             self.nodes.append(node)
-            if min(c) == 0: root = i
+            if min(c) == 0:
+                root = i
 
-        for x,y in edges:
+        for x, y in edges:
             self.nodes[x].add_neighbor(self.nodes[y])
             self.nodes[y].add_neighbor(self.nodes[x])
-        
-        if root > 0:
-            self.nodes[0],self.nodes[root] = self.nodes[root],self.nodes[0]
 
-        for i,node in enumerate(self.nodes):
+        if root > 0:
+            self.nodes[0], self.nodes[root] = self.nodes[root], self.nodes[0]
+
+        for i, node in enumerate(self.nodes):
             node.nid = i + 1
-            if len(node.neighbors) > 1: #Leaf node mol is not marked
+            if len(node.neighbors) > 1:  # Leaf node mol is not marked
                 set_atommap(node.mol, node.nid)
-            node.is_leaf = (len(node.neighbors) == 1)
+            node.is_leaf = len(node.neighbors) == 1
 
     def size(self):
         return len(self.nodes)
@@ -116,7 +126,7 @@ def dfs(node, fa_idx):
 
 def main_mol_tree(oinput, ovocab, MAX_TREE_WIDTH=50):
     cset = set()
-    with open(oinput, 'r') as input_file:
+    with open(oinput, "r") as input_file:
         for i, line in enumerate(input_file.readlines()):
             smiles = line.strip().split()[0]
             alert = False
@@ -126,17 +136,20 @@ def main_mol_tree(oinput, ovocab, MAX_TREE_WIDTH=50):
                     alert = True
                 cset.add(c.smiles)
             if len(mol.nodes) > 1 and alert:
-                sys.stderr.write('[WARNING]: %d-th molecule %s has a high tree-width.\n' % (i + 1, smiles))
-    
-    with open(ovocab, 'w') as vocab_file:
+                sys.stderr.write(
+                    "[WARNING]: %d-th molecule %s has a high tree-width.\n"
+                    % (i + 1, smiles)
+                )
+
+    with open(ovocab, "w") as vocab_file:
         for x in cset:
-            vocab_file.write(x+'\n')
+            vocab_file.write(x + "\n")
 
 
 if __name__ == "__main__":
     lg = rdkit.RDLogger.logger()
     lg.setLevel(rdkit.RDLogger.CRITICAL)
-    sys.stderr.write('Running tree decomposition on the dataset')
+    sys.stderr.write("Running tree decomposition on the dataset")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", dest="input")

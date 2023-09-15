@@ -18,7 +18,10 @@ def patched_random_call(self, decoder_input: CGVAEDecoderInput, *_, **__):
     # Make the stop node less likely.
     edge_probabilities[-1] *= 0.3
 
-    return (np.log(edge_probabilities), np.log(np.random.uniform(size=(num_edges, num_edge_types))))
+    return (
+        np.log(edge_probabilities),
+        np.log(np.random.uniform(size=(num_edges, num_edge_types))),
+    )
 
 
 def patched_always_select_first_call(self, decoder_input: CGVAEDecoderInput, *_, **__):
@@ -119,26 +122,25 @@ def test_one_beam_step_outputs_expected_beam_when_always_selecting_first_edge():
     # And then add edges between node 2 and 3, 4, 5.
     for _ in range(5):
         new_beam = decoder.one_beam_step(
-            node_features=node_features,
-            node_types=node_types,
-            beam=new_beam,
+            node_features=node_features, node_types=node_types, beam=new_beam,
         )
     new_beam[0].update_focus_node()
     for i in range(3):
         new_beam = decoder.one_beam_step(
-            node_features=node_features,
-            node_types=node_types,
-            beam=new_beam,
+            node_features=node_features, node_types=node_types, beam=new_beam,
         )
 
     # Then:
     expected_node_states = {
-        i: NodeState.DISCOVERED if i <= 5 else NodeState.UNDISCOVERED for i in range(num_nodes)
+        i: NodeState.DISCOVERED if i <= 5 else NodeState.UNDISCOVERED
+        for i in range(num_nodes)
     }
     expected_node_states[
         0
     ] = NodeState.LOCKED  # We've filled up all 4 possible bonds of the first carbon
-    expected_node_states[1] = NodeState.LOCKED  # We explicitly moved the focus node once
+    expected_node_states[
+        1
+    ] = NodeState.LOCKED  # We explicitly moved the focus node once
     expected_node_states[
         2
     ] = NodeState.FOCUS  # This is our current focus, but it now has four bonds as well.
