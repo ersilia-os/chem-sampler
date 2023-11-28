@@ -9,7 +9,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="chemsampler",
-    version="0.0.1",
+    version="0.1.0",
     author="Miquel Duran-Frigola",
     author_email="miquel@ersilia.io",
     url="https://github.com/ersilia-os/chemsampler",

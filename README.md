@@ -1,24 +1,19 @@
 # ChemSampler
-ChemSampler is a simple Python API to sample the chemical space around a given set of molecules. It has been develped by the [Ersilia Open Source Initiative](https://ersilia.io).
+ChemSampler is a simple Python API to sample the chemical space around a given molecule. It is developed and maintained by the [Ersilia Open Source Initiative](https://ersilia.io).
 
-ChemSampler is intended to:
-1. Given an input smiles sample small molecules similar to the input, both from large chemical libraries as well curated databases from various generative models.
-2. Generate new molecules by fitting existing generative models on the input data.
+ChemSampler capitalizes on the *generative* models available in the [Ersilia Model Hub](https://ersilia.io/model-hub). Feel free to suggest new models by [opening an issue](https://github.com/ersilia-os/ersilia/issues).
+
+> A legacy version of ChemSampler is available in the archived [`chem-sampler-legacy`](https://github.com/ersilia-os/chem-sampler-legacy) repository.
 
 ## Installation
 
-Create a conda environment and activate it:
+Create a Conda environment and activate it:
 ```bash
-conda create -n chemsampler python=3.8
+conda create -n chemsampler python=3.10
 conda activate chemsampler
 ```
 
-Install PyTables using conda (this step is necessary for successful installation on a Mac).
-```bash
-conda install pytables
-```
-
-Clone the github repo and install the package:
+Clone this GitHub repository and install the package with `pip`:
 ```bash
 git clone https://github.com/ersilia-os/chem-sampler.git
 cd chem-sampler
