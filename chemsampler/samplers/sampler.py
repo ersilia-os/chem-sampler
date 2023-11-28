@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore")
 class UnitSampler(ModelArtifact):
     def __init__(self, model_id, timeout_sec=2):
         ModelArtifact.__init__(self, model_id=model_id)
-        self.timeout_sec=timeout_sec
+        self.timeout_sec = timeout_sec
 
     def _calculate_similarity(self, ref_mol, mol_list):
         ref_fp = AllChem.GetMorganFingerprint(ref_mol, 2)
@@ -35,7 +35,9 @@ class UnitSampler(ModelArtifact):
             return smiles_list
         ref_mol = Chem.MolFromSmiles(ref_smiles)
         mol_list = [Chem.MolFromSmiles(smi) for smi in smiles_list]
-        sorted_mols = self._sort_molecules_by_similarity(ref_mol=ref_mol, mol_list=mol_list)
+        sorted_mols = self._sort_molecules_by_similarity(
+            ref_mol=ref_mol, mol_list=mol_list
+        )
         return [Chem.MolToSmiles(mol) for mol in sorted_mols]
 
     def get_example_smiles(self):
@@ -57,7 +59,7 @@ class UnitSampler(ModelArtifact):
         sampled_smiles = list(set(sampled_smiles))
         sampled_smiles = self._sort_by_similarity(sampled_smiles, smiles)
         return sampled_smiles
-        
+
     def sample(self, smiles):
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(self.run, smiles_list=[smiles])

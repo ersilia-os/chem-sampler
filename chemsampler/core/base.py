@@ -24,7 +24,7 @@ class ModelArtifact(object):
             model=self.model_id,
             save_to_lake=False,
             service_class="pulled_docker",
-            fetch_if_not_available=False 
+            fetch_if_not_available=False,
         )
 
     def exists_locally(self):
@@ -55,8 +55,8 @@ class ModelArtifact(object):
             "Nc1nc(=O)c2ncn(COCCO)c2[nH]1",
             "O=C1Nc2ccc(Cl)cc2[C@@](C#CC2CC2)(C(F)(F)F)O1",
             "NNC(=O)c1ccncc1",
-            "CC/C(=C(\c1ccccc1)c1ccc(OCCN(C)C)cc1)c1ccccc1"
-            ]
+            "CC/C(=C(\c1ccccc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+        ]
         return smiles_list
 
     def run(self, smiles_list):
