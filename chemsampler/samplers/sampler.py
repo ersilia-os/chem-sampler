@@ -43,23 +43,6 @@ class UnitSampler(ModelArtifact):
     def get_example_smiles(self):
         return self.get_example_smiles_list()[0]
 
-    def _sample(self, smiles):
-        df = self.run(smiles_list=[smiles])
-        for r in df.values:
-            r = r[2:]
-        sampled_smiles = []
-        for v in r:
-            try:
-                mol = Chem.MolFromSmiles(v)
-                smi = Chem.MolToSmiles(mol)
-            except:
-                smi = None
-            if smi is not None:
-                sampled_smiles += [smi]
-        sampled_smiles = list(set(sampled_smiles))
-        sampled_smiles = self._sort_by_similarity(sampled_smiles, smiles)
-        return sampled_smiles
-
     def sample(self, smiles):
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(self.run, smiles_list=[smiles])

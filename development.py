@@ -1,8 +1,9 @@
-from chemsampler.samplers.sampler import UnitSampler
+from chemsampler.descriptors.descriptor import DescriptorCalculator
 
-us = UnitSampler(model_id="eos1noy", timeout_sec=1)
+dc = DescriptorCalculator(model_id="eos1ut3")
+dc.fetch()
 
-smiles = us.get_example_smiles()
-print(smiles)
+smiles_list = dc.get_example_smiles_list()
+print(smiles_list)
 
-print(us.sample(smiles))
+print(dc.calculate(smiles_list))
