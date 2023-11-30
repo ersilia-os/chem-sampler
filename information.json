@@ -1,0 +1,203 @@
+{
+    "pack_mode": "conda",
+    "service_class": "conda",
+    "apis_list": [
+        "run"
+    ],
+    "api_schema": {
+        "run": {
+            "input": {
+                "key": {
+                    "type": "string"
+                },
+                "input": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            },
+            "output": {
+                "outcome": {
+                    "meta": [
+                        "smi_0",
+                        "smi_1",
+                        "smi_2",
+                        "smi_3",
+                        "smi_4",
+                        "smi_5",
+                        "smi_6",
+                        "smi_7",
+                        "smi_8",
+                        "smi_9",
+                        "smi_10",
+                        "smi_11",
+                        "smi_12",
+                        "smi_13",
+                        "smi_14",
+                        "smi_15",
+                        "smi_16",
+                        "smi_17",
+                        "smi_18",
+                        "smi_19",
+                        "smi_20",
+                        "smi_21",
+                        "smi_22",
+                        "smi_23",
+                        "smi_24",
+                        "smi_25",
+                        "smi_26",
+                        "smi_27",
+                        "smi_28",
+                        "smi_29",
+                        "smi_30",
+                        "smi_31",
+                        "smi_32",
+                        "smi_33",
+                        "smi_34",
+                        "smi_35",
+                        "smi_36",
+                        "smi_37",
+                        "smi_38",
+                        "smi_39",
+                        "smi_40",
+                        "smi_41",
+                        "smi_42",
+                        "smi_43",
+                        "smi_44",
+                        "smi_45",
+                        "smi_46",
+                        "smi_47",
+                        "smi_48",
+                        "smi_49",
+                        "smi_50",
+                        "smi_51",
+                        "smi_52",
+                        "smi_53",
+                        "smi_54",
+                        "smi_55",
+                        "smi_56",
+                        "smi_57",
+                        "smi_58",
+                        "smi_59",
+                        "smi_60",
+                        "smi_61",
+                        "smi_62",
+                        "smi_63",
+                        "smi_64",
+                        "smi_65",
+                        "smi_66",
+                        "smi_67",
+                        "smi_68",
+                        "smi_69",
+                        "smi_70",
+                        "smi_71",
+                        "smi_72",
+                        "smi_73",
+                        "smi_74",
+                        "smi_75",
+                        "smi_76",
+                        "smi_77",
+                        "smi_78",
+                        "smi_79",
+                        "smi_80",
+                        "smi_81",
+                        "smi_82",
+                        "smi_83",
+                        "smi_84",
+                        "smi_85",
+                        "smi_86",
+                        "smi_87",
+                        "smi_88",
+                        "smi_89",
+                        "smi_90",
+                        "smi_91",
+                        "smi_92",
+                        "smi_93",
+                        "smi_94",
+                        "smi_95",
+                        "smi_96",
+                        "smi_97",
+                        "smi_98",
+                        "smi_99"
+                    ],
+                    "type": null
+                }
+            }
+        }
+    },
+    "size": {
+        "size": 0.15520763397216797,
+        "units": "MB"
+    },
+    "metadata": {
+        "Identifier": "eos1noy",
+        "Slug": "chembl-sampler",
+        "Status": "Ready",
+        "Title": "ChEMBL Molecular Sampler",
+        "Description": "A simple sampler of the ChEMBL database using their API. It looks for similar molecules to the input molecule and returns a list of 100 molecules by default. This model has been developed by Ersilia. It posts queries to an online server.",
+        "Mode": "Pretrained",
+        "Task": [
+            "Similarity"
+        ],
+        "Input": [
+            "Compound"
+        ],
+        "Input Shape": "Single",
+        "Output": [
+            "Compound"
+        ],
+        "Output Type": [
+            "String"
+        ],
+        "Output Shape": "List",
+        "Interpretation": "100 nearest molecules in ChEMBL",
+        "Tag": [
+            "Similarity"
+        ],
+        "Publication": "https://academic.oup.com/nar/article/40/D1/D1100/2903401",
+        "Source Code": "https://github.com/ersilia-os/chem-sampler/blob/main/chemsampler/samplers/chembl/sampler.py",
+        "License": "GPL-3.0",
+        "S3": "https://ersilia-models-zipped.s3.eu-central-1.amazonaws.com/eos1noy.zip",
+        "DockerHub": "https://hub.docker.com/r/ersiliaos/eos1noy",
+        "Docker Architecture": [
+            "AMD64",
+            "ARM64"
+        ]
+    },
+    "card": {
+        "Identifier": "eos1noy",
+        "Slug": "chembl-sampler",
+        "Status": "Ready",
+        "Title": "ChEMBL Molecular Sampler",
+        "Description": "A simple sampler of the ChEMBL database using their API. It looks for similar molecules to the input molecule and returns a list of 100 molecules by default. This model has been developed by Ersilia. It posts queries to an online server.",
+        "Mode": "Pretrained",
+        "Task": [
+            "Similarity"
+        ],
+        "Input": [
+            "Compound"
+        ],
+        "Input Shape": "Single",
+        "Output": [
+            "Compound"
+        ],
+        "Output Type": [
+            "String"
+        ],
+        "Output Shape": "List",
+        "Interpretation": "100 nearest molecules in ChEMBL",
+        "Tag": [
+            "Similarity"
+        ],
+        "Publication": "https://academic.oup.com/nar/article/40/D1/D1100/2903401",
+        "Source Code": "https://github.com/ersilia-os/chem-sampler/blob/main/chemsampler/samplers/chembl/sampler.py",
+        "License": "GPL-3.0",
+        "S3": "https://ersilia-models-zipped.s3.eu-central-1.amazonaws.com/eos1noy.zip",
+        "DockerHub": "https://hub.docker.com/r/ersiliaos/eos1noy",
+        "Docker Architecture": [
+            "AMD64",
+            "ARM64"
+        ]
+    }
+}

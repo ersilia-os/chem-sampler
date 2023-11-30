@@ -71,5 +71,10 @@ class ModelArtifact(object):
                 writer.writerow([smiles])
         self.model.run(input=input_csv, output=output_csv)
         df = pd.read_csv(output_csv)
+        print(df.head())
         self.model.close()
         return df
+    
+    def info(self):
+        info = self.model.info()
+        return info

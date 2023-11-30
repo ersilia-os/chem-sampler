@@ -11,3 +11,7 @@ class DescriptorCalculator(ModelArtifact):
         df = self.run(smiles_list=smiles_list)
         X = np.array(df[list(df.columns)[2:]])
         return X
+    
+    def get_info(self):
+        info = self.info()
+        return info

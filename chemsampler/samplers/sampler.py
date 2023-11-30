@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore")
 
 
 class UnitSampler(ModelArtifact):
-    def __init__(self, model_id, timeout_sec=2):
+    def __init__(self, model_id, timeout_sec=1200):
         ModelArtifact.__init__(self, model_id=model_id)
         self.timeout_sec = timeout_sec
 
@@ -73,3 +73,7 @@ class UnitSampler(ModelArtifact):
             except:
                 self.logger.debug("Some error occurred!")
                 return []
+    
+    def get_info(self):
+        info = self.info()
+        return info
