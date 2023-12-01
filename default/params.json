@@ -1,4 +1,7 @@
 {
+    "seed_smiles": "",
+    "keep_smarts": [],
+    "avoid_smarts": [],
     "samplers": [
         "eos1noy",
         "eos8fma"
@@ -7,5 +10,6 @@
         "eos4u6p",
         "eos5axz"
     ],
-    "num_samples": 10000
+    "num_samples": 10000,
+    "time_budget_sec": 600
 }
