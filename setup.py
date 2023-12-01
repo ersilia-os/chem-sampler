@@ -12,7 +12,7 @@ setup(
     version="0.1.0",
     author="Miquel Duran-Frigola",
     author_email="miquel@ersilia.io",
-    url="https://github.com/ersilia-os/chemsampler",
+    url="https://github.com/ersilia-os/chem-sampler",
     description="Quickly sample the chemical space around a molecule or a set of molecules",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -22,7 +22,7 @@ setup(
     packages=find_packages(exclude=("utilities")),
     entry_points={"console_scripts": []},
     classifiers=[
-        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
