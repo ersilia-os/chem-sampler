@@ -7,6 +7,7 @@ import numpy as np
 
 from .samplers.sampler import UnitSampler
 from .descriptors.descriptor import DescriptorCalculator
+from .rules.rule import Ruler
 
 class MasterSampler(object):
     def __init__(
@@ -28,9 +29,9 @@ class MasterSampler(object):
             DescriptorCalculator(model_id=descriptor_id).fetch()
 
     #get the descriptors for the seed smiles
-    def _calculate_input_descriptors(self, input_smiles, descriptor_id):
+    def _calculate_input_descriptors(self, seed_smiles, descriptor_id):
         dc = DescriptorCalculator(model_id=descriptor_id)
-        descs = dc.calculate([input_smiles])[0]
+        descs = dc.calculate([seed_smiles])[0]
         return descs
         
     def _calculate_sampled_descriptors(self, sampled_smiles, descriptor_id):
@@ -43,8 +44,10 @@ class MasterSampler(object):
         sampled_smiles_all = set()
         for sampler_id in self.sampler_ids:
             us = UnitSampler(model_id=sampler_id, timeout_sec=self.unit_timeout_sec)
-            sampled_smiles_all.update(us.sample(input_smiles))
-            print(len(sampled_smiles_all))
+            sampled_smiles = us.sample(input_smiles)
+            print(sampler_id, len(sampled_smiles))
+            sampled_smiles_all.update(sampled_smiles)
+            print("TOTAL SMILES", len(sampled_smiles_all))
         sampled_smiles_all = list(sampled_smiles_all)
         return sampled_smiles_all
 
@@ -77,30 +80,59 @@ class MasterSampler(object):
     def _is_binary(self,desc):
         unique_values = np.unique(desc)
         return np.array_equal(unique_values, np.array([0, 1]))
+    
+    def _clean_sampled_smiles(self, sampled_smiles, keep_smiles=None, avoid_smiles=None):
+        rule = Ruler(keep_smiles, avoid_smiles)
+        sampled_smiles_filtered = sampled_smiles
+        if keep_smiles is not None:
+            sampled_smiles_filtered = rule.keep_substructure(sampled_smiles)
+        print("KEEP SUBSTRUCTURE", len(sampled_smiles_filtered))
+        if len(sampled_smiles_filtered)==0:
+            print("No SMILES keeps the core structure")
+            return None
+        if avoid_smiles is not None:
+            sampled_smiles_filtered = rule.avoid_substructure(sampled_smiles_filtered)
+        print("AVOID SUBSTRUCTURE", len(sampled_smiles_filtered))
+        return sampled_smiles_filtered
 
-    def run(self, input_smiles):
-        df = pd.DataFrame()
-        sampled_smiles = self._sample(input_smiles)
-        sampled_smiles = [smi for smi in sampled_smiles if smi is not None]
-        df["sampled_smiles"] = sampled_smiles
-        print(df.shape)
+    def _calculate_similarities(self, seed_smiles, sampled_smiles):
+        similarities_dict = {}
         for descriptor_id in self.descriptor_ids:
-            origin_descs = self._calculate_input_descriptors(input_smiles, descriptor_id)
+            origin_descs = self._calculate_input_descriptors(seed_smiles, descriptor_id)
             sampled_descs = self._calculate_sampled_descriptors(sampled_smiles, descriptor_id)
             if self._check_descriptor_output_type(descriptor_id) == "Float":
                 similarities = [self._calculate_euclidean_distance(origin_descs, sampled_desc) for sampled_desc in sampled_descs]
-                df[descriptor_id] = similarities              
+                similarities_dict[descriptor_id] = similarities              
             elif self._check_descriptor_output_type(descriptor_id) == "Integer":
                 if self._check_descriptor_sparse(origin_descs) is False:
                     similarities = [self._calculate_euclidean_distance(origin_descs, sampled_desc) for sampled_desc in sampled_descs]
-                    df[descriptor_id] = similarities
+                    similarities_dict[descriptor_id] = similarities  
                 else:
                     if self._is_binary(origin_descs) is True:
                         similarities = [self._calculate_tanimoto_similarity(self._np_to_bv(origin_descs), self._np_to_bv(sampled_desc)) for sampled_desc in sampled_descs]
-                        df[descriptor_id] = similarities
+                        similarities_dict[descriptor_id] = similarities  
                     else:
                         similarities = [self._calculate_euclidean_distance(origin_descs, sampled_desc) for sampled_desc in sampled_descs]
-                        df[descriptor_id] = similarities                        
+                        similarities_dict[descriptor_id] = similarities                          
             else:
                 print("Output Type unknown")
+        return similarities_dict
+
+
+    def run(self, seed_smiles, input_smiles=None, keep_smiles=None, avoid_smiles=None):
+        if input_smiles == None:
+            input_smiles = seed_smiles #in the first round, seed and input are the same
+        sampled_smiles = self._sample(input_smiles)
+        print("SAMPLED", len(sampled_smiles))
+        sampled_smiles = [smi for smi in sampled_smiles if smi is not None]
+        print("ALL VALID SAMPLED", len(sampled_smiles))
+        if keep_smiles is not None or avoid_smiles is not None:
+            sampled_smiles = self._clean_sampled_smiles(sampled_smiles, keep_smiles, avoid_smiles)
+        similarities_dict = self._calculate_similarities(seed_smiles, sampled_smiles)
+        df = pd.DataFrame()
+        df["sampled_smiles"] = sampled_smiles
+        for k,v in similarities_dict.items():
+            df[k] = v
         return df
+    
+
