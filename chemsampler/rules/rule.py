@@ -27,7 +27,7 @@ class Ruler(object):
         return sampled_smiles_filtered
 
     def avoid_substructure(self, sampled_smiles):
-        avoid_mol = self._convert_double_to_single_bonds(self.keep_smiles)
+        avoid_mol = self._convert_double_to_single_bonds(self.avoid_smiles)
         sampled_smiles_filtered = []
         for smi in sampled_smiles:
             mol = self._convert_double_to_single_bonds(smi)

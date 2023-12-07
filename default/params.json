@@ -1,16 +1,17 @@
 {
-    "seed_smiles": "",
-    "keep_smarts": [],
-    "avoid_smarts": [],
+    "seed_smiles": "FC(F)OC(C=C1)=CC=C1C2=NN=C3C=NC=C(OCC(CO)C4=C(F)C=CC=C4)N32",
+    "keep_smiles": "c1nnc2cnccn12",
+    "avoid_smiles": "FOCC1=CC=CC=C1",
     "samplers": [
         "eos1noy",
         "eos8fma"
     ],
     "descriptors": [
-        "eos4u6p",
-        "eos5axz"
+        "eos5axz", 
+        "eos4wt0"
     ],
     "num_samples": 10000,
+    "max_rounds": 2,
     "time_budget_sec": 600,
-    "output_folder": ""
+    "output_folder": "~/Desktop"
 }
