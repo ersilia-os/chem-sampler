@@ -1,25 +1,40 @@
-from ..utils.config import ConfigRun
+import pandas as pd
 
 class InputSelector(object):
-    def __init__(self, config_file):
-        rc = ConfigRun(config_file)
-        self.info = rc.load_info_file()
-        self.results = rc.load_results()
+    def __init__(self, info_file, results_file):
+        self.info = info_file
+        self.results = results_file
     
     def _is_not_saturated(self):
-        new_cpds = int(self.info[-1]["unique_generated"])
-        if new_cpds > 200:
+        new_cpds = int(self.info[-1]["total_unique_generated"])
+        print(new_cpds)
+        if new_cpds > 1000:
             return True
         else:
             return False
         
+    def _rank_columns(self, df):
+        euclidean_cols = df.filter(like='_euclidean')
+        tanimoto_cols = df.filter(like='_tanimoto')
+        euclidean_rank_cols = euclidean_cols.rank(axis=1)
+        tanimoto_rank_cols = tanimoto_cols.rank(axis=1, ascending=False)
+        all_rank_columns = pd.concat([euclidean_rank_cols, tanimoto_rank_cols], axis=1)
+        df['avg_rank'] = all_rank_columns.mean(axis=1)
+        best_smiles = df.loc[df['avg_rank'].idxmin(), 'sampled_smiles']
+        print(best_smiles)
+        return best_smiles
+
+
     def choose_input(self):
         if len(self.info)==1:
+            print("HERE")
             input_smiles = self.info[0]["seed_smiles"]
         else:
             if self._is_not_saturated():
+                print("NOT SATURATED")
                 input_smiles = self.info[-1]["input_smiles"]
             else:
+                print("SATURATED")
                 results = self.results[self.results["round"]==self.info[-1]["round_number"]]
-                input_smiles = results['sampled_smiles'].sample().iloc[0]
+                input_smiles = self._rank_columns(results)
         return input_smiles

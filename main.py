@@ -1,27 +1,26 @@
 import os
-import json
-import pandas as pd
 
 from chemsampler.master.master_sampler import MasterSampler
 from chemsampler.utils.config import ConfigRun
 from chemsampler.rules.input import InputSelector
+from chemsampler.utils.visualize import VisualizeMolecules
 
 root = os.path.dirname(os.path.abspath(__file__))
 config_file = os.path.abspath(os.path.join(root, "default", "params.json"))
 
 rc = ConfigRun(config_file)
+output_folder = rc._create_output_folder()
 rc.create_output_files()
 params = rc.read_config_file()
-rounds_info = rc.load_info_file()
-
-inp = InputSelector(config_file)
 
 for round in range(1, params["max_rounds"] + 1):
+    rounds_info = rc.load_info_file()
+    df_all = rc.load_results()
+    inp = InputSelector(rounds_info, df_all)
     input_smiles = inp.choose_input()
     ms = MasterSampler(sampler_ids=params["samplers"], descriptor_ids=params["descriptors"], unit_timeout_sec =params["time_budget_sec"])
     df, sampler_info = ms.run(seed_smiles=params["seed_smiles"], input_smiles = input_smiles, keep_smiles=params["keep_smiles"], avoid_smiles=params["avoid_smiles"])
     df["round"] = round
-    df_all = rc.load_results()
     len_generated = len(df)
     df = df[~df["sampled_smiles"].isin(df_all["sampled_smiles"])]
     len_not_dupl = len(df)
@@ -37,12 +36,16 @@ for round in range(1, params["max_rounds"] + 1):
         "total_unique_generated": len_not_dupl
     }
     rounds_info.append(round_info)
+    rc.add_info_data(rounds_info)
     rc.save_results(df_updated)
+    df.reset_index(inplace=True)
+    vm = VisualizeMolecules()
+    vm.visualize_mols(df, output_folder, round)
 
     # Check if the threshold is reached
     if len(df_updated) >= params["num_samples"]:
         print(f"Threshold reached. Stopping iterations.")
         break
 
-rc.add_info_data(rounds_info)
+
 
