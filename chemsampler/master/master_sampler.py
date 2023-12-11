@@ -4,9 +4,9 @@ from rdkit.Chem import DataStructs
 import pandas as pd
 import numpy as np
 
-from .samplers.sampler import UnitSampler
-from .descriptors.descriptor import DescriptorCalculator
-from .rules.rule import Ruler
+from ..samplers.sampler import UnitSampler
+from ..descriptors.descriptor import DescriptorCalculator
+from ..rules.rule import Ruler
 
 class MasterSampler(object):
     def __init__(
