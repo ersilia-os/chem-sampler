@@ -1,14 +1,15 @@
 import pandas as pd
 
 class InputSelector(object):
-    def __init__(self, info_file, results_file):
+    def __init__(self, info_file, results_file, saturation_number=500):
         self.info = info_file
         self.results = results_file
+        self.saturation_number = saturation_number
     
     def _is_not_saturated(self):
         new_cpds = int(self.info[-1]["total_unique_generated"])
         print(new_cpds)
-        if new_cpds > 1000:
+        if new_cpds > self.saturation_number:
             return True
         else:
             return False
@@ -27,14 +28,11 @@ class InputSelector(object):
 
     def choose_input(self):
         if len(self.info)==1:
-            print("HERE")
             input_smiles = self.info[0]["seed_smiles"]
         else:
             if self._is_not_saturated():
-                print("NOT SATURATED")
                 input_smiles = self.info[-1]["input_smiles"]
             else:
-                print("SATURATED")
                 results = self.results[self.results["round"]==self.info[-1]["round_number"]]
                 input_smiles = self._rank_columns(results)
         return input_smiles

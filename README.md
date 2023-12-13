@@ -30,14 +30,15 @@ input_smiles = "CN1CCN(C2=c3ccccc3=Nc3ccc(Cl)cc3N2)CC1"
 df = ms.run(input_smiles)
 print(df.head)
 ```
-For ease of use, we provide a file in chemsampler/defaults/params.json where the parameters, including the output folder, can be specified. To run Chem-Sampler, simply modify the defaults in the params.json file and run the following:
+A `keep_smiles` and `avoid_smiles` arguments can be passed to the `run` function to specify core structures that you might want to maintain or to eliminate from the final list of molecules,
+For ease of use, we provide a file in `chemsampler/defaults/params.json` where the parameters, including the output folder, can be specified. To run Chem-Sampler, simply modify the defaults in the `params.json` file and run the following:
 ```
-python main.py
+python scripts/main.py
 ```
-A report file is created at the end of the run.
+A report file is created at the end of the run, as well as images of a sample of the molecules generated in each round.
 
 ## WIP
-We are adding new features to improve the scaffold hopping capabilities of ChemSampler, particularly thinking about natural products. We will allow for a number of rules (i.e, do not maintain certain core structure) to be specified by the user. Check [GitHub Projects](https://github.com/orgs/ersilia-os/projects/10) to follow the development of new features
+We are adding new features to improve the scaffold hopping capabilities of ChemSampler, particularly thinking about natural products. We will allow for a number of rules (i.e, maintain or not maintain certain core structure) to be specified by the user. Check [GitHub Projects](https://github.com/orgs/ersilia-os/projects/10) to follow the development of new features.
 
 ## License
 All the code in this repository is licensed under a GPL-v3 License. Please note that individual models fetched through ChemSampler might have different open source licenses.
