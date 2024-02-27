@@ -48,3 +48,7 @@ class Runner(object):
             if len(df_updated) >= params["num_samples"]:
                 print(f"Threshold reached. Stopping iterations.")
                 break
+        # at the end of the loop, add a molecule id column
+        num_digits = len(str(len(df_updated)))
+        df_updated["id"] = ["chemsampler-{:0{}}".format(i, num_digits) for i in range(1, len(df_updated) + 1)]
+        rc.save_results(df_updated)

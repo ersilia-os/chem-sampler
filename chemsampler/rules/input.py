@@ -1,7 +1,7 @@
 import pandas as pd
 
 class InputSelector(object):
-    def __init__(self, info_file, results_file, saturation_number=500):
+    def __init__(self, info_file, results_file, saturation_number):
         self.info = info_file
         self.results = results_file
         self.saturation_number = saturation_number
