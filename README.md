@@ -1,4 +1,7 @@
 # ChemSampler
+[![DOI](https://zenodo.org/badge/503686926.svg)](https://zenodo.org/doi/10.5281/zenodo.10812484)
+
+
 ChemSampler is a simple Python API to sample the chemical space around a given molecule. It is developed and maintained by the [Ersilia Open Source Initiative](https://ersilia.io).
 
 ChemSampler capitalizes on the *generative* models available in the [Ersilia Model Hub](https://ersilia.io/model-hub). Feel free to suggest new models by [opening an issue](https://github.com/ersilia-os/ersilia/issues).
