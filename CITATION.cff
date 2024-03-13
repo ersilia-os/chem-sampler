@@ -23,6 +23,9 @@ authors:
     country: ES
     post-code: '17834'
     website: 'https://ersilia.io'
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.10812484
 repository-code: 'https://github.com/ersilia-os/chem-sampler'
 license: GPL-3.0
 version: 1.0.0
