@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: 'ChemSampler: chemical space exploration'
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Gemma
+    family-names: Turon
+    email: gemma@ersilia.io
+    affiliation: Ersilia Open Source Initiative
+    orcid: 'https://orcid.org/0000-0001-6798-0275'
+  - given-names: Miquel
+    family-names: Duran-Frigola
+    email: miquel@ersilia.io
+    affiliation: Ersilia Open Source Initiative
+    orcid: 'https://orcid.org/0000-0002-9906-6936'
+  - given-names: Anamika
+    family-names: Yadav
+    affiliation: Ersilia Open Source Initiative
+  - name: Fundació Ersilia Open Source Initiative
+    address: Ctra Pujarnol km 5
+    country: ES
+    post-code: '17834'
+    website: 'https://ersilia.io'
+repository-code: 'https://github.com/ersilia-os/chem-sampler'
+license: GPL-3.0
+version: 1.0.0
+date-released: '2024-03-01'
