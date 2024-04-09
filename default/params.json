@@ -1,0 +1,19 @@
+{
+    "seed_smiles": "CC12CC=C3C=C4C(C(C(CC45CCC3(C1CC=C2C6=CC7=C(C=C6)C=CN=C7)O5)N(C)C)O)O",
+    "keep_smiles": null,
+    "avoid_smiles": "C1CC2OC1CC=C2",
+    "samplers": [
+        "eos8fma",
+        "eos4qda"
+    ],
+    "descriptors": [
+        "eos2gw4", 
+        "eos4x30",
+        "eos4wt0"
+    ],
+    "num_samples": 10000,
+    "max_rounds": 3,
+    "time_budget_sec": 100,
+    "saturation_number": 300,
+    "output_folder": "~/Desktop/chemsampler4/"
+}
