@@ -7,5 +7,5 @@ from chemsampler.runner import Runner
 
 config_file = os.path.abspath(os.path.join(root, "..", "default", "params.json"))
 
-#Runner(config_file=config_file).run()
+Runner(config_file=config_file).run()
 Runner(config_file=config_file).add_properties()
