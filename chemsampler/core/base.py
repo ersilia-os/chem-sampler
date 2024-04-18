@@ -60,6 +60,7 @@ class ModelArtifact(object):
         return smiles_list
 
     def run(self, smiles_list):
+        print(self.model_id)
         self.model.serve()
         tmp_folder = tempfile.mkdtemp(prefix="ersilia-")
         input_csv = os.path.join(tmp_folder, "input.csv")

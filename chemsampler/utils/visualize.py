@@ -1,7 +1,6 @@
+import os
 from rdkit import Chem
 from rdkit.Chem import Draw
-import os
-from .config import ConfigRun
 
 class VisualizeMolecules(object):
     def __init__(self, num_samples =100):
@@ -16,3 +15,4 @@ class VisualizeMolecules(object):
         sampled_mols = [Chem.MolFromSmiles(smile) for smile in sampled_smiles]
         img = Draw.MolsToGridImage(mols=sampled_mols, molsPerRow=5)
         img.save(os.path.join(output_folder, "mols_round{}.png".format(round)))
+

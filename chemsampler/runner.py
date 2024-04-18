@@ -52,3 +52,13 @@ class Runner(object):
         num_digits = len(str(len(df_updated)))
         df_updated["id"] = ["chemsampler-{:0{}}".format(i, num_digits) for i in range(1, len(df_updated) + 1)]
         rc.save_results(df_updated)
+
+    def add_properties(self):
+        rc = ConfigRun(self.config_file)
+        df = rc.add_calculated_properties()
+        print(df.columns)
+        cols = ["id", "sampled_smiles", "round", "mw", "qed", "logp"]
+        other_cols = [col for col in df.columns if col not in cols]
+        col_order = cols + other_cols
+        df = df[col_order]
+        rc.save_results(df)

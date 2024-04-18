@@ -47,15 +47,22 @@ class MasterSampler(object):
         for sampler_id in self.sampler_ids:
             us = UnitSampler(model_id=sampler_id, timeout_sec=self.unit_timeout_sec)
             sampled_smiles = us.sample(input_smiles)
+            print("THE SAMPLER HAS PRODUCED:")
             print(sampler_id, len(sampled_smiles))
             sampler_info[sampler_id]=[len(sampled_smiles)]
+            print("SAMPLER INFO PRE CLEANING")
+            print(sampler_info)
             if keep_smiles is not None or avoid_smiles is not None:
                 sampled_smiles = self._clean_sampled_smiles(sampled_smiles, keep_smiles, avoid_smiles)
+                print("CLEANING NECESSARY, remaining smiles:")
+                print(len(sampled_smiles))
             if sampled_smiles is not None:
                 sampler_info[sampler_id].append(len(sampled_smiles))
                 sampled_smiles_all.update(sampled_smiles)
             else: 
                 sampler_info[sampler_id].append(0)
+            print("SAMPLER INFO POST CLEANING")
+            print(sampler_info)
             print("TOTAL SMILES", len(sampled_smiles_all))
         sampled_smiles_all = list(sampled_smiles_all)
         return sampled_smiles_all, sampler_info

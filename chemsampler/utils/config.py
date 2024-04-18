@@ -1,6 +1,7 @@
 import json
 import os
 import pandas as pd
+from .properties import PropertyCalculator
 
 class ConfigRun(object):
     def __init__(self, config_file):
@@ -46,6 +47,15 @@ class ConfigRun(object):
         output_folder = self._create_output_folder()
         results_file = os.path.join(output_folder, "chemsampler_results.csv")
         df.to_csv(results_file, index=False)
+
+    def add_calculated_properties(self):
+        seed_smiles = self.read_config_file()["seed_smiles"]
+        results_file = self.load_results()
+        sampled_smiles = results_file["sampled_smiles"]
+        pc = PropertyCalculator(seed_smiles, sampled_smiles)
+        df_prop = pc.run()
+        df = pd.merge(results_file, df_prop, on = "sampled_smiles", how = "left")
+        return df
     
     def load_info_file(self):
         output_folder = self._create_output_folder()

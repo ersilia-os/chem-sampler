@@ -3,17 +3,22 @@
     "keep_smiles": null,
     "avoid_smiles": "C1CC2OC1CC=C2",
     "samplers": [
-        "eos8fma",
-        "eos4qda"
+        "eos57bx",
+        "eos694w",
+        "eos633t",
+        "eos9taz",
+        "eos8fma"
     ],
     "descriptors": [
         "eos2gw4", 
-        "eos4x30",
-        "eos4wt0"
+        "eos24ur",
+        "eos5guo",
+        "eos8aox",
+        "eos4u6p"
     ],
     "num_samples": 10000,
-    "max_rounds": 3,
-    "time_budget_sec": 100,
+    "max_rounds": 5,
+    "time_budget_sec": 120,
     "saturation_number": 300,
-    "output_folder": "~/Desktop/chemsampler4/"
+    "output_folder": "~/github/ersilia-os/chemsampler/"
 }
