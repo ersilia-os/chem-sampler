@@ -26,7 +26,13 @@ class ConfigRun(object):
         results_file = os.path.join(output_folder, "chemsampler_results.csv")
         seed_smiles = self.read_config_file()["seed_smiles"]
         df = pd.DataFrame({"round": [0], "sampled_smiles":[seed_smiles]})
-        df.to_csv(results_file, index=False)    
+        df.to_csv(results_file, index=False)  
+
+    def _discarded_file(self):
+        output_folder = self._create_output_folder()
+        discarded_file = os.path.join(output_folder, "chemsampler_discarded.csv")
+        df = pd.DataFrame(columns=["discarded_smiles"])
+        df.to_csv(discarded_file, index=False)  
 
     def _round_info_file(self):
         output_folder = self._create_output_folder()
@@ -46,6 +52,11 @@ class ConfigRun(object):
     def save_results(self, df):
         output_folder = self._create_output_folder()
         results_file = os.path.join(output_folder, "chemsampler_results.csv")
+        df.to_csv(results_file, index=False)
+
+    def save_discarded(self, df):
+        output_folder = self._create_output_folder()
+        results_file = os.path.join(output_folder, "chemsampler_discarded.csv")
         df.to_csv(results_file, index=False)
 
     def add_calculated_properties(self):
@@ -72,5 +83,6 @@ class ConfigRun(object):
 
     def create_output_files(self):
         self._results_file()
+        self._discarded_file()
         self._round_info_file()
 

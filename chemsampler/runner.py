@@ -21,7 +21,7 @@ class Runner(object):
             inp = InputSelector(rounds_info, df_all, params["saturation_number"])
             input_smiles = inp.choose_input()
             ms = MasterSampler(sampler_ids=params["samplers"], descriptor_ids=params["descriptors"], unit_timeout_sec =params["time_budget_sec"])
-            df, sampler_info = ms.run(seed_smiles=params["seed_smiles"], input_smiles = input_smiles, keep_smiles=params["keep_smiles"], avoid_smiles=params["avoid_smiles"])
+            df, sampler_info, df_ = ms.run(seed_smiles=params["seed_smiles"], input_smiles = input_smiles, keep_smiles=params["keep_smiles"], avoid_smiles=params["avoid_smiles"])
             df["round"] = round
             len_generated = len(df)
             df = df[~df["sampled_smiles"].isin(df_all["sampled_smiles"])]
@@ -40,6 +40,7 @@ class Runner(object):
             rounds_info.append(round_info)
             rc.add_info_data(rounds_info)
             rc.save_results(df_updated)
+            rc.save_discarded(df_)
             df.reset_index(inplace=True)
             vm = VisualizeMolecules()
             vm.visualize_mols(df, output_folder, round)

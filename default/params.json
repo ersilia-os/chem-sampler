@@ -10,15 +10,16 @@
         "eos8fma"
     ],
     "descriptors": [
+        "eos4wt0",
         "eos2gw4", 
         "eos24ur",
         "eos5guo",
         "eos8aox",
         "eos4u6p"
     ],
-    "num_samples": 10000,
-    "max_rounds": 5,
-    "time_budget_sec": 120,
+    "num_samples": 20000,
+    "max_rounds": 10,
+    "time_budget_sec": 1200,
     "saturation_number": 300,
-    "output_folder": "~/github/ersilia-os/chemsampler/"
+    "output_folder": "~/github/ersilia-os/chemsampler5/"
 }

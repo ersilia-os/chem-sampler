@@ -29,20 +29,29 @@ class MasterSampler(object):
     
     def _clean_sampled_smiles(self, sampled_smiles, keep_smiles=None, avoid_smiles=None):
         rule = Ruler(keep_smiles, avoid_smiles)
-        sampled_smiles_filtered = sampled_smiles
+        sampled_smiles_all = []
+        discarded_smiles_all = []
         if keep_smiles is not None:
-            sampled_smiles_filtered = rule.keep_substructure(sampled_smiles)
-        print("KEEP SUBSTRUCTURE", len(sampled_smiles_filtered))
-        if len(sampled_smiles_filtered)==0:
-            print("No SMILES keeps the core structure")
-            return None
+            sampled_smiles_filtered, discarded_smiles = rule.keep_substructure(sampled_smiles)
+            if len(sampled_smiles_filtered) != 0:
+                sampled_smiles_all.extend(sampled_smiles_filtered)
+                print("KEEP SUBSTRUCTURE", len(sampled_smiles_filtered))
+            if len(discarded_smiles) != 0:
+                discarded_smiles_all.extend(discarded_smiles)
+                print("DISCARDED SMILES WITHOUT KEEP STRUCTURE", len(discarded_smiles))
         if avoid_smiles is not None:
-            sampled_smiles_filtered = rule.avoid_substructure(sampled_smiles_filtered)
-        print("AVOID SUBSTRUCTURE", len(sampled_smiles_filtered))
-        return sampled_smiles_filtered
+            sampled_smiles_filtered, discarded_smiles = rule.avoid_substructure(sampled_smiles)
+            if len(sampled_smiles_filtered) != 0:
+                sampled_smiles_all.extend(sampled_smiles_filtered)
+                print("AVOID SUBSTRUCTURE", len(sampled_smiles_filtered))
+            if len(discarded_smiles) != 0:
+                discarded_smiles_all.extend(discarded_smiles)
+                print("DISCARDED SMILES WITh AVOID STRUCTURE", len(discarded_smiles))
+        return sampled_smiles_all, discarded_smiles_all
     
     def _sample(self, input_smiles, keep_smiles=None, avoid_smiles=None):
         sampled_smiles_all = set()
+        discarded_smiles_all = set()
         sampler_info = {}
         for sampler_id in self.sampler_ids:
             us = UnitSampler(model_id=sampler_id, timeout_sec=self.unit_timeout_sec)
@@ -52,20 +61,24 @@ class MasterSampler(object):
             sampler_info[sampler_id]=[len(sampled_smiles)]
             print("SAMPLER INFO PRE CLEANING")
             print(sampler_info)
-            if keep_smiles is not None or avoid_smiles is not None:
-                sampled_smiles = self._clean_sampled_smiles(sampled_smiles, keep_smiles, avoid_smiles)
-                print("CLEANING NECESSARY, remaining smiles:")
-                print(len(sampled_smiles))
             if sampled_smiles is not None:
+                if keep_smiles is not None or avoid_smiles is not None:
+                    sampled_smiles, discarded_smiles = self._clean_sampled_smiles(sampled_smiles, keep_smiles, avoid_smiles)
+                    if len(sampled_smiles)!= 0:
+                        print("CLEANING NECESSARY, remaining smiles:", len(sampled_smiles))
+                    else:
+                        print("All SMILES were filtered by structure")
                 sampler_info[sampler_id].append(len(sampled_smiles))
                 sampled_smiles_all.update(sampled_smiles)
+                discarded_smiles_all.update(discarded_smiles)
             else: 
                 sampler_info[sampler_id].append(0)
             print("SAMPLER INFO POST CLEANING")
             print(sampler_info)
             print("TOTAL SMILES", len(sampled_smiles_all))
         sampled_smiles_all = list(sampled_smiles_all)
-        return sampled_smiles_all, sampler_info
+        discarded_smiles_all = list(discarded_smiles)
+        return sampled_smiles_all, sampler_info, discarded_smiles_all
     
     def _calculate_seed_descriptors(self, seed_smiles, descriptor_id):
         dc = DescriptorCalculator(model_id=descriptor_id)
@@ -134,7 +147,7 @@ class MasterSampler(object):
     def run(self, seed_smiles, input_smiles=None, keep_smiles=None, avoid_smiles=None):
         if input_smiles == None:
             input_smiles = seed_smiles #in the first round, seed and input are the same
-        sampled_smiles, sampled_info = self._sample(input_smiles, keep_smiles, avoid_smiles)
+        sampled_smiles, sampled_info, discarded_smiles = self._sample(input_smiles, keep_smiles, avoid_smiles)
         print("SAMPLED", len(sampled_smiles))
         sampled_smiles = [smi for smi in sampled_smiles if smi is not None]
         print("ALL VALID SAMPLED", len(sampled_smiles))
@@ -143,6 +156,8 @@ class MasterSampler(object):
         df["sampled_smiles"] = sampled_smiles
         for k,v in similarities_dict.items():
             df[k] = v
-        return df, sampled_info
+        df_ = pd.DataFrame()
+        df_["discarded_smiles"] = discarded_smiles
+        return df, sampled_info, df_
     
 
