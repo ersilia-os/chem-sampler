@@ -40,7 +40,7 @@ class ModelArtifact(object):
     def fetch(self):
         if not self.exists_locally():
             mf = ModelFetcher(force_from_dockerhub=True)
-            mf.fetch(self.model_id)
+            ayncio.run(mf.fetch(self.model_id))
             self.load_model()
         else:
             self.logger.info("Model {0} already exists".format(self.model_id))
