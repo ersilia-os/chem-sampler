@@ -2,24 +2,32 @@ from rdkit import Chem
 
 from ..hub.client import HubModel
 
+#: Generative models from the Ersilia Model Hub validated in ersilia-os/ersilia#1919.
+VALIDATED_GENERATORS = ("eos9taz", "eos6ost", "eos2401")
 
-class MolerGenerator:
+
+class HubGenerator:
     """
-    Scaffold-preserving molecule generator backed by eos9taz (MoLeR + Enamine fragments).
+    Molecule generator backed by a generative model from the Ersilia Model Hub.
 
-    Given a seed molecule, generates up to 1000 unique candidates that extend its
-    scaffold with fragments sampled from Enamine's library. The candidate count is
-    not configurable - it is intrinsic to the model's output width.
+    Works with any Hub generative model that takes one compound and returns
+    generated molecules in `smi_*` columns. How much of the input survives
+    generation is model-specific: eos9taz and eos6ost rebuild from the input's
+    Murcko scaffold, while eos2401 keeps only small (60-100 Da) ring fragments.
+
+    Parameters
+    ----------
+    model_id : str
+        Ersilia identifier of the generative model (e.g. "eos9taz").
     """
 
-    MODEL_ID = "eos9taz"
-
-    def __init__(self):
-        self._hub_model = HubModel(self.MODEL_ID)
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self._hub_model = HubModel(model_id)
 
     def generate(self, seed_smiles: str) -> list[str]:
         """
-        Generate scaffold-preserving candidates for a seed molecule.
+        Generate candidate molecules from a seed molecule.
 
         Parameters
         ----------
@@ -30,7 +38,7 @@ class MolerGenerator:
         -------
         list[str]
             Unique, RDKit-canonicalized candidate SMILES, excluding the seed itself
-            and any invalid outputs.
+            and any outputs RDKit cannot parse.
         """
         df = self._hub_model.run([seed_smiles])
         smi_columns = [c for c in df.columns if c.startswith("smi_")]
@@ -46,3 +54,55 @@ class MolerGenerator:
             if canonical != seed_canonical:
                 candidates.add(canonical)
         return list(candidates)
+
+
+class GeneratorPool:
+    """
+    Several generators used as one, pooling their candidates.
+
+    Satisfies the same interface as `HubGenerator`, so it can be passed wherever
+    a single generator is expected.
+
+    Parameters
+    ----------
+    generators : list[HubGenerator]
+        Generators whose candidates are pooled.
+    """
+
+    def __init__(self, generators: list[HubGenerator]):
+        self.generators = generators
+
+    def generate(self, seed_smiles: str) -> list[str]:
+        """
+        Generate candidates from every generator and return their union.
+
+        Parameters
+        ----------
+        seed_smiles : str
+            SMILES of the seed molecule.
+
+        Returns
+        -------
+        list[str]
+            Deduplicated union of all generators' candidates.
+        """
+        candidates = set()
+        for generator in self.generators:
+            candidates.update(generator.generate(seed_smiles))
+        return list(candidates)
+
+    def generate_by_model(self, seed_smiles: str) -> dict[str, list[str]]:
+        """
+        Generate candidates, keeping track of which model produced each set.
+
+        Parameters
+        ----------
+        seed_smiles : str
+            SMILES of the seed molecule.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping from model identifier to that model's candidates.
+        """
+        return {g.model_id: g.generate(seed_smiles) for g in self.generators}

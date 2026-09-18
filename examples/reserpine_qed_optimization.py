@@ -1,7 +1,7 @@
 import os
 
 from chemsampler.models.annotator import QEDAnnotator
-from chemsampler.models.generator import MolerGenerator
+from chemsampler.models.generator import HubGenerator
 from chemsampler.optimize import hill_climb
 
 # Reserpine (PubChem CID 5770, InChIKey QEVHRUUCFGRFIF-MDEJGZGSSA-N):
@@ -11,7 +11,7 @@ SEED_SMILES = "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5
 if __name__ == "__main__":
     df = hill_climb(
         seed_smiles=SEED_SMILES,
-        generator=MolerGenerator(),
+        generator=HubGenerator("eos9taz"),
         annotator=QEDAnnotator(),
         n_rounds=5,
     )
