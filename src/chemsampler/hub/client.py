@@ -33,12 +33,16 @@ class HubModel:
         pandas.DataFrame
             The model's output table, as written to its output CSV.
         """
+        # Ersilia's API is file-only: it rejects an in-memory list, accepts an
+        # input CSV of exactly one column, and returns only the path to its
+        # output file. Hence the round trip through disk.
         self.model.serve()
-        tmp_dir = tempfile.mkdtemp(prefix="chemsampler-")
-        input_csv = os.path.join(tmp_dir, "input.csv")
-        output_csv = os.path.join(tmp_dir, "output.csv")
-        pd.DataFrame({"smiles": smiles_list}).to_csv(input_csv, index=False)
-        self.model.run(input=input_csv, output=output_csv)
-        df = pd.read_csv(output_csv)
-        self.model.close()
-        return df
+        try:
+            with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp_dir:
+                input_csv = os.path.join(tmp_dir, "input.csv")
+                output_csv = os.path.join(tmp_dir, "output.csv")
+                pd.DataFrame({"smiles": smiles_list}).to_csv(input_csv, index=False)
+                self.model.run(input=input_csv, output=output_csv)
+                return pd.read_csv(output_csv)
+        finally:
+            self.model.close()
