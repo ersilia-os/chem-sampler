@@ -36,3 +36,37 @@ def test_pool_keeps_provenance():
     by_model = pool.generate_by_model("CC")
 
     assert by_model == {"model_a": ["CCO", "CCC"], "model_b": ["CCC"]}
+
+
+def test_pool_warns_on_empty_generator(caplog):
+    pool = GeneratorPool(
+        [
+            StubGenerator("model_a", ["CCO"]),
+            StubGenerator("model_b", []),
+        ]
+    )
+
+    with caplog.at_level("WARNING"):
+        candidates = pool.generate("CC")
+
+    assert candidates == ["CCO"]
+    assert any(
+        "model_b" in r.message and "0 candidates" in r.message for r in caplog.records
+    )
+
+
+def test_pool_by_model_warns_on_empty_generator(caplog):
+    pool = GeneratorPool(
+        [
+            StubGenerator("model_a", ["CCO"]),
+            StubGenerator("model_b", []),
+        ]
+    )
+
+    with caplog.at_level("WARNING"):
+        by_model = pool.generate_by_model("CC")
+
+    assert by_model == {"model_a": ["CCO"], "model_b": []}
+    assert any(
+        "model_b" in r.message and "0 candidates" in r.message for r in caplog.records
+    )

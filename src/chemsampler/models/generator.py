@@ -1,6 +1,7 @@
 from rdkit import Chem
 
 from ..hub.client import HubModel
+from ..utils.logging import logger
 
 #: Generative models from the Ersilia Model Hub validated in ersilia-os/ersilia#1919.
 VALIDATED_GENERATORS = ("eos9taz", "eos6ost", "eos2401")
@@ -88,7 +89,13 @@ class GeneratorPool:
         """
         candidates = set()
         for generator in self.generators:
-            candidates.update(generator.generate(seed_smiles))
+            result = generator.generate(seed_smiles)
+            if not result:
+                logger.warning(
+                    f"{getattr(generator, 'model_id', generator)}: contributed 0 candidates "
+                    "for this seed"
+                )
+            candidates.update(result)
         return list(candidates)
 
     def generate_by_model(self, seed_smiles: str) -> dict[str, list[str]]:
@@ -105,4 +112,10 @@ class GeneratorPool:
         dict[str, list[str]]
             Mapping from model identifier to that model's candidates.
         """
-        return {g.model_id: g.generate(seed_smiles) for g in self.generators}
+        by_model = {}
+        for g in self.generators:
+            result = g.generate(seed_smiles)
+            if not result:
+                logger.warning(f"{g.model_id}: contributed 0 candidates for this seed")
+            by_model[g.model_id] = result
+        return by_model
