@@ -7,6 +7,7 @@ This is the developer guide for ChemSampler, a Python package built from the Ers
 - **Ask, don't assume.** For any non-trivial decision — which approach to take, what to name something, whether to add a dependency, how to handle an ambiguous case — use the `AskUserQuestion` tool BEFORE editing. A couple of short questions up front beat a wrong-direction change.
 - **Plans are mandatory.** Anything beyond a one-line fix or pure read-only investigation must go through plan mode. Be insistent: if invoked outside plan mode for non-trivial work, propose a plan in chat and stop until the user confirms. Do not skip planning to "save time".
 - **Surface uncertainty.** When you have multiple reasonable options or are unsure about intent, name them and ask. Don't pick silently.
+- **Session notes are the handoff.** At the start of every session, read the most recent `.claude/*-session-notes.md` before anything else — it carries measurements, dead ends, and open items that exist nowhere in the code or git history. At the end of a session, update it (or write a new dated one) with: what changed, what was measured *with the actual numbers*, what turned out to be wrong and why, and what is still open. `.claude/` is gitignored, so these notes are machine-local.
 
 ## Package layout
 
@@ -48,6 +49,10 @@ Import the singleton everywhere — do not call `logging.getLogger(...)` directl
 - **Pin exact versions.** Use `==X.Y.Z` for every entry in `pyproject.toml` (and any other requirements file the user adds). No floors (`>=`), no ranges.
 - **Evaluate every new dependency.** Adding a library is a long-term cost. Prefer the standard library or an existing transitive dependency; only add a new package when the benefit is clear and the alternative would be substantial code.
 - **Keep `pyproject.toml` in sync with the package.** When code starts (or stops) importing something, update `pyproject.toml` in the same commit. The project name, version, and dependency list must always reflect the current state of `src/`.
+
+## Chemistry data
+
+- **Never write a SMILES from memory.** Pull structures from an authoritative source (PubChem) and confirm them by **InChIKey**. Molecular formula and molecular weight are far too weak a check — a wrong structure can match both. A fabricated seed silently invalidates every downstream result computed from it.
 
 ## Data with eosvc
 
