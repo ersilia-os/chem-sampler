@@ -18,6 +18,7 @@ dependencies = [
   "rdkit==2024.3.6",
   "pandas==2.3.0",
   "rich==14.1.0",
+  "eosvc==1.2.0",
 ]
 
 [project.optional-dependencies]

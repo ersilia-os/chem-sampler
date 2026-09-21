@@ -47,6 +47,20 @@ from chemsampler.models.generator import GeneratorPool, VALIDATED_GENERATORS
 pool = GeneratorPool([HubGenerator(model_id) for model_id in VALIDATED_GENERATORS])
 ```
 
+`ChemblSampler` is a null baseline: it draws molecules at random from a filtered
+ChEMBL set (single-component, 200-450 Da) and **ignores the seed**. It answers
+"does a generator beat a random draw from known chemistry?". It is opt-in, and
+deliberately absent from `VALIDATED_GENERATORS`:
+
+```python
+from chemsampler.models.chembl import ChemblSampler
+
+baseline = ChemblSampler(n=1000, random_state=42)
+```
+
+The reference set is fetched with [`eosvc`](https://github.com/ersilia-os/eosvc) on
+first use, or rebuilt from scratch with `python -m chemsampler.data.chembl`.
+
 See [`examples/`](examples/) for a runnable script.
 
 ## About the Ersilia Open Source Initiative
