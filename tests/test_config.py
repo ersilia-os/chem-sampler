@@ -59,62 +59,63 @@ def test_load_annotators_builds_specs_from_csv(tmp_path):
     path = tmp_path / "annotators.csv"
     _write_csv(
         path,
-        ["annotator_id", "role", "min", "max"],
-        [["qed", "directing", "", ""], ["eos4zfy", "controlling", "0", "500"]],
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
     )
 
     specs = load_annotators(str(path))
 
     assert [spec.annotator_id for spec in specs] == ["qed", "eos4zfy"]
-    assert specs[0].role == "directing"
-    assert specs[1].role == "controlling"
-    assert specs[1].min == 0.0
-    assert specs[1].max == 500.0
+    assert specs[0].cutoff == 0.3
+    assert specs[0].direction == "higher"
+    assert specs[1].cutoff == 50.0
+    assert specs[1].direction == "lower"
 
 
-def test_load_annotators_requires_exactly_one_directing_row(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path, ["annotator_id", "role", "min", "max"], [["qed", "controlling", "0", "1"]]
-    )
-
-    with pytest.raises(ValueError, match="directing"):
-        load_annotators(str(path))
-
-
-def test_load_annotators_rejects_unknown_role(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path, ["annotator_id", "role", "min", "max"], [["qed", "sideways", "", ""]]
-    )
-
-    with pytest.raises(ValueError, match="role"):
-        load_annotators(str(path))
-
-
-def test_load_annotators_supports_one_sided_bounds(tmp_path):
+def test_load_annotators_preserves_csv_row_order(tmp_path):
     path = tmp_path / "annotators.csv"
     _write_csv(
         path,
-        ["annotator_id", "role", "min", "max"],
-        [["qed", "directing", "", ""], ["eos4zfy", "controlling", "0", ""]],
+        ["annotator_id", "cutoff", "direction"],
+        [
+            ["eos4zfy", "0", "higher"],
+            ["qed", "0.3", "higher"],
+            ["eos6ost", "1", "higher"],
+        ],
     )
 
     specs = load_annotators(str(path))
 
-    assert specs[1].min == 0.0
-    assert specs[1].max is None
+    assert [spec.annotator_id for spec in specs] == ["eos4zfy", "qed", "eos6ost"]
 
 
-def test_load_annotators_rejects_controlling_row_with_no_bounds(tmp_path):
+def test_load_annotators_rejects_missing_cutoff(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(path, ["annotator_id", "cutoff", "direction"], [["qed", "", "higher"]])
+
+    with pytest.raises(ValueError, match="cutoff"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_rejects_invalid_cutoff_value(tmp_path):
     path = tmp_path / "annotators.csv"
     _write_csv(
         path,
-        ["annotator_id", "role", "min", "max"],
-        [["qed", "directing", "", ""], ["eos4zfy", "controlling", "", ""]],
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "not-a-number", "higher"]],
     )
 
-    with pytest.raises(ValueError, match="min/max"):
+    with pytest.raises(ValueError, match="cutoff"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_rejects_unknown_direction(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path, ["annotator_id", "cutoff", "direction"], [["qed", "0.3", "sideways"]]
+    )
+
+    with pytest.raises(ValueError, match="direction"):
         load_annotators(str(path))
 
 
@@ -122,8 +123,8 @@ def test_load_annotators_rejects_duplicate_annotator_id(tmp_path):
     path = tmp_path / "annotators.csv"
     _write_csv(
         path,
-        ["annotator_id", "role", "min", "max"],
-        [["qed", "directing", "", ""], ["qed", "controlling", "0", "1"]],
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["qed", "0.5", "higher"]],
     )
 
     with pytest.raises(ValueError, match="duplicate"):

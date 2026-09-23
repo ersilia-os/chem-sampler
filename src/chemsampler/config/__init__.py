@@ -37,38 +37,38 @@ def load_generators(path: str | None = None) -> GeneratorPool:
 
 def load_annotators(path: str) -> list[AnnotatorSpec]:
     """
-    Build annotator specs from a CSV of annotator ids, roles and bounds.
+    Build annotator specs from a CSV of annotator ids, cutoffs and directions.
 
     Parameters
     ----------
     path : str
-        CSV with columns `annotator_id, role, min, max, column`. `annotator_id`
-        is either "qed" or an Ersilia Hub model id. `role` is "directing" (exactly
-        one row) or "controlling" (any number). `min`/`max` are bounds for
-        controlling rows, blank for directing rows; one-sided bounds are allowed.
-        `column` is optional and is passed to `HubAnnotator` for models with more
-        than one numeric output.
+        CSV with columns `annotator_id, cutoff, direction, column`.
+        `annotator_id` is either "qed" or an Ersilia Hub model id. `cutoff` and
+        `direction` ("higher" or "lower") are required for every row - every
+        annotator is uniform, there is no default. Row order is meaningful: it's
+        the priority order `hill_climb` uses in `mode="sequential"`. `column` is
+        optional and is passed to `HubAnnotator` for models with more than one
+        numeric output.
 
     Returns
     -------
     list[AnnotatorSpec]
-        One spec per row.
+        One spec per row, in file order.
 
     Raises
     ------
     ValueError
-        If a required column is missing, a role or bound is invalid, the
-        annotator ids are not unique, or there is not exactly one directing row.
+        If a required column is missing, a cutoff or direction is invalid, or
+        the annotator ids are not unique.
     """
-    rows = _read_csv(path, required_columns=("annotator_id", "role"))
+    rows = _read_csv(path, required_columns=("annotator_id", "cutoff", "direction"))
 
     specs = [
         AnnotatorSpec(
             annotator_id=row["annotator_id"],
             annotator=_build_annotator(row["annotator_id"], row.get("column") or None),
-            role=row["role"],
-            min=_parse_float(row.get("min")),
-            max=_parse_float(row.get("max")),
+            cutoff=_parse_cutoff(row["annotator_id"], row["cutoff"]),
+            direction=row["direction"],
         )
         for row in rows
     ]
@@ -76,12 +76,6 @@ def load_annotators(path: str) -> list[AnnotatorSpec]:
     ids = [spec.annotator_id for spec in specs]
     if len(set(ids)) != len(ids):
         raise ValueError(f"{path}: duplicate annotator_id")
-
-    directing = [spec for spec in specs if spec.role == "directing"]
-    if len(directing) != 1:
-        raise ValueError(
-            f"{path} must have exactly one directing annotator, found {len(directing)}"
-        )
 
     return specs
 
@@ -100,9 +94,14 @@ def _build_annotator(annotator_id: str, column: str | None):
     return HubAnnotator(annotator_id, column=column)
 
 
-def _parse_float(value: str | None) -> float | None:
-    """Blank CSV cell -> None, otherwise the parsed float."""
-    return float(value) if value else None
+def _parse_cutoff(annotator_id: str, value: str) -> float:
+    """A cutoff is required for every annotator - fail loud rather than guess."""
+    if not value:
+        raise ValueError(f"{annotator_id}: cutoff is required")
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError(f"{annotator_id}: invalid cutoff {value!r}") from None
 
 
 def _read_csv(path, required_columns: tuple[str, ...]) -> list[dict]:

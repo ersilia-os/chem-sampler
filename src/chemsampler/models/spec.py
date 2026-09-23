@@ -1,18 +1,19 @@
+import math
 from dataclasses import dataclass
 from typing import Literal
 
-Role = Literal["directing", "controlling"]
+Direction = Literal["higher", "lower"]
 
 
 @dataclass(frozen=True)
 class AnnotatorSpec:
     """
-    An annotator paired with how it should be used in a round.
+    An annotator paired with the cutoff a candidate must clear.
 
-    A "directing" annotator is the optimization target: exactly one is required
-    per `hill_climb` run, and its value becomes a round's `score`. A "controlling"
-    annotator is a constraint: a candidate outside `[min, max]` is kept in the
-    output but cannot win the round.
+    Every annotator is treated uniformly: it has a cutoff and a direction, and
+    nothing distinguishes one annotator from another beyond that. How annotators
+    combine into a round's winner is decided by `hill_climb`'s `mode` argument,
+    not by anything on the spec itself.
 
     Parameters
     ----------
@@ -21,30 +22,22 @@ class AnnotatorSpec:
         an Ersilia model id).
     annotator : object
         Any object exposing `.score(smiles_list: list[str]) -> dict[str, float]`.
-    role : {"directing", "controlling"}
-        Whether this annotator sets the optimization goal or a constraint.
-    min : float, optional
-        Lower bound for a controlling annotator. `None` means unbounded below.
-    max : float, optional
-        Upper bound for a controlling annotator. `None` means unbounded above.
+    cutoff : float
+        The value a candidate must clear to satisfy this annotator. Use
+        `float("-inf")`/`float("inf")` to express "no real floor/ceiling".
+    direction : {"higher", "lower"}
+        "higher" is satisfied by `value >= cutoff`; "lower" by `value <= cutoff`.
     """
 
     annotator_id: str
     annotator: object
-    role: Role
-    min: float | None = None
-    max: float | None = None
+    cutoff: float
+    direction: Direction
 
     def __post_init__(self) -> None:
-        if self.role not in ("directing", "controlling"):
+        if self.direction not in ("higher", "lower"):
             raise ValueError(
-                f"role must be 'directing' or 'controlling', got {self.role!r}"
+                f"direction must be 'higher' or 'lower', got {self.direction!r}"
             )
-        if self.role == "directing" and (self.min is not None or self.max is not None):
-            raise ValueError(
-                f"{self.annotator_id}: a directing annotator cannot have min/max"
-            )
-        if self.role == "controlling" and self.min is None and self.max is None:
-            raise ValueError(
-                f"{self.annotator_id}: a controlling annotator needs at least one of min/max"
-            )
+        if math.isnan(self.cutoff):
+            raise ValueError(f"{self.annotator_id}: cutoff cannot be NaN")

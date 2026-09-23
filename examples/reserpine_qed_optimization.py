@@ -12,7 +12,10 @@ SEED_SMILES = "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5
 if __name__ == "__main__":
     summary, candidates_by_round = hill_climb(
         generator=HubGenerator("eos9taz"),
-        annotators=[AnnotatorSpec("qed", QEDAnnotator(), role="directing")],
+        annotators=[
+            AnnotatorSpec("qed", QEDAnnotator(), cutoff=0.0, direction="higher")
+        ],
+        mode="sequential",
         seed_smiles=SEED_SMILES,
         n_rounds=5,
     )
