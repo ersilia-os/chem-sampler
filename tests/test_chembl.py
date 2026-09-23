@@ -44,6 +44,21 @@ def test_rejects_sample_larger_than_reference_set(reference_set):
         sampler.generate("CCO")
 
 
+def test_generate_by_model_wraps_generate(reference_set):
+    sampler = ChemblSampler(n=10, random_state=0, path=reference_set)
+
+    by_model = sampler.generate_by_model("CCO")
+
+    assert list(by_model) == ["chembl"]
+    assert by_model["chembl"] == sampler.generate("CCO")
+
+
+def test_generate_accepts_none_seed(reference_set):
+    sampler = ChemblSampler(n=10, random_state=0, path=reference_set)
+
+    assert len(sampler.generate(None)) == 10
+
+
 def test_pools_with_hub_generators(reference_set):
     from chemsampler.models.generator import GeneratorPool
 

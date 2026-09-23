@@ -1,0 +1,115 @@
+import csv
+from pathlib import Path
+
+from ..models.annotator import QEDAnnotator
+from ..models.chembl import ChemblSampler
+from ..models.generator import GeneratorPool, HubGenerator
+from ..models.hub_annotator import HubAnnotator
+from ..models.spec import AnnotatorSpec
+
+#: Shipped default for `load_generators()`. Deliberately excludes "chembl": the
+#: ChemblSampler baseline must only ever be opted into by a user-supplied CSV.
+_DEFAULT_GENERATORS_PATH = Path(__file__).parent / "generators.csv"
+
+
+def load_generators(path: str | None = None) -> GeneratorPool:
+    """
+    Build a pool of generators from a CSV of generator ids.
+
+    Parameters
+    ----------
+    path : str, optional
+        CSV with a `generator_id` column, one row per generator. Each id is
+        either an Ersilia Hub model id, or the literal "chembl" to opt into
+        `ChemblSampler`. Defaults to the generators validated in
+        ersilia-os/ersilia#1919; that default never includes "chembl" — it must
+        be listed explicitly in a user-supplied CSV.
+
+    Returns
+    -------
+    GeneratorPool
+        Pool of the generators listed in the CSV.
+    """
+    path = path or _DEFAULT_GENERATORS_PATH
+    rows = _read_csv(path, required_columns=("generator_id",))
+    return GeneratorPool([_build_generator(row["generator_id"]) for row in rows])
+
+
+def load_annotators(path: str) -> list[AnnotatorSpec]:
+    """
+    Build annotator specs from a CSV of annotator ids, roles and bounds.
+
+    Parameters
+    ----------
+    path : str
+        CSV with columns `annotator_id, role, min, max, column`. `annotator_id`
+        is either "qed" or an Ersilia Hub model id. `role` is "directing" (exactly
+        one row) or "controlling" (any number). `min`/`max` are bounds for
+        controlling rows, blank for directing rows; one-sided bounds are allowed.
+        `column` is optional and is passed to `HubAnnotator` for models with more
+        than one numeric output.
+
+    Returns
+    -------
+    list[AnnotatorSpec]
+        One spec per row.
+
+    Raises
+    ------
+    ValueError
+        If a required column is missing, a role or bound is invalid, the
+        annotator ids are not unique, or there is not exactly one directing row.
+    """
+    rows = _read_csv(path, required_columns=("annotator_id", "role"))
+
+    specs = [
+        AnnotatorSpec(
+            annotator_id=row["annotator_id"],
+            annotator=_build_annotator(row["annotator_id"], row.get("column") or None),
+            role=row["role"],
+            min=_parse_float(row.get("min")),
+            max=_parse_float(row.get("max")),
+        )
+        for row in rows
+    ]
+
+    ids = [spec.annotator_id for spec in specs]
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{path}: duplicate annotator_id")
+
+    directing = [spec for spec in specs if spec.role == "directing"]
+    if len(directing) != 1:
+        raise ValueError(
+            f"{path} must have exactly one directing annotator, found {len(directing)}"
+        )
+
+    return specs
+
+
+def _build_generator(generator_id: str):
+    """Resolve a generator id to a generator instance."""
+    if generator_id == "chembl":
+        return ChemblSampler()
+    return HubGenerator(generator_id)
+
+
+def _build_annotator(annotator_id: str, column: str | None):
+    """Resolve an annotator id to an annotator instance."""
+    if annotator_id == "qed":
+        return QEDAnnotator()
+    return HubAnnotator(annotator_id, column=column)
+
+
+def _parse_float(value: str | None) -> float | None:
+    """Blank CSV cell -> None, otherwise the parsed float."""
+    return float(value) if value else None
+
+
+def _read_csv(path, required_columns: tuple[str, ...]) -> list[dict]:
+    """Read a CSV as a list of row dicts, failing loudly on missing columns."""
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        missing = [c for c in required_columns if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(f"{path} is missing required column(s): {missing}")
+        return list(reader)

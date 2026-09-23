@@ -1,4 +1,4 @@
-from chemsampler.models.generator import GeneratorPool
+from chemsampler.models.generator import GeneratorPool, SeedRequiredError
 
 
 class StubGenerator:
@@ -10,6 +10,17 @@ class StubGenerator:
 
     def generate(self, seed_smiles):
         return list(self._candidates)
+
+
+class SeedRequiredStubGenerator:
+    """Stands in for a Hub generator that cannot run without a seed."""
+
+    model_id = "seed_required"
+
+    def generate(self, seed_smiles):
+        if seed_smiles is None:
+            raise SeedRequiredError(f"{self.model_id} requires a seed molecule")
+        return ["CCO"]
 
 
 def test_pool_unions_candidates_and_deduplicates():
@@ -70,3 +81,29 @@ def test_pool_by_model_warns_on_empty_generator(caplog):
     assert any(
         "model_b" in r.message and "0 candidates" in r.message for r in caplog.records
     )
+
+
+def test_pool_skips_generator_that_requires_a_seed(caplog):
+    pool = GeneratorPool(
+        [SeedRequiredStubGenerator(), StubGenerator("model_b", ["CCN"])]
+    )
+
+    with caplog.at_level("WARNING"):
+        candidates = pool.generate(None)
+
+    assert candidates == ["CCN"]
+    assert any(
+        "seed_required" in r.message and "requires a seed" in r.message
+        for r in caplog.records
+    )
+
+
+def test_pool_by_model_skips_generator_that_requires_a_seed(caplog):
+    pool = GeneratorPool(
+        [SeedRequiredStubGenerator(), StubGenerator("model_b", ["CCN"])]
+    )
+
+    with caplog.at_level("WARNING"):
+        by_model = pool.generate_by_model(None)
+
+    assert by_model == {"seed_required": [], "model_b": ["CCN"]}

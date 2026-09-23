@@ -77,7 +77,7 @@ class ChemblSampler:
             logger.info(f"Loaded {len(self._smiles):,} ChEMBL compounds")
         return self._smiles
 
-    def generate(self, seed_smiles: str) -> list[str]:
+    def generate(self, seed_smiles: str | None) -> list[str]:
         """
         Draw `n` molecules at random, ignoring the seed.
 
@@ -97,3 +97,22 @@ class ChemblSampler:
                 f"Requested {self.n} molecules but the reference set holds {len(smiles)}."
             )
         return random.Random(self.random_state).sample(smiles, self.n)
+
+    def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
+        """
+        Generate candidates, keyed by this sampler's model id.
+
+        Gives `ChemblSampler` the same provenance-tracking interface as
+        `GeneratorPool`, so callers can treat a single generator and a pool alike.
+
+        Parameters
+        ----------
+        seed_smiles : str
+            Accepted for interface compatibility and not used.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            `{self.model_id: self.generate(seed_smiles)}`.
+        """
+        return {self.model_id: self.generate(seed_smiles)}

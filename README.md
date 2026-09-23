@@ -20,37 +20,54 @@ ChemSampler relies on the [Ersilia Model Hub](https://github.com/ersilia-os/ersi
 
 ## Usage
 
-A generator proposes molecules and an annotator scores them. `hill_climb` alternates the two, promoting the best-scoring candidate to seed the next round, and stops once a round fails to improve.
+A generator proposes molecules and a set of annotators scores them. `hill_climb`
+alternates the two, promoting each round's best candidate to seed the next round.
+Exactly one annotator is "directing" (the optimization target); any number more
+are "controlling" (constraints a candidate must satisfy to *win* a round — it
+still appears in the output either way):
 
 ```python
 from chemsampler.models.annotator import QEDAnnotator
 from chemsampler.models.generator import HubGenerator
+from chemsampler.models.hub_annotator import HubAnnotator
+from chemsampler.models.spec import AnnotatorSpec
 from chemsampler.optimize import hill_climb
 
 # reserpine, PubChem CID 5770
 seed = "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5=C4C=CC(=C5)OC)OC(=O)C6=CC(=C(C(=C6)OC)OC)OC"
 
-df = hill_climb(
-    seed_smiles=seed,
+summary, candidates_by_round = hill_climb(
     generator=HubGenerator("eos9taz"),
-    annotator=QEDAnnotator(),
+    annotators=[
+        AnnotatorSpec("eos4zfy", HubAnnotator("eos4zfy"), role="directing"),  # MAIP
+        AnnotatorSpec("qed", QEDAnnotator(), role="controlling", min=0.3),  # drug-likeness floor
+    ],
+    seed_smiles=seed,
+    tanimoto_cutoff=0.4,
 )
 ```
 
-The result has one row per round, with columns `round`, `smiles`, `score` and `is_new_best`.
+`summary` has one row per round (`round`, `smiles`, `score`, `is_new_best`).
+`candidates_by_round[n]` has one row per candidate considered in round `n`, with
+its source generator, every annotator's value, `passes_constraints`, and
+`tanimoto_to_seed` (only if a seed was given). `seed_smiles` is optional; without
+one, round 1 is unconditionally the new best, and only seed-agnostic generators
+(like `ChemblSampler`) can contribute to it.
 
-`HubGenerator` accepts any Hub model that returns generated molecules. Several can be pooled behind the same interface, so a pool drops in wherever a single generator is expected:
+`HubGenerator` accepts any Hub model that returns generated molecules. Several
+can be pooled behind the same interface, so a pool drops in wherever a single
+generator is expected:
 
 ```python
-from chemsampler.models.generator import GeneratorPool, VALIDATED_GENERATORS
+from chemsampler.models.generator import GeneratorPool
 
-pool = GeneratorPool([HubGenerator(model_id) for model_id in VALIDATED_GENERATORS])
+pool = GeneratorPool([HubGenerator("eos9taz"), HubGenerator("eos6ost")])
 ```
 
 `ChemblSampler` is a null baseline: it draws molecules at random from a filtered
 ChEMBL set (single-component, 200-450 Da) and **ignores the seed**. It answers
-"does a generator beat a random draw from known chemistry?". It is opt-in, and
-deliberately absent from `VALIDATED_GENERATORS`:
+"does a generator beat a random draw from known chemistry?". It is opt-in only —
+never included by default:
 
 ```python
 from chemsampler.models.chembl import ChemblSampler
@@ -60,6 +77,24 @@ baseline = ChemblSampler(n=1000, random_state=42)
 
 The reference set is fetched with [`eosvc`](https://github.com/ersilia-os/eosvc) on
 first use, or rebuilt from scratch with `python -m chemsampler.data.chembl`.
+
+### Config files
+
+Generators and annotators can also be loaded from CSVs instead of built by hand:
+
+```python
+from chemsampler.config import load_annotators, load_generators
+
+generators = load_generators()  # defaults to the 3 validated Hub generators
+annotators = load_annotators("my_annotators.csv")
+```
+
+`load_generators(path=None)` reads a `generator_id` column; each id is either an
+Ersilia model id, or the literal `"chembl"` to opt into `ChemblSampler` — the
+shipped default never includes it, so it must be listed explicitly in your own
+CSV. `load_annotators(path)` reads `annotator_id, role, min, max, column`
+(`role` is `"directing"` or `"controlling"`, `min`/`max` are constraint bounds,
+`column` is optional and picks an output column for a multi-output Hub model).
 
 See [`examples/`](examples/) for a runnable script.
 
