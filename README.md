@@ -6,7 +6,7 @@ ChemSampler generates and ranks new candidate molecules around a seed compound, 
 
 ## Status
 
-:construction: Early development. The pipeline below works, but the API is unstable and there is no CLI yet.
+:construction: Early development. The pipeline below works, but the API is unstable.
 
 ## Installation
 
@@ -121,6 +121,25 @@ priority order used by `mode="sequential"`; `column` is optional and picks an
 output column for a multi-output Hub model).
 
 See [`examples/`](examples/) for a runnable script.
+
+## CLI
+
+| Command | Description |
+|---|---|
+| `chemsampler run` | Run `hill_climb()` against CSV-defined annotators/generators and write the result to `--output-dir`. |
+
+```bash
+chemsampler run \
+  --annotators my_annotators.csv \
+  --mode sequential \
+  --seed-smiles "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5=C4C=CC(=C5)OC)OC(=O)C6=CC(=C(C(=C6)OC)OC)OC" \
+  --output-dir results/
+```
+
+`--generators` defaults to the shipped 3-generator CSV if omitted. `--backend`
+picks between `"ersilia"` and `"run_sh"` for every Hub-backed generator and
+annotator in the run — see [Backends](#backends) above for what that means.
+Run `chemsampler run --help` for the full option list.
 
 ## About the Ersilia Open Source Initiative
 

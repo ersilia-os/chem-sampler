@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+from ..hub.client import Backend
 from ..models.annotator import QEDAnnotator
 from ..models.chembl import ChemblSampler
 from ..models.generator import GeneratorPool, HubGenerator
@@ -12,7 +13,9 @@ from ..models.spec import AnnotatorSpec
 _DEFAULT_GENERATORS_PATH = Path(__file__).parent / "generators.csv"
 
 
-def load_generators(path: str | None = None) -> GeneratorPool:
+def load_generators(
+    path: str | None = None, backend: Backend = "ersilia"
+) -> GeneratorPool:
     """
     Build a pool of generators from a CSV of generator ids.
 
@@ -24,6 +27,10 @@ def load_generators(path: str | None = None) -> GeneratorPool:
         `ChemblSampler`. Defaults to the generators validated in
         ersilia-os/ersilia#1919; that default never includes "chembl" — it must
         be listed explicitly in a user-supplied CSV.
+    backend : {"ersilia", "run_sh"}, optional
+        Passed through to every `HubGenerator` built from this CSV, by default
+        "ersilia". Has no effect on a "chembl" row (`ChemblSampler` has no
+        backend concept).
 
     Returns
     -------
@@ -32,10 +39,12 @@ def load_generators(path: str | None = None) -> GeneratorPool:
     """
     path = path or _DEFAULT_GENERATORS_PATH
     rows = _read_csv(path, required_columns=("generator_id",))
-    return GeneratorPool([_build_generator(row["generator_id"]) for row in rows])
+    return GeneratorPool(
+        [_build_generator(row["generator_id"], backend) for row in rows]
+    )
 
 
-def load_annotators(path: str) -> list[AnnotatorSpec]:
+def load_annotators(path: str, backend: Backend = "ersilia") -> list[AnnotatorSpec]:
     """
     Build annotator specs from a CSV of annotator ids, cutoffs and directions.
 
@@ -49,6 +58,10 @@ def load_annotators(path: str) -> list[AnnotatorSpec]:
         the priority order `hill_climb` uses in `mode="sequential"`. `column` is
         optional and is passed to `HubAnnotator` for models with more than one
         numeric output.
+    backend : {"ersilia", "run_sh"}, optional
+        Passed through to every `HubAnnotator` built from this CSV, by default
+        "ersilia". Has no effect on a "qed" row (`QEDAnnotator` has no backend
+        concept).
 
     Returns
     -------
@@ -66,7 +79,9 @@ def load_annotators(path: str) -> list[AnnotatorSpec]:
     specs = [
         AnnotatorSpec(
             annotator_id=row["annotator_id"],
-            annotator=_build_annotator(row["annotator_id"], row.get("column") or None),
+            annotator=_build_annotator(
+                row["annotator_id"], row.get("column") or None, backend
+            ),
             cutoff=_parse_cutoff(row["annotator_id"], row["cutoff"]),
             direction=row["direction"],
         )
@@ -80,18 +95,20 @@ def load_annotators(path: str) -> list[AnnotatorSpec]:
     return specs
 
 
-def _build_generator(generator_id: str):
+def _build_generator(generator_id: str, backend: Backend = "ersilia"):
     """Resolve a generator id to a generator instance."""
     if generator_id == "chembl":
         return ChemblSampler()
-    return HubGenerator(generator_id)
+    return HubGenerator(generator_id, backend=backend)
 
 
-def _build_annotator(annotator_id: str, column: str | None):
+def _build_annotator(
+    annotator_id: str, column: str | None, backend: Backend = "ersilia"
+):
     """Resolve an annotator id to an annotator instance."""
     if annotator_id == "qed":
         return QEDAnnotator()
-    return HubAnnotator(annotator_id, column=column)
+    return HubAnnotator(annotator_id, column=column, backend=backend)
 
 
 def _parse_cutoff(annotator_id: str, value: str) -> float:

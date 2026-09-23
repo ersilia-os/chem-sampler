@@ -1,0 +1,92 @@
+import sys
+
+import click
+
+from ..create_cli import chemsampler_cli
+
+
+@chemsampler_cli.command("run")
+@click.option(
+    "--annotators",
+    "annotators_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+    help="CSV with columns annotator_id, cutoff, direction[, column].",
+)
+@click.option(
+    "--generators",
+    "generators_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="CSV with a generator_id column. Defaults to the 3 validated Hub generators.",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["joint", "sequential"]),
+    required=True,
+    help="How annotators combine into a round's winner.",
+)
+@click.option("--seed-smiles", default=None, help="SMILES of the starting molecule.")
+@click.option("--n-rounds", default=5, show_default=True, type=int)
+@click.option("--tolerance", default=0.0, show_default=True, type=float)
+@click.option(
+    "--tanimoto-cutoff",
+    default=None,
+    type=float,
+    help="Minimum similarity to --seed-smiles. Requires --seed-smiles.",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["ersilia", "run_sh"]),
+    default="ersilia",
+    show_default=True,
+)
+@click.option(
+    "--output-dir",
+    required=True,
+    type=click.Path(file_okay=False),
+    help="Directory to write summary.csv and round<n>.csv into.",
+)
+def run_cmd(
+    annotators_path: str,
+    generators_path: str | None,
+    mode: str,
+    seed_smiles: str | None,
+    n_rounds: int,
+    tolerance: float,
+    tanimoto_cutoff: float | None,
+    backend: str,
+    output_dir: str,
+) -> None:
+    """Run hill_climb() and write its result to --output-dir."""
+    from ...config import load_annotators, load_generators
+    from ...optimize import hill_climb, write_results
+
+    try:
+        annotators = load_annotators(annotators_path, backend=backend)
+        generator = load_generators(generators_path, backend=backend)
+        summary, candidates_by_round = hill_climb(
+            generator,
+            annotators,
+            mode=mode,
+            seed_smiles=seed_smiles,
+            n_rounds=n_rounds,
+            tolerance=tolerance,
+            tanimoto_cutoff=tanimoto_cutoff,
+        )
+    except (ValueError, RuntimeError, FileNotFoundError) as e:
+        click.secho(str(e), fg="red")
+        sys.exit(1)
+
+    write_results(summary, candidates_by_round, output_dir)
+
+    if summary.empty:
+        click.secho("No candidates were generated; nothing to report.", fg="yellow")
+    else:
+        best = summary.iloc[-1]
+        click.secho(
+            f"Best candidate: {best['smiles']} (round {best['round']}, "
+            f"score={best['score']})",
+            fg="green",
+        )
+    click.secho(f"Results written to {output_dir}", fg="green")

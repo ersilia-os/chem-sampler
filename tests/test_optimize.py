@@ -1,9 +1,10 @@
 import math
 
+import pandas as pd
 import pytest
 
 from chemsampler.models.spec import AnnotatorSpec
-from chemsampler.optimize import hill_climb
+from chemsampler.optimize import hill_climb, write_results
 
 
 class StubGenerator:
@@ -499,3 +500,34 @@ def test_tanimoto_cutoff_excluded_from_joint_mode_count():
     assert round1.loc["c1ccc2ccccc2c1", "cutoffs_satisfied"] == 2
     assert summary.iloc[-1]["smiles"] == "CO"
     assert summary.iloc[-1]["score"] == 1
+
+
+# --- write_results -----------------------------------------------------
+
+
+def test_write_results_writes_summary_and_one_csv_per_round(tmp_path):
+    summary = pd.DataFrame(
+        [
+            {
+                "round": 0,
+                "smiles": "CCO",
+                "score": 1.0,
+                "is_new_best": True,
+                "active_annotator_id": "a",
+            }
+        ]
+    )
+    candidates_by_round = {0: pd.DataFrame([{"smiles": "CCO", "source": "seed"}])}
+
+    write_results(summary, candidates_by_round, str(tmp_path / "out"))
+
+    written_summary = pd.read_csv(tmp_path / "out" / "summary.csv")
+    assert written_summary["smiles"].tolist() == ["CCO"]
+    written_round0 = pd.read_csv(tmp_path / "out" / "round0.csv")
+    assert written_round0["source"].tolist() == ["seed"]
+
+
+def test_write_results_creates_output_dir_including_parents(tmp_path):
+    write_results(pd.DataFrame(), {}, str(tmp_path / "a" / "b" / "c"))
+
+    assert (tmp_path / "a" / "b" / "c" / "summary.csv").exists()

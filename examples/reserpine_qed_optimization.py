@@ -3,7 +3,7 @@ import os
 from chemsampler.models.annotator import QEDAnnotator
 from chemsampler.models.generator import HubGenerator
 from chemsampler.models.spec import AnnotatorSpec
-from chemsampler.optimize import hill_climb
+from chemsampler.optimize import hill_climb, write_results
 
 # Reserpine (PubChem CID 5770, InChIKey QEVHRUUCFGRFIF-MDEJGZGSSA-N):
 # a complex, natural-product-derived antihypertensive drug. QED 0.374, MW 608.7.
@@ -21,9 +21,8 @@ if __name__ == "__main__":
     )
     print(summary)
 
-    os.makedirs("data", exist_ok=True)
-    summary.to_csv("data/reserpine_qed_optimization_summary.csv", index=False)
-    for round_num, candidates in candidates_by_round.items():
-        candidates.to_csv(
-            f"data/reserpine_qed_optimization_round{round_num}.csv", index=False
-        )
+    write_results(
+        summary,
+        candidates_by_round,
+        output_dir=os.path.join("data", "reserpine_qed_optimization"),
+    )

@@ -1,4 +1,5 @@
 import math
+import os
 from typing import Literal
 
 import pandas as pd
@@ -147,6 +148,32 @@ def hill_climb(
     history.extend(stage_history)
     candidates_by_round.update(stage_candidates)
     return pd.DataFrame(history), candidates_by_round
+
+
+def write_results(
+    summary: pd.DataFrame,
+    candidates_by_round: dict[int, pd.DataFrame],
+    output_dir: str,
+) -> None:
+    """
+    Write a `hill_climb()` result as `summary.csv` plus `round<n>.csv` per round.
+
+    Parameters
+    ----------
+    summary : pandas.DataFrame
+        First element of `hill_climb()`'s return value.
+    candidates_by_round : dict[int, pandas.DataFrame]
+        Second element of `hill_climb()`'s return value.
+    output_dir : str
+        Created (including parents) if missing. Files of the same name are
+        overwritten; any other files already present are left alone.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    summary.to_csv(os.path.join(output_dir, "summary.csv"), index=False)
+    for round_num, round_table in candidates_by_round.items():
+        round_table.to_csv(
+            os.path.join(output_dir, f"round{round_num}.csv"), index=False
+        )
 
 
 def _validate_annotators(annotators: list[AnnotatorSpec]) -> None:

@@ -35,6 +35,21 @@ def test_load_generators_default_excludes_chembl():
     assert all(isinstance(g, HubGenerator) for g in pool.generators)
 
 
+def test_load_generators_default_backend_is_ersilia():
+    pool = load_generators()
+
+    assert all(g._hub_model.backend == "ersilia" for g in pool.generators)
+
+
+def test_load_generators_threads_backend_to_hub_generator(tmp_path):
+    path = tmp_path / "generators.csv"
+    _write_csv(path, ["generator_id"], [["eos9taz"]])
+
+    pool = load_generators(str(path), backend="run_sh")
+
+    assert pool.generators[0]._hub_model.backend == "run_sh"
+
+
 def test_load_generators_includes_chembl_when_explicitly_listed(tmp_path):
     path = tmp_path / "generators.csv"
     _write_csv(path, ["generator_id"], [["eos9taz"], ["chembl"]])
@@ -53,6 +68,17 @@ def test_load_generators_rejects_missing_column(tmp_path):
 
     with pytest.raises(ValueError, match="generator_id"):
         load_generators(str(path))
+
+
+def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path, ["annotator_id", "cutoff", "direction"], [["eos4zfy", "0.0", "higher"]]
+    )
+
+    specs = load_annotators(str(path), backend="run_sh")
+
+    assert specs[0].annotator._hub_model.backend == "run_sh"
 
 
 def test_load_annotators_builds_specs_from_csv(tmp_path):
