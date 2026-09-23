@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ..hub.client import HubModel
+from ..hub.client import Backend, HubModel
 from ..utils.logging import logger
 
 #: A single oversized `run()` call degrades the served model and fails silently
@@ -28,12 +28,16 @@ class HubAnnotator:
     column : str, optional
         Output column to score on. Defaults to the model's single numeric output
         column; required when the model returns more than one.
+    backend : {"ersilia", "run_sh"}, optional
+        Passed through to `HubModel`, by default "ersilia".
     """
 
-    def __init__(self, model_id: str, column: str | None = None):
+    def __init__(
+        self, model_id: str, column: str | None = None, backend: Backend = "ersilia"
+    ):
         self.model_id = model_id
         self.column = column
-        self._hub_model = HubModel(model_id)
+        self._hub_model = HubModel(model_id, backend=backend)
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """

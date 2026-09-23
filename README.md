@@ -78,6 +78,20 @@ baseline = ChemblSampler(n=1000, random_state=42)
 The reference set is fetched with [`eosvc`](https://github.com/ersilia-os/eosvc) on
 first use, or rebuilt from scratch with `python -m chemsampler.data.chembl`.
 
+### Backends
+
+`HubGenerator` and `HubAnnotator` accept `backend="run_sh"` as an alternative to
+the default `backend="ersilia"`. The default serves each model over HTTP
+(`ersilia serve`/`run`/`close`); `run_sh` instead shells out directly to the
+model's bundled `run.sh`, with no persistent server — it avoids the
+orphaned-process and port-contention issues the default backend can hit under
+sustained use, but only works for a model that's already fetched locally and
+conda-packed:
+
+```python
+HubGenerator("eos9taz", backend="run_sh")
+```
+
 ### Config files
 
 Generators and annotators can also be loaded from CSVs instead of built by hand:

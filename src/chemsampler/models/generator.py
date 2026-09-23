@@ -1,6 +1,6 @@
 from rdkit import Chem
 
-from ..hub.client import HubModel
+from ..hub.client import Backend, HubModel
 from ..utils.logging import logger
 
 
@@ -21,11 +21,13 @@ class HubGenerator:
     ----------
     model_id : str
         Ersilia identifier of the generative model (e.g. "eos9taz").
+    backend : {"ersilia", "run_sh"}, optional
+        Passed through to `HubModel`, by default "ersilia".
     """
 
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, backend: Backend = "ersilia"):
         self.model_id = model_id
-        self._hub_model = HubModel(model_id)
+        self._hub_model = HubModel(model_id, backend=backend)
 
     def generate(self, seed_smiles: str | None) -> list[str]:
         """
