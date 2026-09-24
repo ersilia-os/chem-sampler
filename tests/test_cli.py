@@ -189,3 +189,43 @@ def test_annotate_reports_value_error_in_red_and_exits_nonzero(tmp_path):
     )
 
     assert result.exit_code == 1
+
+
+def test_annotate_model_prints_raw_value_only():
+    result = CliRunner().invoke(cli, ["annotate", "--model", "qed", "--smiles", "CCO"])
+
+    assert result.exit_code == 0, result.output
+    assert "qed" in result.output
+    assert "cutoffs satisfied" not in result.output
+
+
+def test_annotate_rejects_both_annotators_and_model(tmp_path):
+    annotators_csv = tmp_path / "annotators.csv"
+    _write_csv(
+        annotators_csv,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "annotate",
+            "--annotators",
+            str(annotators_csv),
+            "--model",
+            "qed",
+            "--smiles",
+            "CCO",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Exactly one of" in result.output
+
+
+def test_annotate_rejects_neither_annotators_nor_model():
+    result = CliRunner().invoke(cli, ["annotate", "--smiles", "CCO"])
+
+    assert result.exit_code == 1
+    assert "Exactly one of" in result.output

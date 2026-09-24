@@ -2,9 +2,11 @@ import csv
 
 import pytest
 
-from chemsampler.config import load_annotators, load_generators
+from chemsampler.config import build_annotator, load_annotators, load_generators
+from chemsampler.models.annotator import QEDAnnotator
 from chemsampler.models.chembl import ChemblSampler
 from chemsampler.models.generator import HubGenerator
+from chemsampler.models.hub_annotator import HubAnnotator
 
 
 class FakeHubModel:
@@ -79,6 +81,11 @@ def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
     specs = load_annotators(str(path), backend="run_sh")
 
     assert specs[0].annotator._hub_model.backend == "run_sh"
+
+
+def test_build_annotator_dispatches_qed_and_hub_ids():
+    assert isinstance(build_annotator("qed"), QEDAnnotator)
+    assert isinstance(build_annotator("eos4zfy"), HubAnnotator)
 
 
 def test_load_annotators_builds_specs_from_csv(tmp_path):

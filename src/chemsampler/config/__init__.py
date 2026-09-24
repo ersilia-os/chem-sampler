@@ -79,7 +79,7 @@ def load_annotators(path: str, backend: Backend = "ersilia") -> list[AnnotatorSp
     specs = [
         AnnotatorSpec(
             annotator_id=row["annotator_id"],
-            annotator=_build_annotator(
+            annotator=build_annotator(
                 row["annotator_id"], row.get("column") or None, backend
             ),
             cutoff=_parse_cutoff(row["annotator_id"], row["cutoff"]),
@@ -102,10 +102,28 @@ def _build_generator(generator_id: str, backend: Backend = "ersilia"):
     return HubGenerator(generator_id, backend=backend)
 
 
-def _build_annotator(
-    annotator_id: str, column: str | None, backend: Backend = "ersilia"
+def build_annotator(
+    annotator_id: str, column: str | None = None, backend: Backend = "ersilia"
 ):
-    """Resolve an annotator id to an annotator instance."""
+    """
+    Resolve an annotator id to an annotator instance.
+
+    Parameters
+    ----------
+    annotator_id : str
+        Either "qed", or an Ersilia Hub model id.
+    column : str, optional
+        Output column to score on, passed through to `HubAnnotator`. Ignored
+        for "qed". By default `None` (the model's single numeric output;
+        required if it returns more than one).
+    backend : {"ersilia", "run_sh"}, optional
+        Passed through to `HubAnnotator`, by default "ersilia". Ignored for "qed".
+
+    Returns
+    -------
+    QEDAnnotator or HubAnnotator
+        `QEDAnnotator` if `annotator_id == "qed"`, otherwise `HubAnnotator`.
+    """
     if annotator_id == "qed":
         return QEDAnnotator()
     return HubAnnotator(annotator_id, column=column, backend=backend)
