@@ -22,10 +22,10 @@ class HubGenerator:
     model_id : str
         Ersilia identifier of the generative model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubModel`, by default "ersilia".
+        Passed through to `HubModel`, by default "run_sh".
     """
 
-    def __init__(self, model_id: str, backend: Backend = "ersilia"):
+    def __init__(self, model_id: str, backend: Backend = "run_sh"):
         self.model_id = model_id
         self._hub_model = HubModel(model_id, backend=backend)
 

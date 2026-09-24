@@ -20,14 +20,15 @@ class HubModel:
     model_id : str
         Ersilia identifier of the model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
-        How to run the model, by default "ersilia" (serve/run/close over HTTP).
-        "run_sh" shells out to the model's bundled `run.sh` directly instead: no
-        persistent server, so it sidesteps the orphaned-process and port-contention
-        failures the "ersilia" backend can hit under sustained use, at the cost of
-        only working for a model that is locally fetched and conda-packed.
+        How to run the model, by default "run_sh": shells out to the model's
+        bundled `run.sh` directly, no persistent server, so it sidesteps the
+        orphaned-process and port-contention failures the "ersilia" backend
+        can hit under sustained use. Only works for a model that is locally
+        fetched and conda-packed; use "ersilia" (serve/run/close over HTTP)
+        for a model that isn't fetched yet or isn't conda-packed.
     """
 
-    def __init__(self, model_id: str, backend: Backend = "ersilia"):
+    def __init__(self, model_id: str, backend: Backend = "run_sh"):
         if backend not in ("ersilia", "run_sh"):
             raise ValueError(f"backend must be 'ersilia' or 'run_sh', got {backend!r}")
         self.model_id = model_id

@@ -25,7 +25,7 @@ from ..create_cli import chemsampler_cli
 @click.option(
     "--backend",
     type=click.Choice(["ersilia", "run_sh"]),
-    default="ersilia",
+    default="run_sh",
     show_default=True,
 )
 def annotate_cmd(

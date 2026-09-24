@@ -14,7 +14,7 @@ _DEFAULT_GENERATORS_PATH = Path(__file__).parent / "generators.csv"
 
 
 def load_generators(
-    path: str | None = None, backend: Backend = "ersilia"
+    path: str | None = None, backend: Backend = "run_sh"
 ) -> GeneratorPool:
     """
     Build a pool of generators from a CSV of generator ids.
@@ -29,7 +29,7 @@ def load_generators(
         be listed explicitly in a user-supplied CSV.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubGenerator` built from this CSV, by default
-        "ersilia". Has no effect on a "chembl" row (`ChemblSampler` has no
+        "run_sh". Has no effect on a "chembl" row (`ChemblSampler` has no
         backend concept).
 
     Returns
@@ -44,7 +44,7 @@ def load_generators(
     )
 
 
-def load_annotators(path: str, backend: Backend = "ersilia") -> list[AnnotatorSpec]:
+def load_annotators(path: str, backend: Backend = "run_sh") -> list[AnnotatorSpec]:
     """
     Build annotator specs from a CSV of annotator ids, cutoffs and directions.
 
@@ -60,7 +60,7 @@ def load_annotators(path: str, backend: Backend = "ersilia") -> list[AnnotatorSp
         numeric output.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubAnnotator` built from this CSV, by default
-        "ersilia". Has no effect on a "qed" row (`QEDAnnotator` has no backend
+        "run_sh". Has no effect on a "qed" row (`QEDAnnotator` has no backend
         concept).
 
     Returns
@@ -95,7 +95,7 @@ def load_annotators(path: str, backend: Backend = "ersilia") -> list[AnnotatorSp
     return specs
 
 
-def _build_generator(generator_id: str, backend: Backend = "ersilia"):
+def _build_generator(generator_id: str, backend: Backend = "run_sh"):
     """Resolve a generator id to a generator instance."""
     if generator_id == "chembl":
         return ChemblSampler()
@@ -103,7 +103,7 @@ def _build_generator(generator_id: str, backend: Backend = "ersilia"):
 
 
 def build_annotator(
-    annotator_id: str, column: str | None = None, backend: Backend = "ersilia"
+    annotator_id: str, column: str | None = None, backend: Backend = "run_sh"
 ):
     """
     Resolve an annotator id to an annotator instance.
@@ -117,7 +117,7 @@ def build_annotator(
         for "qed". By default `None` (the model's single numeric output;
         required if it returns more than one).
     backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubAnnotator`, by default "ersilia". Ignored for "qed".
+        Passed through to `HubAnnotator`, by default "run_sh". Ignored for "qed".
 
     Returns
     -------

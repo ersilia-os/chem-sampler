@@ -31,10 +31,10 @@ def fake_ersilia_model(monkeypatch):
     monkeypatch.setattr("chemsampler.hub.client.ErsiliaModel", FakeErsiliaModel)
 
 
-def test_ersilia_backend_is_default():
+def test_run_sh_backend_is_default():
     model = HubModel("fake-model")
 
-    assert model.backend == "ersilia"
+    assert model.backend == "run_sh"
 
 
 def test_rejects_unknown_backend():
@@ -43,7 +43,7 @@ def test_rejects_unknown_backend():
 
 
 def test_ersilia_backend_closes_even_if_serve_fails():
-    model = HubModel("fake-model")
+    model = HubModel("fake-model", backend="ersilia")
     model.model.serve_error = RuntimeError("port in use")
 
     with pytest.raises(RuntimeError, match="port in use"):

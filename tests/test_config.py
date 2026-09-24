@@ -37,10 +37,10 @@ def test_load_generators_default_excludes_chembl():
     assert all(isinstance(g, HubGenerator) for g in pool.generators)
 
 
-def test_load_generators_default_backend_is_ersilia():
+def test_load_generators_default_backend_is_run_sh():
     pool = load_generators()
 
-    assert all(g._hub_model.backend == "ersilia" for g in pool.generators)
+    assert all(g._hub_model.backend == "run_sh" for g in pool.generators)
 
 
 def test_load_generators_threads_backend_to_hub_generator(tmp_path):

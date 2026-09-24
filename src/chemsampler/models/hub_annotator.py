@@ -29,11 +29,11 @@ class HubAnnotator:
         Output column to score on. Defaults to the model's single numeric output
         column; required when the model returns more than one.
     backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubModel`, by default "ersilia".
+        Passed through to `HubModel`, by default "run_sh".
     """
 
     def __init__(
-        self, model_id: str, column: str | None = None, backend: Backend = "ersilia"
+        self, model_id: str, column: str | None = None, backend: Backend = "run_sh"
     ):
         self.model_id = model_id
         self.column = column
