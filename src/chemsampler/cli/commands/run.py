@@ -68,7 +68,7 @@ def run_cmd(
     backend: str,
     output_dir: str,
 ) -> None:
-    """Run hill_climb() and write its result to --output-dir."""
+    """Generate and score candidate molecules across rounds, saving the result."""
     from ...config import load_annotators, load_generators
     from ...optimize import hill_climb, write_results
 

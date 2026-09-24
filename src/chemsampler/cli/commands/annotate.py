@@ -21,7 +21,7 @@ from ..create_cli import chemsampler_cli
     show_default=True,
 )
 def annotate_cmd(annotators_path: str, smiles: str, backend: str) -> None:
-    """Score --smiles against --annotators and print the result."""
+    """Score a single molecule against a set of annotators."""
     from ...config import load_annotators
     from ...optimize import annotate
 

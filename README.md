@@ -131,7 +131,7 @@ See [`examples/`](examples/) for a runnable script.
 
 | Command | Description |
 |---|---|
-| `chemsampler run` | Run `hill_climb()` against CSV-defined annotators/generators and write the result to `--output-dir`. |
+| `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators, no generation. |
 
 ```bash
