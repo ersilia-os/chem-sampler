@@ -104,20 +104,40 @@ tool's own CLI rather than importing its Python classes directly.
    baseline via `hill_climb`'s existing round-0 behavior. Compare it to each
    annotator's cutoff and use the gap to inform generator choice:
    - **Large gap, no (or a loose) Tanimoto floor** → lean toward generators
-     documented to make bigger structural jumps (e.g. `eos2401`, which keeps
-     only small 60-100 Da ring fragments rather than rebuilding from the
-     seed's scaffold) — the scaffold-preserving generators (`eos9taz`,
-     `eos6ost`) may not be able to close a large gap.
-   - **A binding Tanimoto floor is set** (e.g. `>= 0.5`) → don't prioritize
+     known/documented to make bigger structural jumps (e.g. `eos2401`, which
+     keeps only small 60-100 Da ring fragments rather than rebuilding from
+     the seed's scaffold) — scaffold-preserving generators may not be able
+     to close a large gap.
+   - **A binding Tanimoto floor is set** (e.g. `>= 0.4`) → don't prioritize
      generators likely to produce candidates below that floor, regardless of
      how large the annotator gap is — a candidate that fails the similarity
      gate is wasted no matter its score, so the floor takes precedence over
-     the gap. Prefer the scaffold-preserving generators here.
-   - **State this as a recommendation, not a fact.** This is qualitative
-     guidance from each generator's documented behavior (see the docstring
-     in `src/chemsampler/models/generator.py`), not measured Tanimoto
-     statistics — chemsampler doesn't track empirical similarity
-     distributions per generator. Say so, and let the user override it.
+     the gap, and a slow generator that mostly gets filtered out is doubly
+     wasted (see the eos6ost finding below).
+   - **Known low-Tanimoto generators to deprioritize under a binding floor**:
+     `eos8vud` (per the user, not yet verified here) and — contrary to what
+     its own docstring implies — **`eos6ost` in practice**. Live-tested
+     twice today (aspirin seed, two different Tanimoto floors): both runs,
+     `eos6ost`'s candidates landed almost entirely at Tanimoto 0.04-0.1 to
+     the seed, nothing like the "rebuilds from the Murcko scaffold"
+     behavior its docstring describes for it. It was also by far the
+     slowest generator both times (~15-22 minutes vs. well under a minute
+     for the others combined) — under a binding Tanimoto floor it is a
+     near-total waste of wall-clock time, not just an occasional miss.
+     Prefer this empirical finding over the docstring-derived assumption
+     when the two conflict.
+   - **State this as a recommendation, not a fact, but weight real
+     evidence over documentation when you have it.** Absent measured data,
+     this is qualitative guidance from each generator's documented behavior
+     (see the docstring in `src/chemsampler/models/generator.py`) — say so,
+     and let the user override it. But chemsampler doesn't only ship the 3
+     documented default generators; real runs (like today's) commonly use
+     others (`eos8fma`, `eos4q1a`, ...) that have no such documented
+     Tanimoto-behavior description at all. When step 11's empirical
+     `source`/`tanimoto_to_seed` history is available from a prior run
+     against the same or a similar seed, use it directly instead of
+     guessing from docs — that's exactly how the `eos6ost` finding above
+     was made.
 
 7. **Generators (optional).** Default to the shipped 3-generator CSV,
    informed by step 6's guidance when a seed was given; ask only if the
