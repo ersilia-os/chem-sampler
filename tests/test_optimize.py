@@ -502,6 +502,32 @@ def test_tanimoto_cutoff_excluded_from_joint_mode_count():
     assert summary.iloc[-1]["score"] == 1
 
 
+def test_tanimoto_direction_lower_seeks_novelty():
+    # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
+    scores = {"CCO": 1.0, "CO": 1.0, "c1ccc2ccccc2c1": 1.0}
+    generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
+    annotators = [
+        AnnotatorSpec("score", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+    ]
+
+    summary, _ = hill_climb(
+        generator,
+        annotators,
+        mode="joint",
+        seed_smiles="CCO",
+        n_rounds=1,
+        tanimoto_cutoff=0.2,
+        tanimoto_direction="lower",
+    )
+
+    # Both candidates clear the annotator cutoff equally, so the Tanimoto gate
+    # decides the winner. Methanol (0.2857) is too similar under a "lower"
+    # (novelty) gate and is excluded; naphthalene (0.0) is admitted and wins -
+    # the opposite outcome from the same cutoff under the default "higher" gate
+    # (see test_tanimoto_cutoff_excluded_from_joint_mode_count above).
+    assert summary.iloc[-1]["smiles"] == "c1ccc2ccccc2c1"
+
+
 # --- write_results -----------------------------------------------------
 
 

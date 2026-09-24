@@ -20,6 +20,7 @@ def hill_climb(
     n_rounds: int = 5,
     tolerance: float = 0.0,
     tanimoto_cutoff: float | None = None,
+    tanimoto_direction: Direction = "higher",
 ) -> tuple[pd.DataFrame, dict[int, pd.DataFrame]]:
     """
     Iteratively improve a seed molecule by alternating generation and scoring.
@@ -35,7 +36,8 @@ def hill_climb(
     - "joint": all annotators optimized together in one search. A candidate's
       score is its count of cutoffs satisfied; ties break on whichever eligible
       candidate is encountered first. `tanimoto_cutoff` is a hard gate in both
-      modes but is never counted toward this total.
+      modes, in the direction set by `tanimoto_direction`, but is never counted
+      toward this total.
 
     Parameters
     ----------
@@ -60,8 +62,13 @@ def hill_climb(
         Minimum margin a round must beat the current best by to count as an
         improvement, by default 0.0.
     tanimoto_cutoff : float, optional
-        Minimum Tanimoto similarity to `seed_smiles` for a candidate to be
-        eligible at all. Requires `seed_smiles`.
+        Tanimoto similarity to `seed_smiles` a candidate must clear to be
+        eligible at all, gated by `tanimoto_direction`. Requires `seed_smiles`.
+    tanimoto_direction : {"higher", "lower"}, optional
+        "higher" (default) keeps candidates at least as similar to `seed_smiles`
+        as `tanimoto_cutoff` - the pre-existing similarity-floor behavior.
+        "lower" keeps candidates at most that similar instead, pushing the
+        search toward novelty. Ignored if `tanimoto_cutoff` is `None`.
 
     Returns
     -------
@@ -81,13 +88,18 @@ def hill_climb(
     ------
     ValueError
         If `annotators` is empty, has duplicate or reserved `annotator_id`
-        values, `mode` isn't "joint"/"sequential", `tanimoto_cutoff` is given
-        without a seed, or an entering candidate can't be scored by the
-        annotator whose stage it's entering.
+        values, `mode` isn't "joint"/"sequential", `tanimoto_direction` isn't
+        "higher"/"lower", `tanimoto_cutoff` is given without a seed, or an
+        entering candidate can't be scored by the annotator whose stage it's
+        entering.
     """
     _validate_annotators(annotators)
     if mode not in ("joint", "sequential"):
         raise ValueError(f"mode must be 'joint' or 'sequential', got {mode!r}")
+    if tanimoto_direction not in ("higher", "lower"):
+        raise ValueError(
+            f"tanimoto_direction must be 'higher' or 'lower', got {tanimoto_direction!r}"
+        )
     if tanimoto_cutoff is not None and seed_smiles is None:
         raise ValueError("tanimoto_cutoff requires seed_smiles")
 
@@ -129,6 +141,7 @@ def hill_climb(
             n_rounds,
             tolerance,
             tanimoto_cutoff,
+            tanimoto_direction,
             best_smiles=seed_smiles,
             best_score=best_score,
             best_row=best_row,
@@ -141,6 +154,7 @@ def hill_climb(
             n_rounds,
             tolerance,
             tanimoto_cutoff,
+            tanimoto_direction,
             best_smiles=seed_smiles,
             best_row=best_row,
         )
@@ -251,12 +265,16 @@ def _round_table(
 
 
 def _tanimoto_eligible(
-    round_table: pd.DataFrame, tanimoto_cutoff: float | None
+    round_table: pd.DataFrame,
+    tanimoto_cutoff: float | None,
+    tanimoto_direction: Direction,
 ) -> pd.Series:
     """All True if no cutoff is given; else Tanimoto-to-seed must clear it (missing -> False)."""
     if tanimoto_cutoff is None:
         return pd.Series(True, index=round_table.index)
-    return round_table["tanimoto_to_seed"] >= tanimoto_cutoff
+    return _cutoff_satisfied_mask(
+        round_table["tanimoto_to_seed"], tanimoto_cutoff, tanimoto_direction
+    )
 
 
 def _improved(
@@ -358,12 +376,15 @@ def _run_joint(
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
+    tanimoto_direction: Direction,
     best_smiles: str | None,
     best_score: float,
     best_row: dict[str, float],
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     def pick_winner(round_table: pd.DataFrame):
-        eligible = round_table[_tanimoto_eligible(round_table, tanimoto_cutoff)]
+        eligible = round_table[
+            _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+        ]
         if eligible.empty:
             return None
         idx = eligible["cutoffs_satisfied"].idxmax()
@@ -394,6 +415,7 @@ def _run_sequential(
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
+    tanimoto_direction: Direction,
     best_smiles: str | None,
     best_row: dict[str, float],
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
@@ -421,7 +443,7 @@ def _run_sequential(
         def pick_winner(
             round_table: pd.DataFrame, spec=spec, floors_snapshot=floors_snapshot
         ):
-            mask = _tanimoto_eligible(round_table, tanimoto_cutoff)
+            mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
             mask &= _cutoff_satisfied_mask(
                 round_table[spec.annotator_id], spec.cutoff, spec.direction
             )

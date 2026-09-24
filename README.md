@@ -59,6 +59,9 @@ summary, candidates_by_round = hill_climb(
 `mode="joint"`). `candidates_by_round[n]` has one row per candidate considered
 in round `n`, with its source generator, every annotator's value,
 `cutoffs_satisfied`, and `tanimoto_to_seed` (only if a seed was given).
+`tanimoto_cutoff`/`tanimoto_direction` gate on `tanimoto_to_seed`:
+`direction="higher"` (default) keeps candidates at least this similar to the
+seed; `"lower"` pushes toward novelty instead.
 `seed_smiles` is optional; without one, round 1 is unconditionally the new
 best, and only seed-agnostic generators (like `ChemblSampler`) can contribute
 to it.

@@ -33,7 +33,16 @@ from ..create_cli import chemsampler_cli
     "--tanimoto-cutoff",
     default=None,
     type=float,
-    help="Minimum similarity to --seed-smiles. Requires --seed-smiles.",
+    help="Similarity cutoff vs --seed-smiles, gated by --tanimoto-direction. "
+    "Requires --seed-smiles.",
+)
+@click.option(
+    "--tanimoto-direction",
+    type=click.Choice(["higher", "lower"]),
+    default="higher",
+    show_default=True,
+    help="'higher' keeps candidates at least this similar to the seed; "
+    "'lower' pushes toward novelty (at most this similar).",
 )
 @click.option(
     "--backend",
@@ -55,6 +64,7 @@ def run_cmd(
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
+    tanimoto_direction: str,
     backend: str,
     output_dir: str,
 ) -> None:
@@ -73,6 +83,7 @@ def run_cmd(
             n_rounds=n_rounds,
             tolerance=tolerance,
             tanimoto_cutoff=tanimoto_cutoff,
+            tanimoto_direction=tanimoto_direction,
         )
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
