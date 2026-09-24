@@ -10,13 +10,15 @@ ChemSampler generates and ranks new candidate molecules around a seed compound, 
 
 ## Installation
 
+From a clone of this repository:
+
 ```bash
 conda create -n chemsampler python=3.10
 conda activate chemsampler
-pip install git+https://github.com/ersilia-os/chem-sampler.git
+pip install -e .
 ```
 
-ChemSampler relies on the [Ersilia Model Hub](https://github.com/ersilia-os/ersilia) to fetch and run generative models.
+ChemSampler relies on the [Ersilia Model Hub](https://github.com/ersilia-os/ersilia) to fetch and run generative models. To also run the test suite, install with the `dev` extra instead: `pip install -e ".[dev]"`.
 
 ## Usage
 
