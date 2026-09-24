@@ -8,7 +8,13 @@ from .models.spec import AnnotatorSpec, Direction
 from .utils.logging import logger
 from .utils.similarity import tanimoto_to_seed
 
-_RESERVED_COLUMNS = {"smiles", "source", "cutoffs_satisfied", "tanimoto_to_seed"}
+_RESERVED_COLUMNS = {
+    "smiles",
+    "source",
+    "cutoffs_satisfied",
+    "tanimoto_to_seed",
+    "tanimoto_to_original_seed",
+}
 
 
 def hill_climb(
@@ -17,6 +23,7 @@ def hill_climb(
     *,
     mode: Literal["joint", "sequential"],
     seed_smiles: str | None = None,
+    original_seed_smiles: str | None = None,
     n_rounds: int = 5,
     tolerance: float = 0.0,
     tanimoto_cutoff: float | None = None,
@@ -55,6 +62,12 @@ def hill_climb(
     seed_smiles : str, optional
         SMILES of the starting molecule. If `None`, the first round's winner is
         unconditionally the new best.
+    original_seed_smiles : str, optional
+        SMILES of the true original molecule, for tracking similarity across a
+        manually re-seeded chain of `hill_climb` calls. Adds
+        `tanimoto_to_original_seed` to `candidates_by_round`, independent of
+        `seed_smiles`/`tanimoto_to_seed`; never affects eligibility or the
+        search itself.
     n_rounds : int, optional
         Maximum rounds to run, by default 5. In "sequential" mode this budget
         applies separately to each stage.
@@ -80,9 +93,10 @@ def hill_climb(
         Every candidate considered each round (round 0 is the seed, if given),
         continuously numbered across stage boundaries in "sequential" mode.
         Columns: `smiles`, `source`, one column per `annotators` entry's
-        `annotator_id`, `cutoffs_satisfied`, and `tanimoto_to_seed` (only if a
-        seed was given; always against the original seed, never the rolling
-        best-so-far molecule).
+        `annotator_id`, `cutoffs_satisfied`, `tanimoto_to_seed` (only if a
+        seed was given; always against `seed_smiles` itself, never the
+        rolling best-so-far molecule), and `tanimoto_to_original_seed` (only
+        if `original_seed_smiles` was given).
 
     Raises
     ------
@@ -110,8 +124,17 @@ def hill_climb(
 
     if seed_smiles is not None:
         seed_scores = _score_candidates([seed_smiles], annotators)
+        original_seed_tanimoto = (
+            tanimoto_to_seed(original_seed_smiles, [seed_smiles])
+            if original_seed_smiles is not None
+            else None
+        )
         round0_table = _round_table(
-            {seed_smiles: "seed"}, seed_scores, annotators, {seed_smiles: 1.0}
+            {seed_smiles: "seed"},
+            seed_scores,
+            annotators,
+            {seed_smiles: 1.0},
+            original_seed_tanimoto,
         )
         candidates_by_round[0] = round0_table
         seed_row = round0_table.iloc[0]
@@ -138,6 +161,7 @@ def hill_climb(
             generator,
             annotators,
             seed_smiles,
+            original_seed_smiles,
             n_rounds,
             tolerance,
             tanimoto_cutoff,
@@ -151,6 +175,7 @@ def hill_climb(
             generator,
             annotators,
             seed_smiles,
+            original_seed_smiles,
             n_rounds,
             tolerance,
             tanimoto_cutoff,
@@ -287,6 +312,7 @@ def _round_table(
     scores: dict[str, dict[str, float]],
     annotators: list[AnnotatorSpec],
     tanimoto: dict[str, float] | None,
+    original_seed_tanimoto: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Assemble one round's candidate table: smiles, source, annotator values, cutoff count."""
     rows = []
@@ -295,6 +321,10 @@ def _round_table(
         row["cutoffs_satisfied"] = _cutoffs_satisfied_count(scores[smi], annotators)
         if tanimoto is not None:
             row["tanimoto_to_seed"] = tanimoto.get(smi, float("nan"))
+        if original_seed_tanimoto is not None:
+            row["tanimoto_to_original_seed"] = original_seed_tanimoto.get(
+                smi, float("nan")
+            )
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -353,6 +383,7 @@ def _run_rounds(
     generator,
     annotators: list[AnnotatorSpec],
     seed_smiles: str | None,
+    original_seed_smiles: str | None,
     n_rounds: int,
     tolerance: float,
     start_round: int,
@@ -384,7 +415,14 @@ def _run_rounds(
             if seed_smiles is not None
             else None
         )
-        round_table = _round_table(joined_source, scores, annotators, tanimoto)
+        original_seed_tanimoto = (
+            tanimoto_to_seed(original_seed_smiles, list(joined_source))
+            if original_seed_smiles is not None
+            else None
+        )
+        round_table = _round_table(
+            joined_source, scores, annotators, tanimoto, original_seed_tanimoto
+        )
         round_table = _sort_round_table(
             round_table, active_annotator_id, winner_direction
         )
@@ -436,6 +474,7 @@ def _run_joint(
     generator,
     annotators: list[AnnotatorSpec],
     seed_smiles: str | None,
+    original_seed_smiles: str | None,
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
@@ -458,6 +497,7 @@ def _run_joint(
         generator,
         annotators,
         seed_smiles,
+        original_seed_smiles,
         n_rounds,
         tolerance,
         start_round=1,
@@ -475,6 +515,7 @@ def _run_sequential(
     generator,
     annotators: list[AnnotatorSpec],
     seed_smiles: str | None,
+    original_seed_smiles: str | None,
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
@@ -535,6 +576,7 @@ def _run_sequential(
             generator,
             annotators,
             seed_smiles,
+            original_seed_smiles,
             n_rounds,
             tolerance,
             start_round=next_round,

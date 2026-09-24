@@ -528,6 +528,32 @@ def test_tanimoto_direction_lower_seeks_novelty():
     assert summary.iloc[-1]["smiles"] == "c1ccc2ccccc2c1"
 
 
+def test_original_seed_smiles_reports_tanimoto_to_original_seed_column():
+    # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
+    scores = {"CO": 1.0, "c1ccc2ccccc2c1": 2.0}
+    generator = StubGenerator([["c1ccc2ccccc2c1"]])
+    annotators = [
+        AnnotatorSpec(
+            "score", StubAnnotator(scores), cutoff=float("-inf"), direction="higher"
+        )
+    ]
+
+    _, candidates_by_round = hill_climb(
+        generator,
+        annotators,
+        mode="sequential",
+        seed_smiles="CO",
+        original_seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    round0 = candidates_by_round[0]
+    assert round0.iloc[0]["tanimoto_to_original_seed"] == 0.2857142857142857
+
+    round1 = candidates_by_round[1].set_index("smiles")
+    assert round1.loc["c1ccc2ccccc2c1", "tanimoto_to_original_seed"] == 0.0
+
+
 # --- annotate ------------------------------------------------------------
 
 

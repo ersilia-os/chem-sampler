@@ -62,7 +62,8 @@ summary, candidates_by_round = hill_climb(
 `active_annotator_id` — which annotator that round was driving, `None` in
 `mode="joint"`). `candidates_by_round[n]` has one row per candidate considered
 in round `n`, with its source generator, every annotator's value,
-`cutoffs_satisfied`, and `tanimoto_to_seed` (only if a seed was given).
+`cutoffs_satisfied`, `tanimoto_to_seed` (only if a seed was given), and
+`tanimoto_to_original_seed` (only if `original_seed_smiles` was given).
 `tanimoto_cutoff`/`tanimoto_direction` gate on `tanimoto_to_seed`:
 `direction="higher"` (default) keeps candidates at least this similar to the
 seed; `"lower"` pushes toward novelty instead.

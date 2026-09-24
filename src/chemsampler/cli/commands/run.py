@@ -29,6 +29,13 @@ from ..create_cli import chemsampler_cli
     help="How annotators combine into a round's winner.",
 )
 @click.option("--seed-smiles", default=None, help="SMILES of the starting molecule.")
+@click.option(
+    "--original-seed-smiles",
+    default=None,
+    help="SMILES of the true original molecule in a manually re-seeded chain "
+    "of runs. Adds a tanimoto_to_original_seed column, independent of "
+    "--seed-smiles.",
+)
 @click.option("--n-rounds", default=5, show_default=True, type=int)
 @click.option("--tolerance", default=0.0, show_default=True, type=float)
 @click.option(
@@ -63,6 +70,7 @@ def run_cmd(
     generators_path: str | None,
     mode: str,
     seed_smiles: str | None,
+    original_seed_smiles: str | None,
     n_rounds: int,
     tolerance: float,
     tanimoto_cutoff: float | None,
@@ -82,6 +90,7 @@ def run_cmd(
             annotators,
             mode=mode,
             seed_smiles=seed_smiles,
+            original_seed_smiles=original_seed_smiles,
             n_rounds=n_rounds,
             tolerance=tolerance,
             tanimoto_cutoff=tanimoto_cutoff,
