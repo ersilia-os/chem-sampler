@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 
 from ..hub.client import Backend, HubModel
@@ -57,20 +59,25 @@ class HubAnnotator:
         if not smiles_list:
             return {}
 
+        start_time = time.monotonic()
         scores = {}
-        for start in range(0, len(smiles_list), _MAX_CHUNK):
-            chunk = smiles_list[start : start + _MAX_CHUNK]
+        for chunk_start in range(0, len(smiles_list), _MAX_CHUNK):
+            chunk = smiles_list[chunk_start : chunk_start + _MAX_CHUNK]
             df = self._hub_model.run(chunk)
             column = self.column or self._infer_column(df)
             for smi, value in zip(chunk, df[column]):
                 if pd.notna(value):
                     scores[smi] = float(value)
+        elapsed = time.monotonic() - start_time
 
         missing = len(smiles_list) - len(scores)
         if missing:
             logger.warning(
                 f"{self.model_id}: {missing} of {len(smiles_list)} molecules scored null"
             )
+        logger.info(
+            f"{self.model_id}: scored {len(smiles_list)} molecules ({elapsed:.1f}s)"
+        )
         return scores
 
     def _infer_column(self, df: pd.DataFrame) -> str:

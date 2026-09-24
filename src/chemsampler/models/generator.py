@@ -1,3 +1,5 @@
+import time
+
 from rdkit import Chem
 
 from ..hub.client import Backend, HubModel
@@ -146,17 +148,21 @@ class GeneratorPool:
     @staticmethod
     def _generate_one(generator, seed_smiles: str | None) -> list[str]:
         """Run one generator, turning a missing-seed error into a warning + skip."""
+        model_id = getattr(generator, "model_id", generator)
+        start = time.monotonic()
         try:
             result = generator.generate(seed_smiles)
         except SeedRequiredError:
-            logger.warning(
-                f"{getattr(generator, 'model_id', generator)}: requires a seed "
-                "molecule, skipped"
-            )
+            logger.warning(f"{model_id}: requires a seed molecule, skipped")
             return []
+        elapsed = time.monotonic() - start
         if not result:
             logger.warning(
-                f"{getattr(generator, 'model_id', generator)}: contributed 0 candidates "
-                "for this seed"
+                f"{model_id}: contributed 0 candidates for this seed ({elapsed:.1f}s)"
+            )
+        else:
+            logger.info(
+                f"{model_id}: contributed {len(result)} candidates for this seed "
+                f"({elapsed:.1f}s)"
             )
         return result

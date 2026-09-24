@@ -555,6 +555,57 @@ def test_annotate_rejects_empty_annotators():
         annotate("CCO", [])
 
 
+# --- round table sorting -------------------------------------------------
+
+
+def test_sequential_mode_round_table_sorted_descending_for_higher():
+    scores = {"CCO": 1.0, "CCC": 3.0, "CCN": 5.0, "CC": 2.0}
+    generator = StubGenerator([["CCC", "CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec(
+            "score", StubAnnotator(scores), cutoff=float("-inf"), direction="higher"
+        )
+    ]
+
+    _, candidates_by_round = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert list(candidates_by_round[1]["score"]) == [5.0, 3.0, 2.0]
+
+
+def test_sequential_mode_round_table_sorted_ascending_for_lower():
+    scores = {"CCO": 1.0, "CCC": 3.0, "CCN": 5.0, "CC": 2.0}
+    generator = StubGenerator([["CCC", "CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec(
+            "score", StubAnnotator(scores), cutoff=float("inf"), direction="lower"
+        )
+    ]
+
+    _, candidates_by_round = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert list(candidates_by_round[1]["score"]) == [2.0, 3.0, 5.0]
+
+
+def test_joint_mode_round_table_sorted_by_cutoffs_satisfied_descending():
+    a_scores = {"CCO": 1.0, "CCC": 1.0, "CCN": 1.0, "CC": 0.0}
+    b_scores = {"CCO": 1.0, "CCC": 0.0, "CCN": 1.0, "CC": 0.0}
+    generator = StubGenerator([["CCC", "CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.5, direction="higher"),
+        AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=0.5, direction="higher"),
+    ]
+
+    _, candidates_by_round = hill_climb(
+        generator, annotators, mode="joint", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert list(candidates_by_round[1]["cutoffs_satisfied"]) == [2, 1, 0]
+
+
 # --- write_results -----------------------------------------------------
 
 

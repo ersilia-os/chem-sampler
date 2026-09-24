@@ -299,6 +299,31 @@ def _round_table(
     return pd.DataFrame(rows)
 
 
+def _sort_round_table(
+    round_table: pd.DataFrame,
+    active_annotator_id: str | None,
+    winner_direction: Direction | None,
+) -> pd.DataFrame:
+    """Order a round's candidates best-first, by whatever that round is optimizing.
+
+    Sequential mode (`active_annotator_id` given): that annotator's own column,
+    ascending if its direction is "lower", else descending. Joint mode
+    (`active_annotator_id` is None): `cutoffs_satisfied` descending - the same
+    column joint mode's own `pick_winner` already uses via `idxmax`. NaN in the
+    sort column always sorts last (pandas default), so a candidate the active
+    annotator couldn't score is never treated as "best".
+    """
+    if round_table.empty:
+        return round_table
+    if active_annotator_id is not None:
+        column, ascending = active_annotator_id, winner_direction == "lower"
+    else:
+        column, ascending = "cutoffs_satisfied", False
+    return round_table.sort_values(
+        column, ascending=ascending, kind="stable"
+    ).reset_index(drop=True)
+
+
 def _tanimoto_eligible(
     round_table: pd.DataFrame,
     tanimoto_cutoff: float | None,
@@ -360,6 +385,9 @@ def _run_rounds(
             else None
         )
         round_table = _round_table(joined_source, scores, annotators, tanimoto)
+        round_table = _sort_round_table(
+            round_table, active_annotator_id, winner_direction
+        )
         candidates_by_round[round_num] = round_table
 
         if round_table.empty:
