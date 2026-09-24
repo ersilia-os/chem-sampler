@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from chemsampler.models.spec import AnnotatorSpec
-from chemsampler.optimize import hill_climb, write_results
+from chemsampler.optimize import annotate, hill_climb, write_results
 
 
 class StubGenerator:
@@ -175,7 +175,7 @@ def test_seedless_first_round_is_unconditionally_the_new_best():
     )
 
     assert list(summary["round"]) == [1]
-    assert summary.iloc[0]["is_new_best"] == True  # noqa: E712
+    assert summary.iloc[0]["is_new_best"] == True
     assert 0 not in candidates_by_round
     assert "tanimoto_to_seed" not in candidates_by_round[1].columns
 
@@ -265,7 +265,7 @@ def test_sequential_mode_floor_is_the_achieved_value_not_the_original_cutoff():
         AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=5.0, direction="higher"),
     ]
 
-    summary, candidates_by_round = hill_climb(
+    summary, _ = hill_climb(
         generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
     )
 
@@ -526,6 +526,33 @@ def test_tanimoto_direction_lower_seeks_novelty():
     # the opposite outcome from the same cutoff under the default "higher" gate
     # (see test_tanimoto_cutoff_excluded_from_joint_mode_count above).
     assert summary.iloc[-1]["smiles"] == "c1ccc2ccccc2c1"
+
+
+# --- annotate ------------------------------------------------------------
+
+
+def test_annotate_scores_one_smiles_and_reports_cutoffs_satisfied():
+    annotators = [
+        AnnotatorSpec(
+            "score", StubAnnotator({"CCO": 1.0}), cutoff=0.0, direction="higher"
+        ),
+        AnnotatorSpec("missing", StubAnnotator({}), cutoff=0.0, direction="higher"),
+    ]
+
+    result = annotate("CCO", annotators)
+
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["source"] == "input"
+    assert row["score"] == 1.0
+    assert math.isnan(row["missing"])
+    assert row["cutoffs_satisfied"] == 1
+    assert "tanimoto_to_seed" not in result.columns
+
+
+def test_annotate_rejects_empty_annotators():
+    with pytest.raises(ValueError, match="empty"):
+        annotate("CCO", [])
 
 
 # --- write_results -----------------------------------------------------

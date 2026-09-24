@@ -164,6 +164,41 @@ def hill_climb(
     return pd.DataFrame(history), candidates_by_round
 
 
+def annotate(smiles: str, annotators: list[AnnotatorSpec]) -> pd.DataFrame:
+    """
+    Score one molecule against a set of annotators.
+
+    A fast, single-shot counterpart to `hill_climb`: no generation, no rounds.
+    Useful for checking a candidate seed's baseline, or spot-checking any
+    molecule, before committing to a generator and a full run.
+
+    Parameters
+    ----------
+    smiles : str
+        SMILES of the molecule to score.
+    annotators : list[AnnotatorSpec]
+        At least one. See `hill_climb` for the shared invariants (unique,
+        non-reserved `annotator_id` values).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Exactly one row, shaped like a `hill_climb` round table: `smiles`,
+        `source` (always "input"), one column per `annotators` entry's
+        `annotator_id` (`NaN` where that annotator can't score `smiles`), and
+        `cutoffs_satisfied`.
+
+    Raises
+    ------
+    ValueError
+        If `annotators` is empty or has duplicate/reserved `annotator_id`
+        values.
+    """
+    _validate_annotators(annotators)
+    scores = _score_candidates([smiles], annotators)
+    return _round_table({smiles: "input"}, scores, annotators, tanimoto=None)
+
+
 def write_results(
     summary: pd.DataFrame,
     candidates_by_round: dict[int, pd.DataFrame],

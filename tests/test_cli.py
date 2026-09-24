@@ -145,3 +145,47 @@ def test_run_handles_empty_summary_without_seed(tmp_path):
     assert result.exit_code == 0, result.output
     assert "No candidates" in result.output
     assert (output_dir / "summary.csv").exists()
+
+
+def test_annotate_prints_values_and_cutoff_summary(tmp_path):
+    annotators_csv = tmp_path / "annotators.csv"
+    _write_csv(
+        annotators_csv,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["annotate", "--annotators", str(annotators_csv), "--smiles", "CCO"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "qed" in result.output
+    assert "cutoffs satisfied" in result.output
+
+
+def test_annotate_requires_smiles(tmp_path):
+    annotators_csv = tmp_path / "annotators.csv"
+    _write_csv(
+        annotators_csv,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+
+    result = CliRunner().invoke(cli, ["annotate", "--annotators", str(annotators_csv)])
+
+    assert result.exit_code != 0
+    assert "--smiles" in result.output
+
+
+def test_annotate_reports_value_error_in_red_and_exits_nonzero(tmp_path):
+    annotators_csv = tmp_path / "annotators.csv"
+    _write_csv(annotators_csv, ["annotator_id", "cutoff", "direction"], [])
+
+    result = CliRunner().invoke(
+        cli,
+        ["annotate", "--annotators", str(annotators_csv), "--smiles", "CCO"],
+    )
+
+    assert result.exit_code == 1
