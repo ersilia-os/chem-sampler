@@ -8,8 +8,10 @@ from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
 from ..models.spec import AnnotatorSpec
 
-#: Shipped default for `load_generators()`. Deliberately excludes "chembl": the
-#: ChemblSampler baseline must only ever be opted into by a user-supplied CSV.
+#: Final fallback for `load_generators()`, used only when neither an explicit
+#: path nor a ./generators.csv in the cwd is available. Deliberately excludes
+#: "chembl": the ChemblSampler baseline must only ever be opted into by a
+#: user-supplied CSV.
 _DEFAULT_GENERATORS_PATH = Path(__file__).parent / "generators.csv"
 
 
@@ -24,9 +26,10 @@ def load_generators(
     path : str, optional
         CSV with a `generator_id` column, one row per generator. Each id is
         either an Ersilia Hub model id, or the literal "chembl" to opt into
-        `ChemblSampler`. Defaults to the generators validated in
-        ersilia-os/ersilia#1919; that default never includes "chembl" — it must
-        be listed explicitly in a user-supplied CSV.
+        `ChemblSampler`. Resolved in order: `path` if given; else
+        `./generators.csv` in the current working directory, if one exists;
+        else the generators validated in ersilia-os/ersilia#1919 (never
+        includes "chembl" - must be listed explicitly in a user-supplied CSV).
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubGenerator` built from this CSV, by default
         "run_sh". Has no effect on a "chembl" row (`ChemblSampler` has no
@@ -37,27 +40,38 @@ def load_generators(
     GeneratorPool
         Pool of the generators listed in the CSV.
     """
-    path = path or _DEFAULT_GENERATORS_PATH
-    rows = _read_csv(path, required_columns=("generator_id",))
+    cwd_path = Path("generators.csv")
+    if path is not None:
+        resolved = path
+    elif cwd_path.exists():
+        resolved = cwd_path
+    else:
+        resolved = _DEFAULT_GENERATORS_PATH
+    rows = _read_csv(resolved, required_columns=("generator_id",))
     return GeneratorPool(
         [_build_generator(row["generator_id"], backend) for row in rows]
     )
 
 
-def load_annotators(path: str, backend: Backend = "run_sh") -> list[AnnotatorSpec]:
+def load_annotators(
+    path: str | None = None, backend: Backend = "run_sh"
+) -> list[AnnotatorSpec]:
     """
     Build annotator specs from a CSV of annotator ids, cutoffs and directions.
 
     Parameters
     ----------
-    path : str
+    path : str, optional
         CSV with columns `annotator_id, cutoff, direction, column`.
         `annotator_id` is either "qed" or an Ersilia Hub model id. `cutoff` and
         `direction` ("higher" or "lower") are required for every row - every
         annotator is uniform, there is no default. Row order is meaningful: it's
         the priority order `hill_climb` uses in `mode="sequential"`. `column` is
         optional and is passed to `HubAnnotator` for models with more than one
-        numeric output.
+        numeric output. Resolved in order: `path` if given; else
+        `./annotators.csv` in the current working directory, if one exists.
+        Unlike `load_generators`, there is no further built-in default - see
+        Raises.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubAnnotator` built from this CSV, by default
         "run_sh". Has no effect on a "qed" row (`QEDAnnotator` has no backend
@@ -70,11 +84,27 @@ def load_annotators(path: str, backend: Backend = "run_sh") -> list[AnnotatorSpe
 
     Raises
     ------
+    FileNotFoundError
+        If `path` is None and no `./annotators.csv` exists in the current
+        working directory. Annotators have no built-in default the way
+        generators do - cutoffs and directions are always user-specific.
     ValueError
         If a required column is missing, a cutoff or direction is invalid, or
         the annotator ids are not unique.
     """
-    rows = _read_csv(path, required_columns=("annotator_id", "cutoff", "direction"))
+    cwd_path = Path("annotators.csv")
+    if path is not None:
+        resolved = path
+    elif cwd_path.exists():
+        resolved = cwd_path
+    else:
+        raise FileNotFoundError(
+            "no annotators path given and no ./annotators.csv in the current "
+            "directory; annotators have no built-in default, unlike "
+            "generators (cutoffs and directions are always user-specific)"
+        )
+
+    rows = _read_csv(resolved, required_columns=("annotator_id", "cutoff", "direction"))
 
     specs = [
         AnnotatorSpec(
@@ -90,7 +120,7 @@ def load_annotators(path: str, backend: Backend = "run_sh") -> list[AnnotatorSpe
 
     ids = [spec.annotator_id for spec in specs]
     if len(set(ids)) != len(ids):
-        raise ValueError(f"{path}: duplicate annotator_id")
+        raise ValueError(f"{resolved}: duplicate annotator_id")
 
     return specs
 

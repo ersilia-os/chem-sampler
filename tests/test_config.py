@@ -83,6 +83,44 @@ def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
     assert specs[0].annotator._hub_model.backend == "run_sh"
 
 
+def test_load_generators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["chembl"]])
+
+    pool = load_generators()
+
+    assert any(isinstance(g, ChemblSampler) for g in pool.generators)
+
+
+def test_load_generators_default_still_used_when_no_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    pool = load_generators()
+
+    assert all(not isinstance(g, ChemblSampler) for g in pool.generators)
+    assert all(isinstance(g, HubGenerator) for g in pool.generators)
+
+
+def test_load_annotators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(
+        tmp_path / "annotators.csv",
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"]],
+    )
+
+    specs = load_annotators()
+
+    assert specs[0].annotator_id == "qed"
+
+
+def test_load_annotators_raises_when_nothing_available(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="annotators.csv"):
+        load_annotators()
+
+
 def test_build_annotator_dispatches_qed_and_hub_ids():
     assert isinstance(build_annotator("qed"), QEDAnnotator)
     assert isinstance(build_annotator("eos4zfy"), HubAnnotator)

@@ -9,16 +9,18 @@ from ..create_cli import chemsampler_cli
 @click.option(
     "--annotators",
     "annotators_path",
-    required=True,
+    default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="CSV with columns annotator_id, cutoff, direction[, column].",
+    help="CSV with columns annotator_id, cutoff, direction[, column]. Falls "
+    "back to ./annotators.csv in the cwd.",
 )
 @click.option(
     "--generators",
     "generators_path",
     default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="CSV with a generator_id column. Defaults to the 3 validated Hub generators.",
+    help="CSV with a generator_id column. Falls back to ./generators.csv in "
+    "the cwd, then the 3 validated Hub generators.",
 )
 @click.option(
     "--mode",
@@ -57,7 +59,7 @@ from ..create_cli import chemsampler_cli
     help="Directory to write summary.csv and round<n>.csv into.",
 )
 def run_cmd(
-    annotators_path: str,
+    annotators_path: str | None,
     generators_path: str | None,
     mode: str,
     seed_smiles: str | None,

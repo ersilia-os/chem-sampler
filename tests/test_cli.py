@@ -224,8 +224,53 @@ def test_annotate_rejects_both_annotators_and_model(tmp_path):
     assert "Exactly one of" in result.output
 
 
-def test_annotate_rejects_neither_annotators_nor_model():
+def test_annotate_rejects_neither_annotators_nor_model(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     result = CliRunner().invoke(cli, ["annotate", "--smiles", "CCO"])
 
     assert result.exit_code == 1
-    assert "Exactly one of" in result.output
+    assert "annotators.csv" in result.output
+
+
+def test_run_falls_back_to_cwd_annotators_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(
+        tmp_path / "annotators.csv",
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["eos9taz"]])
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "run",
+            "--mode",
+            "sequential",
+            "--seed-smiles",
+            "CCO",
+            "--n-rounds",
+            "1",
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (output_dir / "summary.csv").exists()
+
+
+def test_annotate_model_not_conflicted_by_cwd_annotators_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(
+        tmp_path / "annotators.csv",
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+
+    result = CliRunner().invoke(cli, ["annotate", "--model", "qed", "--smiles", "CCO"])
+
+    assert result.exit_code == 0, result.output
+    assert "cutoffs satisfied" not in result.output

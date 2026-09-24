@@ -11,8 +11,8 @@ from ..create_cli import chemsampler_cli
     "annotators_path",
     default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="CSV with columns annotator_id, cutoff, direction[, column]. "
-    "Mutually exclusive with --model.",
+    help="CSV with columns annotator_id, cutoff, direction[, column]. Falls "
+    "back to ./annotators.csv in the cwd. Mutually exclusive with --model.",
 )
 @click.option(
     "--model",
@@ -32,7 +32,7 @@ def annotate_cmd(
     annotators_path: str | None, model_id: str | None, smiles: str, backend: str
 ) -> None:
     """Score a single molecule against a set of annotators, or a single --model."""
-    if (annotators_path is None) == (model_id is None):
+    if annotators_path is not None and model_id is not None:
         click.secho("Exactly one of --annotators or --model is required.", fg="red")
         sys.exit(1)
 

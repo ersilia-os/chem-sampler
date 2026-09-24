@@ -114,17 +114,22 @@ Generators and annotators can also be loaded from CSVs instead of built by hand:
 ```python
 from chemsampler.config import load_annotators, load_generators
 
-generators = load_generators()  # defaults to the 3 validated Hub generators
-annotators = load_annotators("my_annotators.csv")
+generators = load_generators()  # defaults to ./generators.csv in the cwd, else the 3 validated Hub generators
+annotators = load_annotators()  # defaults to ./annotators.csv in the cwd
 ```
 
-`load_generators(path=None)` reads a `generator_id` column; each id is either an
+Both loaders resolve their CSV in the same order: the `path` argument if
+given, then `./generators.csv`/`./annotators.csv` in the current working
+directory. `load_generators` has one further fallback beyond that — the 3
+validated Hub generators — while `load_annotators` raises if nothing is
+found, since cutoffs and directions are always user-specific, unlike the
+generator list. `load_generators`' `generator_id` column takes either an
 Ersilia model id, or the literal `"chembl"` to opt into `ChemblSampler` — the
 shipped default never includes it, so it must be listed explicitly in your own
-CSV. `load_annotators(path)` reads `annotator_id, cutoff, direction, column`
-(`cutoff` and `direction` are required for every row; row order is the
-priority order used by `mode="sequential"`; `column` is optional and picks an
-output column for a multi-output Hub model).
+CSV. `load_annotators`' CSV has columns `annotator_id, cutoff, direction,
+column` (`cutoff` and `direction` are required for every row; row order is
+the priority order used by `mode="sequential"`; `column` is optional and
+picks an output column for a multi-output Hub model).
 
 See [`examples/`](examples/) for a runnable script.
 
@@ -145,9 +150,11 @@ chemsampler run \
 chemsampler annotate --annotators my_annotators.csv --smiles "CCO"
 ```
 
-`--generators` defaults to the shipped 3-generator CSV if omitted. `--backend`
-picks between `"ersilia"` and `"run_sh"` for every Hub-backed generator and
-annotator in the run — see [Backends](#backends) above for what that means.
+`--annotators`/`--generators` fall back to `./annotators.csv`/`./generators.csv`
+in the working directory if omitted; `--generators` falls back further still,
+to the shipped 3-generator CSV. `--backend` picks between `"ersilia"` and
+`"run_sh"` for every Hub-backed generator and annotator in the run — see
+[Backends](#backends) above for what that means.
 Run `chemsampler run --help`/`chemsampler annotate --help` for the full
 option lists.
 
