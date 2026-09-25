@@ -116,7 +116,6 @@ def test_candidates_table_has_expected_columns():
         "source",
         "score",
         "cutoffs_satisfied",
-        "weighted_score",
         "tanimoto_to_seed",
     ]
 
@@ -257,7 +256,7 @@ def test_hill_climb_rejects_reserved_annotator_id():
 # --- sequential mode: floors, own-cutoff gating, abort vs. continue --------
 
 
-def test_sequential_mode_floor_is_the_achieved_value_not_the_original_cutoff():
+def test_sequential_mode_floor_is_the_cutoff_not_the_achieved_value():
     a_scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 2.0, "CC": 12.0}
     b_scores = {"CCO": 0.0, "CCC": 3.0, "CCN": 8.0, "CC": 6.0}
     generator = StubGenerator([["CCC"], ["CCN", "CC"]])
@@ -270,11 +269,12 @@ def test_sequential_mode_floor_is_the_achieved_value_not_the_original_cutoff():
         generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
     )
 
-    # "a" achieves 10.0 in stage 1 (well above its cutoff of 0.0), which becomes
-    # the floor for stage 2. CCN clears the *original* cutoff (2.0 >= 0.0) but
-    # not the achieved floor, so it can't win despite having the higher "b"
-    # score (8.0 > 6.0) - CC must win instead.
-    assert summary.iloc[-1]["smiles"] == "CC"
+    # "a" achieves 10.0 in stage 1, well above its cutoff of 0.0 - but the
+    # floor for stage 2 is the *cutoff* (0.0), not the incidental 10.0 it
+    # happened to land on. Both CCN (2.0) and CC (12.0) clear that floor, so
+    # stage 2 is free to pick on "b" alone: CCN wins with the higher score
+    # (8.0 > 6.0), even though it would have failed a floor of 10.0.
+    assert summary.iloc[-1]["smiles"] == "CCN"
 
 
 def test_sequential_mode_does_not_enforce_not_yet_reached_annotators():
@@ -339,16 +339,17 @@ def test_sequential_stage_with_no_eligible_candidate_but_improvement_continues()
 
 
 def test_sequential_fallback_respects_prior_stage_floor():
-    # "a" achieves a floor of 10.0 in stage 1. In stage 2, no candidate clears
-    # "b"'s (unreachable) cutoff, so the no-eligible-candidate fallback kicks
-    # in. CCN has by far the best "b" value but violates the "a" floor (2.0 <
-    # 10.0); CC has a worse "b" value but respects the floor (12.0 >= 10.0).
-    # The fallback must never trade away the floor, so CC must win, not CCN.
+    # "a" achieves 10.0 in stage 1, clearing its cutoff of 8.0 - so the floor
+    # for stage 2 is 8.0. In stage 2, no candidate clears "b"'s (unreachable)
+    # cutoff, so the no-eligible-candidate fallback kicks in. CCN has by far
+    # the best "b" value but violates the floor (2.0 < 8.0); CC has a worse
+    # "b" value but respects it (12.0 >= 8.0). The fallback must never trade
+    # away the floor, so CC must win, not CCN.
     a_scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 2.0, "CC": 12.0}
     b_scores = {"CCO": 1.0, "CCC": 5.0, "CCN": 50.0, "CC": 20.0}
     generator = StubGenerator([["CCC"], ["CCN", "CC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=8.0, direction="higher"),
         AnnotatorSpec(
             "b", StubAnnotator(b_scores), cutoff=100.0, direction="higher"
         ),  # unreachable, so stage 2 always falls back
@@ -363,14 +364,15 @@ def test_sequential_fallback_respects_prior_stage_floor():
 
 
 def test_sequential_fallback_stops_run_when_nothing_respects_the_floor():
-    # Same shape as above, but both stage-2 candidates violate the "a" floor
-    # (10.0) - there is no floor-respecting candidate to fall back to at all,
-    # so the run must stop rather than return a floor-violating candidate.
+    # Same shape as above (floor = 8.0, the cutoff "a" clears at 10.0), but
+    # both stage-2 candidates violate it - there is no floor-respecting
+    # candidate to fall back to at all, so the run must stop rather than
+    # return a floor-violating candidate.
     a_scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 2.0, "CC": 3.0}
     b_scores = {"CCO": 1.0, "CCC": 5.0, "CCN": 50.0, "CC": 20.0}
     generator = StubGenerator([["CCC"], ["CCN", "CC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=8.0, direction="higher"),
         AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=100.0, direction="higher"),
     ]
 
@@ -396,8 +398,9 @@ def test_sequential_stage_with_no_improvement_but_entry_eligible_moves_to_next_s
     )
 
     # Stage "a" doesn't improve on the seed, but the seed already clears "a"'s
-    # cutoff (10.0 >= 0.0), so that value locks in as the floor and stage "b"
-    # still runs. (round 0 = seed, round 1 = "a"'s failed attempt, round 2 = "b".)
+    # cutoff (10.0 >= 0.0), so the cutoff (0.0) locks in as the floor and
+    # stage "b" still runs. (round 0 = seed, round 1 = "a"'s failed attempt,
+    # round 2 = "b".)
     assert list(summary["active_annotator_id"]) == ["a", "a", "b"]
     assert summary.iloc[-1]["smiles"] == "CCN"
 
@@ -686,6 +689,32 @@ def test_weighted_mode_round_table_sorted_by_weighted_score_descending():
     )
 
     assert list(candidates_by_round[1]["weighted_score"]) == [5.0, 2.0, 1.0]
+
+
+def test_weighted_score_column_only_present_in_weighted_mode():
+    scores = {"CCO": 1.0, "CCC": 2.0}
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+    ]
+
+    for mode in ("sequential", "joint"):
+        _, candidates_by_round = hill_climb(
+            StubGenerator([["CCC"]]),
+            annotators,
+            mode=mode,
+            seed_smiles="CCO",
+            n_rounds=1,
+        )
+        assert "weighted_score" not in candidates_by_round[1].columns
+
+    _, candidates_by_round = hill_climb(
+        StubGenerator([["CCC"]]),
+        annotators,
+        mode="weighted",
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+    assert "weighted_score" in candidates_by_round[1].columns
 
 
 def test_tanimoto_direction_lower_seeks_novelty():

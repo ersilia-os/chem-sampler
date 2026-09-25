@@ -38,10 +38,13 @@ def hill_climb(
     more. How they combine into a round's winner is decided by `mode`:
 
     - "sequential": annotators are optimized one at a time, in list order. Each
-      finished stage's achieved value becomes a hard floor for every later stage
-      (the achieved value, not just its original cutoff) - a later stage can
-      never trade away an earlier gain. A stage whose own cutoff nothing can
-      satisfy, not even the entering candidate, stops the whole run.
+      finished stage's own cutoff becomes a hard floor for every later stage -
+      a later stage can trade within an already-cleared objective's accepted
+      range, but never push it back below the goal declared for it. If a
+      stage's round budget runs out before it ever reaches its own cutoff, its
+      actual achieved value becomes the floor instead (there is nothing higher
+      to promise). A stage whose own cutoff nothing can satisfy, not even the
+      entering candidate, stops the whole run.
     - "joint": all annotators optimized together in one search. A candidate's
       score is its count of cutoffs satisfied; ties break on whichever eligible
       candidate is encountered first.
@@ -106,11 +109,12 @@ def hill_climb(
         Every candidate considered each round (round 0 is the seed, if given),
         continuously numbered across stage boundaries in "sequential" mode.
         Columns: `smiles`, `source`, one column per `annotators` entry's
-        `annotator_id`, `cutoffs_satisfied`, `weighted_score` (both always
-        present, regardless of `mode`), `tanimoto_to_seed` (only if a seed was
-        given; always against `seed_smiles` itself, never the rolling
-        best-so-far molecule), and `tanimoto_to_original_seed` (only if
-        `original_seed_smiles` was given).
+        `annotator_id`, `cutoffs_satisfied` (always present, regardless of
+        `mode`), `weighted_score` (only present when `mode="weighted"`),
+        `tanimoto_to_seed` (only if a seed was given; always against
+        `seed_smiles` itself, never the rolling best-so-far molecule), and
+        `tanimoto_to_original_seed` (only if `original_seed_smiles` was
+        given).
 
     Raises
     ------
@@ -151,6 +155,7 @@ def hill_climb(
             annotators,
             {seed_smiles: 1.0},
             original_seed_tanimoto,
+            include_weighted_score=(mode == "weighted"),
         )
         candidates_by_round[0] = round0_table
         seed_row = round0_table.iloc[0]
@@ -397,13 +402,15 @@ def _round_table(
     annotators: list[AnnotatorSpec],
     tanimoto: dict[str, float] | None,
     original_seed_tanimoto: dict[str, float] | None = None,
+    include_weighted_score: bool = False,
 ) -> pd.DataFrame:
     """Assemble one round's candidate table: smiles, source, annotator values, cutoff count."""
     rows = []
     for smi, source in source_by_smiles.items():
         row = {"smiles": smi, "source": source, **scores[smi]}
         row["cutoffs_satisfied"] = _cutoffs_satisfied_count(scores[smi], annotators)
-        row["weighted_score"] = _weighted_score(scores[smi], annotators)
+        if include_weighted_score:
+            row["weighted_score"] = _weighted_score(scores[smi], annotators)
         if tanimoto is not None:
             row["tanimoto_to_seed"] = tanimoto.get(smi, float("nan"))
         if original_seed_tanimoto is not None:
@@ -482,6 +489,7 @@ def _run_rounds(
     active_annotator_id: str | None,
     active_cutoff: float | None = None,
     sort_column: str = "cutoffs_satisfied",
+    include_weighted_score: bool = False,
 ) -> tuple[list[dict], dict[int, pd.DataFrame], str | None, float, dict[str, float]]:
     """Shared loop: generate -> score -> pick_winner -> compare. Used by every mode."""
     history = []
@@ -528,7 +536,12 @@ def _run_rounds(
             else None
         )
         round_table = _round_table(
-            joined_source, scores, annotators, tanimoto, original_seed_tanimoto
+            joined_source,
+            scores,
+            annotators,
+            tanimoto,
+            original_seed_tanimoto,
+            include_weighted_score,
         )
         round_table = _sort_round_table(
             round_table, active_annotator_id, winner_direction, sort_column
@@ -679,6 +692,7 @@ def _run_weighted(
         winner_direction=None,
         active_annotator_id=None,
         sort_column="weighted_score",
+        include_weighted_score=True,
     )
     return history, candidates_by_round
 
@@ -817,6 +831,7 @@ def _run_sequential(
             achieved = new_best_score
             best_smiles, best_row = new_best_smiles, new_best_row
 
-        floors.append((spec.annotator_id, achieved, spec.direction))
+        floor_value = spec.cutoff if _cutoff_satisfied(achieved, spec) else achieved
+        floors.append((spec.annotator_id, floor_value, spec.direction))
 
     return history, candidates_by_round

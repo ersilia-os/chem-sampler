@@ -31,8 +31,11 @@ molecule against the same annotators with no generation or rounds — handy for
 checking a seed's baseline:
 
 - `mode="sequential"`: annotators are optimized one at a time, in list order.
-  Each finished stage's achieved value becomes a hard floor for every later
-  stage, so a later stage can never trade away an earlier gain.
+  Each finished stage's own cutoff becomes a hard floor for every later stage,
+  so a later stage can trade within an already-cleared objective's accepted
+  range but never push it back below its declared goal. (If a stage's round
+  budget runs out before reaching its own cutoff, its actual achieved value
+  becomes the floor instead.)
 - `mode="joint"`: all annotators optimized together; a candidate's score is its
   count of cutoffs satisfied, with ties broken arbitrarily.
 - `mode="weighted"`: all annotators optimized together as one scalarized score,
