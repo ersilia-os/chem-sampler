@@ -62,16 +62,18 @@ def load_annotators(
     Parameters
     ----------
     path : str, optional
-        CSV with columns `annotator_id, cutoff, direction, column`.
+        CSV with columns `annotator_id, cutoff, direction, column, weight`.
         `annotator_id` is one of: "qed" (drug-likeness), "mw" (molecular weight),
         or an Ersilia Hub model id. `cutoff` and `direction` ("higher" or "lower")
         are required for every row - every annotator is uniform, there is no
         default. Row order is meaningful: it's the priority order `hill_climb`
         uses in `mode="sequential"`. `column` is optional and is passed to
-        `HubAnnotator` for models with more than one numeric output. Resolved in
-        order: `path` if given; else `./annotators.csv` in the current working
-        directory, if one exists. Unlike `load_generators`, there is no further
-        built-in default - see Raises.
+        `HubAnnotator` for models with more than one numeric output. `weight` is
+        optional, defaults to 1.0, and only affects `hill_climb`'s
+        `mode="weighted"`. Resolved in order: `path` if given; else
+        `./annotators.csv` in the current working directory, if one exists.
+        Unlike `load_generators`, there is no further built-in default - see
+        Raises.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubAnnotator` built from this CSV, by default
         "run_sh". Has no effect on "qed" or "mw" rows (they have no backend
@@ -114,6 +116,7 @@ def load_annotators(
             ),
             cutoff=_parse_cutoff(row["annotator_id"], row["cutoff"]),
             direction=row["direction"],
+            weight=_parse_weight(row["annotator_id"], row.get("weight")),
         )
         for row in rows
     ]
@@ -171,6 +174,20 @@ def _parse_cutoff(annotator_id: str, value: str) -> float:
         return float(value)
     except ValueError:
         raise ValueError(f"{annotator_id}: invalid cutoff {value!r}") from None
+
+
+def _parse_weight(annotator_id: str, value: str | None) -> float:
+    """Unlike cutoff, weight is optional - defaults to 1.0 (equal weighting).
+
+    Range validation (>= 0) is left to `AnnotatorSpec.__post_init__`, the single
+    source of truth for that invariant regardless of construction path.
+    """
+    if not value:
+        return 1.0
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError(f"{annotator_id}: invalid weight {value!r}") from None
 
 
 def _read_csv(path, required_columns: tuple[str, ...]) -> list[dict]:

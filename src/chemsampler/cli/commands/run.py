@@ -24,7 +24,7 @@ from ..create_cli import chemsampler_cli
 )
 @click.option(
     "--mode",
-    type=click.Choice(["joint", "sequential"]),
+    type=click.Choice(["joint", "sequential", "weighted"]),
     required=True,
     help="How annotators combine into a round's winner.",
 )

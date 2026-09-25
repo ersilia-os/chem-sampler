@@ -35,6 +35,13 @@ checking a seed's baseline:
   stage, so a later stage can never trade away an earlier gain.
 - `mode="joint"`: all annotators optimized together; a candidate's score is its
   count of cutoffs satisfied, with ties broken arbitrarily.
+- `mode="weighted"`: all annotators optimized together as one scalarized score,
+  `sum(weight * value)` per annotator (negated first for `direction="lower"`
+  annotators, so maximizing the sum always pushes every annotator the right
+  way). `weight` comes from an `AnnotatorSpec`/CSV column, default 1.0. No
+  cross-annotator normalization is applied, so pick weight magnitudes relative
+  to each annotator's own scale (e.g. a 0-1 QED score needs a much larger
+  weight than a score in the hundreds to have comparable pull).
 
 ```python
 from chemsampler.models.annotator import QEDAnnotator
@@ -137,9 +144,10 @@ generator list. `load_generators`' `generator_id` column takes either an
 Ersilia model id, or the literal `"chembl"` to opt into `ChemblSampler` — the
 shipped default never includes it, so it must be listed explicitly in your own
 CSV. `load_annotators`' CSV has columns `annotator_id, cutoff, direction,
-column` (`cutoff` and `direction` are required for every row; row order is
-the priority order used by `mode="sequential"`; `column` is optional and
-picks an output column for a multi-output Hub model).
+column, weight` (`cutoff` and `direction` are required for every row; row
+order is the priority order used by `mode="sequential"`; `column` is optional
+and picks an output column for a multi-output Hub model; `weight` is optional,
+defaults to 1.0, and only affects `mode="weighted"`).
 
 See [`examples/`](examples/) for a runnable script.
 

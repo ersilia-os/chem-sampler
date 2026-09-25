@@ -116,6 +116,7 @@ def test_candidates_table_has_expected_columns():
         "source",
         "score",
         "cutoffs_satisfied",
+        "weighted_score",
         "tanimoto_to_seed",
     ]
 
@@ -309,7 +310,9 @@ def test_sequential_mode_own_cutoff_gates_its_own_stage():
     # With new behavior: improvement (1.0→2.0) is recorded even if cutoff (5.0) not met
     assert list(summary["round"]) == [0, 1]
     assert summary.iloc[1]["score"] == 2.0  # Round 1 improved
-    assert candidates_by_round[1].iloc[0]["cutoffs_satisfied"] == 0  # But didn't satisfy cutoff
+    assert (
+        candidates_by_round[1].iloc[0]["cutoffs_satisfied"] == 0
+    )  # But didn't satisfy cutoff
 
 
 def test_sequential_stage_with_no_eligible_candidate_but_improvement_continues():
@@ -508,6 +511,137 @@ def test_tanimoto_cutoff_excluded_from_joint_mode_count():
     assert round1.loc["c1ccc2ccccc2c1", "cutoffs_satisfied"] == 2
     assert summary.iloc[-1]["smiles"] == "CO"
     assert summary.iloc[-1]["score"] == 1
+
+
+# --- weighted mode: sign correction, weighting, missing values -------------
+
+
+def test_weighted_mode_single_annotator_reproduces_pure_maximization():
+    scores = {"CCO": 1.0, "CCC": 2.0, "CCN": 3.0}
+    generator = StubGenerator([["CCC", "CCN"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    # Weight is irrelevant with a single annotator - the highest raw value wins.
+    assert summary.iloc[-1]["smiles"] == "CCN"
+    assert summary.iloc[-1]["score"] == 3.0
+
+
+def test_weighted_mode_respects_lower_direction():
+    scores = {"CCO": 10.0, "CCC": 8.0, "CCN": 2.0}
+    generator = StubGenerator([["CCC", "CCN"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="lower")
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    # "lower" negates the value before summing, so the *smallest* raw value
+    # (CCN, 2.0) has the largest weighted_score and wins.
+    assert summary.iloc[-1]["smiles"] == "CCN"
+
+
+def test_weighted_mode_combines_multiple_annotators_by_weight():
+    a_scores = {"CCO": 0.0, "CCC": 10.0, "CCN": 1.0}
+    b_scores = {"CCO": 0.0, "CCC": 1.0, "CCN": 10.0}
+    generator = StubGenerator([["CCC", "CCN"]])
+    annotators = [
+        AnnotatorSpec(
+            "a", StubAnnotator(a_scores), cutoff=0.0, direction="higher", weight=5.0
+        ),
+        AnnotatorSpec(
+            "b", StubAnnotator(b_scores), cutoff=0.0, direction="higher", weight=1.0
+        ),
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    # CCC: 5*10 + 1*1 = 51. CCN: 5*1 + 1*10 = 15. CCC wins because "a" is
+    # weighted 5x heavier, even though CCN has the higher "b" value and would
+    # win a joint-mode (equal-weight, cutoffs-satisfied) tie-break.
+    assert summary.iloc[-1]["smiles"] == "CCC"
+    assert summary.iloc[-1]["score"] == 51.0
+
+
+def test_weighted_mode_candidate_missing_one_annotator_is_ineligible():
+    a_scores = {"CCO": 1.0, "CCN": 0.5}  # "CCC" missing from "a"
+    b_scores = {"CCO": 1.0, "CCC": 100.0, "CCN": 1.0}
+    generator = StubGenerator([["CCC", "CCN"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=0.0, direction="higher"),
+    ]
+
+    summary, candidates_by_round = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    # CCC has by far the higher raw "b" value, but its missing "a" score makes
+    # its weighted_score NaN - ineligible - so CCN wins despite the lower total.
+    round1 = candidates_by_round[1].set_index("smiles")
+    assert math.isnan(round1.loc["CCC", "weighted_score"])
+    assert summary.iloc[-1]["smiles"] == "CCN"
+
+
+def test_active_annotator_id_is_none_for_weighted_mode():
+    scores = {"CCO": 1.0, "CCC": 10.0}
+    generator = StubGenerator([["CCC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert summary["active_annotator_id"].isna().all()
+
+
+def test_tanimoto_cutoff_excluded_from_weighted_mode_score():
+    # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
+    scores = {"CCO": 1.0, "CO": 1.0, "c1ccc2ccccc2c1": 100.0}
+    generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+    ]
+
+    summary, candidates_by_round = hill_climb(
+        generator,
+        annotators,
+        mode="weighted",
+        seed_smiles="CCO",
+        n_rounds=1,
+        tanimoto_cutoff=0.2,
+    )
+
+    # Naphthalene has the far higher weighted_score but fails the Tanimoto gate
+    # (0.0 < 0.2); methanol passes (0.2857 >= 0.2) and wins despite the lower score.
+    round1 = candidates_by_round[1].set_index("smiles")
+    assert round1.loc["c1ccc2ccccc2c1", "weighted_score"] == 100.0
+    assert summary.iloc[-1]["smiles"] == "CO"
+
+
+def test_weighted_mode_round_table_sorted_by_weighted_score_descending():
+    a_scores = {"CCO": 0.0, "CCC": 1.0, "CCN": 5.0, "CC": 2.0}
+    generator = StubGenerator([["CCC", "CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher")
+    ]
+
+    _, candidates_by_round = hill_climb(
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert list(candidates_by_round[1]["weighted_score"]) == [5.0, 2.0, 1.0]
 
 
 def test_tanimoto_direction_lower_seeks_novelty():

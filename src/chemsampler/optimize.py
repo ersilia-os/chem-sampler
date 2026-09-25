@@ -13,6 +13,7 @@ _RESERVED_COLUMNS = {
     "smiles",
     "source",
     "cutoffs_satisfied",
+    "weighted_score",
     "tanimoto_to_seed",
     "tanimoto_to_original_seed",
 }
@@ -22,7 +23,7 @@ def hill_climb(
     generator,
     annotators: list[AnnotatorSpec],
     *,
-    mode: Literal["joint", "sequential"],
+    mode: Literal["joint", "sequential", "weighted"],
     seed_smiles: str | None = None,
     original_seed_smiles: str | None = None,
     n_rounds: int = 5,
@@ -43,9 +44,20 @@ def hill_climb(
       satisfy, not even the entering candidate, stops the whole run.
     - "joint": all annotators optimized together in one search. A candidate's
       score is its count of cutoffs satisfied; ties break on whichever eligible
-      candidate is encountered first. `tanimoto_cutoff` is a hard gate in both
-      modes, in the direction set by `tanimoto_direction`, but is never counted
-      toward this total.
+      candidate is encountered first.
+    - "weighted": all annotators optimized together as one scalarized score,
+      `sum(spec.weight * value)` per annotator, with `value` negated first for
+      any `direction="lower"` annotator - so maximizing this sum always pushes
+      every annotator toward its own better direction, regardless of mix.
+      `weight` comes from `AnnotatorSpec.weight` (default 1.0), and is otherwise
+      unused by every mode. No cross-annotator normalization is applied, so
+      weight magnitudes should be chosen relative to each annotator's own scale
+      (e.g. a 0-1 QED score needs a much larger weight than a score in the
+      hundreds to have comparable pull). A candidate any weighted annotator
+      can't score is ineligible to win that round (its total is NaN).
+
+    `tanimoto_cutoff` is a hard gate in every mode, in the direction set by
+    `tanimoto_direction`, but is never counted toward any mode's own score.
 
     Parameters
     ----------
@@ -55,11 +67,11 @@ def hill_climb(
         `GeneratorPool`).
     annotators : list[AnnotatorSpec]
         At least one. In "sequential" mode, list order is the priority order.
-    mode : {"joint", "sequential"}
-        How annotators combine. No default - with a single annotator the two
-        modes diverge sharply (sequential maximizes/minimizes it directly;
-        joint only checks pass/fail against its cutoff and picks an eligible
-        candidate arbitrarily), so the choice is never silently assumed.
+    mode : {"joint", "sequential", "weighted"}
+        How annotators combine. No default - with a single annotator the modes
+        can still diverge sharply (sequential/weighted maximize or minimize it
+        directly; joint only checks pass/fail against its cutoff and picks an
+        eligible candidate arbitrarily), so the choice is never silently assumed.
     seed_smiles : str, optional
         SMILES of the starting molecule. If `None`, the first round's winner is
         unconditionally the new best.
@@ -89,28 +101,31 @@ def hill_climb(
     summary : pandas.DataFrame
         One row per round attempted, with columns `round`, `smiles`, `score`,
         `is_new_best`, `active_annotator_id` (the annotator that round was
-        driving; `None` for every "joint"-mode row).
+        driving; `None` for every "joint"/"weighted"-mode row).
     candidates_by_round : dict[int, pandas.DataFrame]
         Every candidate considered each round (round 0 is the seed, if given),
         continuously numbered across stage boundaries in "sequential" mode.
         Columns: `smiles`, `source`, one column per `annotators` entry's
-        `annotator_id`, `cutoffs_satisfied`, `tanimoto_to_seed` (only if a
-        seed was given; always against `seed_smiles` itself, never the
-        rolling best-so-far molecule), and `tanimoto_to_original_seed` (only
-        if `original_seed_smiles` was given).
+        `annotator_id`, `cutoffs_satisfied`, `weighted_score` (both always
+        present, regardless of `mode`), `tanimoto_to_seed` (only if a seed was
+        given; always against `seed_smiles` itself, never the rolling
+        best-so-far molecule), and `tanimoto_to_original_seed` (only if
+        `original_seed_smiles` was given).
 
     Raises
     ------
     ValueError
         If `annotators` is empty, has duplicate or reserved `annotator_id`
-        values, `mode` isn't "joint"/"sequential", `tanimoto_direction` isn't
-        "higher"/"lower", `tanimoto_cutoff` is given without a seed, or an
+        values, `mode` isn't "joint"/"sequential"/"weighted", `tanimoto_direction`
+        isn't "higher"/"lower", `tanimoto_cutoff` is given without a seed, or an
         entering candidate can't be scored by the annotator whose stage it's
         entering.
     """
     _validate_annotators(annotators)
-    if mode not in ("joint", "sequential"):
-        raise ValueError(f"mode must be 'joint' or 'sequential', got {mode!r}")
+    if mode not in ("joint", "sequential", "weighted"):
+        raise ValueError(
+            f"mode must be 'joint', 'sequential', or 'weighted', got {mode!r}"
+        )
     if tanimoto_direction not in ("higher", "lower"):
         raise ValueError(
             f"tanimoto_direction must be 'higher' or 'lower', got {tanimoto_direction!r}"
@@ -142,10 +157,15 @@ def hill_climb(
         best_row = {
             spec.annotator_id: seed_row[spec.annotator_id] for spec in annotators
         }
-        active_id = None if mode == "joint" else annotators[0].annotator_id
-        best_score = (
-            seed_row["cutoffs_satisfied"] if mode == "joint" else seed_row[active_id]
+        active_id = (
+            None if mode in ("joint", "weighted") else annotators[0].annotator_id
         )
+        if mode == "joint":
+            best_score = seed_row["cutoffs_satisfied"]
+        elif mode == "weighted":
+            best_score = seed_row["weighted_score"]
+        else:
+            best_score = seed_row[active_id]
         history.append(
             {
                 "round": 0,
@@ -159,6 +179,20 @@ def hill_climb(
 
     if mode == "joint":
         stage_history, stage_candidates = _run_joint(
+            generator,
+            annotators,
+            seed_smiles,
+            original_seed_smiles,
+            n_rounds,
+            tolerance,
+            tanimoto_cutoff,
+            tanimoto_direction,
+            best_smiles=seed_smiles,
+            best_score=best_score,
+            best_row=best_row,
+        )
+    elif mode == "weighted":
+        stage_history, stage_candidates = _run_weighted(
             generator,
             annotators,
             seed_smiles,
@@ -339,6 +373,24 @@ def _cutoffs_satisfied_count(
     )
 
 
+def _weighted_score(
+    scores_row: dict[str, float], annotators: list[AnnotatorSpec]
+) -> float:
+    """Sum of weight * signed value ("lower"-direction values are negated first).
+
+    A NaN from any annotator propagates to the whole sum, which sorts and
+    compares last everywhere else in this module - the same "missing always
+    fails" rule `_cutoff_satisfied` already applies, with no special-casing
+    needed here.
+    """
+    total = 0.0
+    for spec in annotators:
+        value = scores_row[spec.annotator_id]
+        signed = value if spec.direction == "higher" else -value
+        total += spec.weight * signed
+    return total
+
+
 def _round_table(
     source_by_smiles: dict[str, str],
     scores: dict[str, dict[str, float]],
@@ -351,6 +403,7 @@ def _round_table(
     for smi, source in source_by_smiles.items():
         row = {"smiles": smi, "source": source, **scores[smi]}
         row["cutoffs_satisfied"] = _cutoffs_satisfied_count(scores[smi], annotators)
+        row["weighted_score"] = _weighted_score(scores[smi], annotators)
         if tanimoto is not None:
             row["tanimoto_to_seed"] = tanimoto.get(smi, float("nan"))
         if original_seed_tanimoto is not None:
@@ -365,22 +418,24 @@ def _sort_round_table(
     round_table: pd.DataFrame,
     active_annotator_id: str | None,
     winner_direction: Direction | None,
+    sort_column: str = "cutoffs_satisfied",
 ) -> pd.DataFrame:
     """Order a round's candidates best-first, by whatever that round is optimizing.
 
     Sequential mode (`active_annotator_id` given): that annotator's own column,
-    ascending if its direction is "lower", else descending. Joint mode
-    (`active_annotator_id` is None): `cutoffs_satisfied` descending - the same
-    column joint mode's own `pick_winner` already uses via `idxmax`. NaN in the
-    sort column always sorts last (pandas default), so a candidate the active
-    annotator couldn't score is never treated as "best".
+    ascending if its direction is "lower", else descending. Joint/weighted mode
+    (`active_annotator_id` is None): `sort_column` descending - `cutoffs_satisfied`
+    for joint mode, `weighted_score` for weighted mode; the same column that
+    mode's own `pick_winner` already uses via `idxmax`. NaN in the sort column
+    always sorts last (pandas default), so a candidate the active annotator
+    couldn't score is never treated as "best".
     """
     if round_table.empty:
         return round_table
     if active_annotator_id is not None:
         column, ascending = active_annotator_id, winner_direction == "lower"
     else:
-        column, ascending = "cutoffs_satisfied", False
+        column, ascending = sort_column, False
     return round_table.sort_values(
         column, ascending=ascending, kind="stable"
     ).reset_index(drop=True)
@@ -426,8 +481,9 @@ def _run_rounds(
     winner_direction: Direction | None,
     active_annotator_id: str | None,
     active_cutoff: float | None = None,
+    sort_column: str = "cutoffs_satisfied",
 ) -> tuple[list[dict], dict[int, pd.DataFrame], str | None, float, dict[str, float]]:
-    """Shared loop: generate -> score -> pick_winner -> compare. Used by both modes."""
+    """Shared loop: generate -> score -> pick_winner -> compare. Used by every mode."""
     history = []
     candidates_by_round: dict[int, pd.DataFrame] = {}
 
@@ -475,7 +531,7 @@ def _run_rounds(
             joined_source, scores, annotators, tanimoto, original_seed_tanimoto
         )
         round_table = _sort_round_table(
-            round_table, active_annotator_id, winner_direction
+            round_table, active_annotator_id, winner_direction, sort_column
         )
         candidates_by_round[round_num] = round_table
 
@@ -581,6 +637,48 @@ def _run_joint(
         pick_winner=pick_winner,
         winner_direction=None,
         active_annotator_id=None,
+    )
+    return history, candidates_by_round
+
+
+def _run_weighted(
+    generator,
+    annotators: list[AnnotatorSpec],
+    seed_smiles: str | None,
+    original_seed_smiles: str | None,
+    n_rounds: int,
+    tolerance: float,
+    tanimoto_cutoff: float | None,
+    tanimoto_direction: Direction,
+    best_smiles: str | None,
+    best_score: float,
+    best_row: dict[str, float],
+) -> tuple[list[dict], dict[int, pd.DataFrame]]:
+    def pick_winner(round_table: pd.DataFrame):
+        mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+        mask &= round_table["weighted_score"].notna()
+        eligible = round_table[mask]
+        if eligible.empty:
+            return None
+        idx = eligible["weighted_score"].idxmax()
+        row = eligible.loc[idx]
+        return row["smiles"], row["weighted_score"], _row_values(row, annotators)
+
+    history, candidates_by_round, _, _, _ = _run_rounds(
+        generator,
+        annotators,
+        seed_smiles,
+        original_seed_smiles,
+        n_rounds,
+        tolerance,
+        start_round=1,
+        best_smiles=best_smiles,
+        best_score=best_score,
+        best_row=best_row,
+        pick_winner=pick_winner,
+        winner_direction=None,
+        active_annotator_id=None,
+        sort_column="weighted_score",
     )
     return history, candidates_by_round
 

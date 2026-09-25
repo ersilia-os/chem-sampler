@@ -200,3 +200,42 @@ def test_load_annotators_rejects_duplicate_annotator_id(tmp_path):
 
     with pytest.raises(ValueError, match="duplicate"):
         load_annotators(str(path))
+
+
+def test_load_annotators_weight_defaults_to_one_when_column_missing(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert [spec.weight for spec in specs] == [1.0, 1.0]
+
+
+def test_load_annotators_parses_weight_column(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction", "weight"],
+        [["qed", "0.3", "higher", "2.5"], ["eos4zfy", "50", "lower", ""]],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert specs[0].weight == 2.5
+    assert specs[1].weight == 1.0  # blank cell falls back to the default
+
+
+def test_load_annotators_rejects_negative_weight(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction", "weight"],
+        [["qed", "0.3", "higher", "-1"]],
+    )
+
+    with pytest.raises(ValueError, match="weight"):
+        load_annotators(str(path))

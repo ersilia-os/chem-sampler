@@ -27,12 +27,16 @@ class AnnotatorSpec:
         `float("-inf")`/`float("inf")` to express "no real floor/ceiling".
     direction : {"higher", "lower"}
         "higher" is satisfied by `value >= cutoff`; "lower" by `value <= cutoff`.
+    weight : float, optional
+        Relative importance in `hill_climb`'s `mode="weighted"`; ignored by
+        every other mode. Must be >= 0. By default 1.0.
     """
 
     annotator_id: str
     annotator: object
     cutoff: float
     direction: Direction
+    weight: float = 1.0
 
     def __post_init__(self) -> None:
         if self.direction not in ("higher", "lower"):
@@ -41,3 +45,9 @@ class AnnotatorSpec:
             )
         if math.isnan(self.cutoff):
             raise ValueError(f"{self.annotator_id}: cutoff cannot be NaN")
+        if math.isnan(self.weight):
+            raise ValueError(f"{self.annotator_id}: weight cannot be NaN")
+        if self.weight < 0:
+            raise ValueError(
+                f"{self.annotator_id}: weight must be >= 0, got {self.weight}"
+            )
