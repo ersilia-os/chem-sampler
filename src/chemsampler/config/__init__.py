@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 
 from ..hub.client import Backend
-from ..models.annotator import QEDAnnotator
+from ..models.annotator import MolecularWeightAnnotator, QEDAnnotator
 from ..models.chembl import ChemblSampler
 from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
@@ -63,18 +63,18 @@ def load_annotators(
     ----------
     path : str, optional
         CSV with columns `annotator_id, cutoff, direction, column`.
-        `annotator_id` is either "qed" or an Ersilia Hub model id. `cutoff` and
-        `direction` ("higher" or "lower") are required for every row - every
-        annotator is uniform, there is no default. Row order is meaningful: it's
-        the priority order `hill_climb` uses in `mode="sequential"`. `column` is
-        optional and is passed to `HubAnnotator` for models with more than one
-        numeric output. Resolved in order: `path` if given; else
-        `./annotators.csv` in the current working directory, if one exists.
-        Unlike `load_generators`, there is no further built-in default - see
-        Raises.
+        `annotator_id` is one of: "qed" (drug-likeness), "mw" (molecular weight),
+        or an Ersilia Hub model id. `cutoff` and `direction` ("higher" or "lower")
+        are required for every row - every annotator is uniform, there is no
+        default. Row order is meaningful: it's the priority order `hill_climb`
+        uses in `mode="sequential"`. `column` is optional and is passed to
+        `HubAnnotator` for models with more than one numeric output. Resolved in
+        order: `path` if given; else `./annotators.csv` in the current working
+        directory, if one exists. Unlike `load_generators`, there is no further
+        built-in default - see Raises.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubAnnotator` built from this CSV, by default
-        "run_sh". Has no effect on a "qed" row (`QEDAnnotator` has no backend
+        "run_sh". Has no effect on "qed" or "mw" rows (they have no backend
         concept).
 
     Returns
@@ -141,21 +141,25 @@ def build_annotator(
     Parameters
     ----------
     annotator_id : str
-        Either "qed", or an Ersilia Hub model id.
+        One of: "qed" (drug-likeness), "mw" (molecular weight), or an Ersilia Hub
+        model id.
     column : str, optional
-        Output column to score on, passed through to `HubAnnotator`. Ignored
-        for "qed". By default `None` (the model's single numeric output;
+        Output column to score on, passed through to `HubAnnotator`. Ignored for
+        "qed" and "mw". By default `None` (the model's single numeric output;
         required if it returns more than one).
     backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubAnnotator`, by default "run_sh". Ignored for "qed".
+        Passed through to `HubAnnotator`, by default "run_sh". Ignored for "qed"
+        and "mw".
 
     Returns
     -------
-    QEDAnnotator or HubAnnotator
-        `QEDAnnotator` if `annotator_id == "qed"`, otherwise `HubAnnotator`.
+    QEDAnnotator, MolecularWeightAnnotator, or HubAnnotator
+        Corresponding to the `annotator_id`.
     """
     if annotator_id == "qed":
         return QEDAnnotator()
+    if annotator_id == "mw":
+        return MolecularWeightAnnotator()
     return HubAnnotator(annotator_id, column=column, backend=backend)
 
 

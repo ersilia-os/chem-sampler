@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from typing import Literal
@@ -400,17 +401,24 @@ def _run_rounds(
 
     for offset in range(n_rounds):
         round_num = start_round + offset
-        by_model = generator.generate_by_model(best_smiles)
 
-        # Log round info
-        if hasattr(generator, 'generators'):
-            gen_ids = [g.model_id for g in generator.generators]
+        if logger._quiet_mode:
+            logger.logger.setLevel(logging.ERROR)
+        by_model = generator.generate_by_model(best_smiles)
+        if logger._quiet_mode:
+            logger.logger.setLevel(logging.INFO)
+            logger.info(f"Round {round_num}: running...")
         else:
-            gen_ids = list(by_model.keys()) if by_model else ["unknown"]
-        gen_str = ", ".join(gen_ids)
-        ann_ids = [spec.annotator_id for spec in annotators]
-        ann_str = ", ".join(ann_ids)
-        logger.info(f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running...")
+            if hasattr(generator, "generators"):
+                gen_ids = [g.model_id for g in generator.generators]
+            else:
+                gen_ids = list(by_model.keys()) if by_model else ["unknown"]
+            gen_str = ", ".join(gen_ids)
+            ann_ids = [spec.annotator_id for spec in annotators]
+            ann_str = ", ".join(ann_ids)
+            logger.info(
+                f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running..."
+            )
 
         source_by_smiles: dict[str, list[str]] = {}
         for model_id, smiles_list in by_model.items():
@@ -463,7 +471,13 @@ def _run_rounds(
         )
 
         if is_new_best:
-            logger.success(f"Round {round_num}: improved to {round_best_score}")
+            n_candidates = len(round_table)
+            if logger._quiet_mode:
+                logger.success(
+                    f"Round {round_num}: improved to {round_best_score:.2f} ({n_candidates} candidates)"
+                )
+            else:
+                logger.success(f"Round {round_num}: improved to {round_best_score}")
             best_smiles, best_score, best_row = (
                 round_best_smiles,
                 round_best_score,
@@ -569,7 +583,9 @@ def _run_sequential(
             eligible = round_table[mask]
             if eligible.empty:
                 # No eligible candidate, but check for improvement anyway
-                tanimoto_mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+                tanimoto_mask = _tanimoto_eligible(
+                    round_table, tanimoto_cutoff, tanimoto_direction
+                )
                 if tanimoto_mask.any():
                     best_overall = round_table[tanimoto_mask]
                     idx = (
@@ -578,12 +594,21 @@ def _run_sequential(
                         else best_overall[spec.annotator_id].idxmin()
                     )
                     row = best_overall.loc[idx]
-                    logger.warning(
-                        f"{spec.annotator_id}: improved to {row[spec.annotator_id]}, "
-                        f"but did not satisfy cutoff of {spec.cutoff} (direction: {spec.direction}). "
-                        "Continuing to next round."
+                    if logger._quiet_mode:
+                        logger.warning(
+                            f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} (cutoff {spec.cutoff} not met)"
+                        )
+                    else:
+                        logger.warning(
+                            f"{spec.annotator_id}: improved to {row[spec.annotator_id]}, "
+                            f"but did not satisfy cutoff of {spec.cutoff} (direction: {spec.direction}). "
+                            "Continuing to next round."
+                        )
+                    return (
+                        row["smiles"],
+                        row[spec.annotator_id],
+                        _row_values(row, annotators),
                     )
-                    return row["smiles"], row[spec.annotator_id], _row_values(row, annotators)
                 return None
             idx = (
                 eligible[spec.annotator_id].idxmax()

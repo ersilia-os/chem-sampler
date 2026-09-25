@@ -1,5 +1,39 @@
 from rdkit import Chem
-from rdkit.Chem import Descriptors
+from rdkit.Chem import Crippen, Descriptors
+
+
+class MolecularWeightAnnotator:
+    """
+    Molecular weight scorer using RDKit. Computed locally - no Ersilia model or
+    network dependency.
+
+    Scores are in Daltons (g/mol). Use with direction="higher" (cutoff sets minimum)
+    or direction="lower" (cutoff sets maximum).
+
+    Example: For drug-like MW range of 250-450 Da, use two annotators or set
+    direction="higher" with cutoff=250 to enforce minimum.
+    """
+
+    def score(self, smiles_list: list[str]) -> dict[str, float]:
+        """
+        Score a list of SMILES by molecular weight.
+
+        Parameters
+        ----------
+        smiles_list : list[str]
+            SMILES strings to score.
+
+        Returns
+        -------
+        dict[str, float]
+            Mapping from input SMILES to its molecular weight in Da.
+        """
+        scores = {}
+        for smi in smiles_list:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                scores[smi] = Crippen.MolWt(mol)
+        return scores
 
 
 class QEDAnnotator:

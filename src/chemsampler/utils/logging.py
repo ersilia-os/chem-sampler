@@ -24,14 +24,25 @@ class Logger:
         self.logger = logging.getLogger("chemsampler")
         self.logger.setLevel(logging.INFO)
         self.logger.handlers.clear()
-        handler = RichHandler(
+        self._handler = RichHandler(
             rich_tracebacks=True,
             markup=False,
             log_time_format="%H:%M:%S",
             show_path=False,
         )
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        self.logger.addHandler(handler)
+        self._handler.setFormatter(logging.Formatter("%(message)s"))
+        self.logger.addHandler(self._handler)
+        self._quiet_mode = False
+
+    def set_quiet_mode(self, quiet: bool = True):
+        """Toggle quiet mode: hides timestamps and log levels."""
+        self._quiet_mode = quiet
+        if quiet:
+            self._handler.show_time = False
+            self._handler.show_level = False
+        else:
+            self._handler.show_time = True
+            self._handler.show_level = True
 
     def debug(self, text):
         self.logger.debug(text)

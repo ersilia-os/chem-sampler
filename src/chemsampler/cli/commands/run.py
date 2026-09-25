@@ -65,6 +65,12 @@ from ..create_cli import chemsampler_cli
     type=click.Path(file_okay=False),
     help="Directory to write summary.csv and round<n>.csv into.",
 )
+@click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Show detailed logs with timestamps and all model calls. Default: clean progress output.",
+)
 def run_cmd(
     annotators_path: str | None,
     generators_path: str | None,
@@ -77,11 +83,19 @@ def run_cmd(
     tanimoto_direction: str,
     backend: str,
     output_dir: str,
+    verbose: bool,
 ) -> None:
     """Generate and score candidate molecules across rounds, saving the result."""
+    import time
+
     from ...config import load_annotators, load_generators
     from ...optimize import hill_climb, write_results
+    from ...utils.logging import logger
 
+    if not verbose:
+        logger.set_quiet_mode(True)
+
+    start_time = time.time()
     try:
         annotators = load_annotators(annotators_path, backend=backend)
         generator = load_generators(generators_path, backend=backend)
@@ -96,6 +110,7 @@ def run_cmd(
             tanimoto_cutoff=tanimoto_cutoff,
             tanimoto_direction=tanimoto_direction,
         )
+        elapsed = time.time() - start_time
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
@@ -111,4 +126,24 @@ def run_cmd(
             f"score={best['score']})",
             fg="green",
         )
+
+        if not verbose:
+            click.echo()
+            runtime_mins = elapsed / 60
+            click.secho(f"Total runtime: {runtime_mins:.1f} min", fg="cyan")
+
+            top_n = min(5, len(summary))
+            top_scores = (
+                summary.nlargest(top_n, "score")
+                if "score" in summary.columns
+                else summary.head(top_n)
+            )
+            if len(top_scores) > 0:
+                click.secho("Top scores:", fg="cyan")
+                for idx, row in top_scores.iterrows():
+                    click.secho(
+                        f"  Round {int(row['round'])}: {row['score']:.2f}",
+                        fg="cyan",
+                    )
+
     click.secho(f"Results written to {output_dir}", fg="green")
