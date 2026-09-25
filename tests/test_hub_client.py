@@ -28,7 +28,7 @@ class FakeErsiliaModel:
 
 @pytest.fixture(autouse=True)
 def fake_ersilia_model(monkeypatch):
-    monkeypatch.setattr("chemsampler.hub.client.ErsiliaModel", FakeErsiliaModel)
+    monkeypatch.setattr("ersilia.ErsiliaModel", FakeErsiliaModel)
 
 
 def test_run_sh_backend_is_default():

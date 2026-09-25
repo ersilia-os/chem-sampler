@@ -401,6 +401,17 @@ def _run_rounds(
     for offset in range(n_rounds):
         round_num = start_round + offset
         by_model = generator.generate_by_model(best_smiles)
+
+        # Log round info
+        if hasattr(generator, 'generators'):
+            gen_ids = [g.model_id for g in generator.generators]
+        else:
+            gen_ids = list(by_model.keys()) if by_model else ["unknown"]
+        gen_str = ", ".join(gen_ids)
+        ann_ids = [spec.annotator_id for spec in annotators]
+        ann_str = ", ".join(ann_ids)
+        logger.info(f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running...")
+
         source_by_smiles: dict[str, list[str]] = {}
         for model_id, smiles_list in by_model.items():
             for smi in smiles_list:

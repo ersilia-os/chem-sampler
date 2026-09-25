@@ -16,8 +16,11 @@ class HubGenerator:
 
     Works with any Hub generative model that takes one compound and returns
     generated molecules in `smi_*` columns. How much of the input survives
-    generation is model-specific: eos9taz and eos6ost rebuild from the input's
-    Murcko scaffold, while eos2401 keeps only small (60-100 Da) ring fragments.
+    generation is model-specific: scaffold-based models rebuild from the input's
+    Murcko scaffold, fragment-growing ones keep only a small ring fragment, and
+    whole-molecule ones edit the input directly. Across the six default
+    generators, mean Tanimoto to the input ranges from about 0.13 to 0.68
+    (benchmark in ersilia-os/ersilia#1919).
 
     Parameters
     ----------

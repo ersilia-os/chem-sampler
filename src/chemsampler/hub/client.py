@@ -4,7 +4,6 @@ import tempfile
 from typing import Literal
 
 import pandas as pd
-from ersilia import ErsiliaModel
 
 from ..utils.logging import logger
 
@@ -33,7 +32,19 @@ class HubModel:
             raise ValueError(f"backend must be 'ersilia' or 'run_sh', got {backend!r}")
         self.model_id = model_id
         self.backend = backend
-        self.model = ErsiliaModel(model=model_id)
+        self._ersilia_model = None
+
+    def _get_ersilia_model(self):
+        """Lazily import and create ErsiliaModel only when needed."""
+        if self._ersilia_model is None:
+            from ersilia import ErsiliaModel
+            self._ersilia_model = ErsiliaModel(model=self.model_id)
+        return self._ersilia_model
+
+    @property
+    def model(self):
+        """Access the ErsiliaModel instance (lazily loaded on first access)."""
+        return self._get_ersilia_model()
 
     def run(self, smiles_list: list[str]) -> pd.DataFrame:
         """
@@ -62,22 +73,24 @@ class HubModel:
         # reused from a previous call) still leaves close() to run, instead of
         # skipping cleanup and propagating the exception straight out of
         # hill_climb with every prior round's result lost.
+        model = self._get_ersilia_model()
         try:
-            self.model.serve()
+            model.serve()
             with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp_dir:
                 input_csv = os.path.join(tmp_dir, "input.csv")
                 output_csv = os.path.join(tmp_dir, "output.csv")
                 pd.DataFrame({"smiles": smiles_list}).to_csv(input_csv, index=False)
-                self.model.run(input=input_csv, output=output_csv)
+                model.run(input=input_csv, output=output_csv)
                 return pd.read_csv(output_csv)
         finally:
-            self.model.close()
+            model.close()
 
     def _run_via_run_sh(self, smiles_list: list[str]) -> pd.DataFrame:
         # No server, no port, no session: run.sh is a one-shot subprocess that
         # bakes its own interpreter path in at pack time, so nothing here needs
         # conda activation, a cwd override, or env changes.
-        bundle = self.model.paths["repository"]
+        model = self._get_ersilia_model()
+        bundle = model.paths["repository"]
         if bundle is None:
             raise RuntimeError(
                 f"{self.model_id}: not fetched locally, or fetched but incomplete. "

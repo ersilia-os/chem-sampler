@@ -115,14 +115,14 @@ Generators and annotators can also be loaded from CSVs instead of built by hand:
 ```python
 from chemsampler.config import load_annotators, load_generators
 
-generators = load_generators()  # defaults to ./generators.csv in the cwd, else the 3 validated Hub generators
+generators = load_generators()  # defaults to ./generators.csv in the cwd, else the 6 default Hub generators
 annotators = load_annotators()  # defaults to ./annotators.csv in the cwd
 ```
 
 Both loaders resolve their CSV in the same order: the `path` argument if
 given, then `./generators.csv`/`./annotators.csv` in the current working
-directory. `load_generators` has one further fallback beyond that — the 3
-validated Hub generators — while `load_annotators` raises if nothing is
+directory. `load_generators` has one further fallback beyond that — the 6
+default Hub generators — while `load_annotators` raises if nothing is
 found, since cutoffs and directions are always user-specific, unlike the
 generator list. `load_generators`' `generator_id` column takes either an
 Ersilia model id, or the literal `"chembl"` to opt into `ChemblSampler` — the
@@ -153,7 +153,7 @@ chemsampler annotate --annotators my_annotators.csv --smiles "CCO"
 
 `--annotators`/`--generators` fall back to `./annotators.csv`/`./generators.csv`
 in the working directory if omitted; `--generators` falls back further still,
-to the shipped 3-generator CSV. `--backend` picks between `"ersilia"` and
+to the shipped 6-generator CSV. `--backend` picks between `"ersilia"` and
 `"run_sh"` for every Hub-backed generator and annotator in the run — see
 [Backends](#backends) above for what that means.
 Run `chemsampler run --help`/`chemsampler annotate --help` for the full

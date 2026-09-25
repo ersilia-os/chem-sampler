@@ -20,7 +20,7 @@ from ..create_cli import chemsampler_cli
     default=None,
     type=click.Path(exists=True, dir_okay=False),
     help="CSV with a generator_id column. Falls back to ./generators.csv in "
-    "the cwd, then the 3 validated Hub generators.",
+    "the cwd, then the 6 default Hub generators.",
 )
 @click.option(
     "--mode",
