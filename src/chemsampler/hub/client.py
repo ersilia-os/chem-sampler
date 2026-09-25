@@ -14,17 +14,27 @@ class HubModel:
     """
     Thin wrapper for running an Ersilia Model Hub model on a list of SMILES.
 
+    Two backends are available:
+
+    - **"run_sh" (default)**: Shells out directly to the model's bundled run.sh
+      script. Requires: model directory at CHEMSAMPLER_MODELS_DIR/model_id
+      (default: ~/eos/dest/model_id) with run.sh at model/framework/run.sh.
+      No persistent server, no port/process contention, much faster startup.
+      Avoids Ersilia initialization entirely. Use this unless the model isn't
+      conda-packed or isn't fetched locally.
+
+    - **"ersilia"**: Uses Ersilia's serve/run/close API over HTTP. Requires:
+      Ersilia installed and the model already fetched via `ersilia fetch`.
+      Slower startup (server initialization) but works for any Ersilia model
+      (Docker, conda, or other packaging). Use this if the model isn't
+      conda-packed or for models fetched via Ersilia directly.
+
     Parameters
     ----------
     model_id : str
         Ersilia identifier of the model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
-        How to run the model, by default "run_sh": shells out to the model's
-        bundled `run.sh` directly, no persistent server, so it sidesteps the
-        orphaned-process and port-contention failures the "ersilia" backend
-        can hit under sustained use. Only works for a model that is locally
-        fetched and conda-packed; use "ersilia" (serve/run/close over HTTP)
-        for a model that isn't fetched yet or isn't conda-packed.
+        Which backend to use, by default "run_sh".
     """
 
     def __init__(self, model_id: str, backend: Backend = "run_sh"):

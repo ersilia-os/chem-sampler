@@ -97,12 +97,21 @@ first use, or rebuilt from scratch with `python -m chemsampler.data.chembl`.
 
 ### Backends
 
-`HubGenerator` and `HubAnnotator` default to `backend="run_sh"`: it shells out
-directly to a model's bundled `run.sh`, with no persistent server, avoiding the
-orphaned-process and port-contention issues sustained use can otherwise hit —
-but it only works for a model that's already fetched locally and conda-packed.
-Pass `backend="ersilia"` instead for a model that isn't fetched yet or isn't
-conda-packed; it serves the model over HTTP (`ersilia serve`/`run`/`close`):
+Two backends are available for running models:
+
+**`run_sh` (default)**: Shells out directly to a model's bundled `run.sh` script.
+- **Requires:** Model directory at `$CHEMSAMPLER_MODELS_DIR/{model_id}` (default: `~/eos/dest/{model_id}`)
+- **No:** persistent server, ports, or Ersilia initialization
+- **Fast:** minimal startup overhead
+- **Limitation:** only works for conda-packed models fetched locally
+
+**`ersilia`**: Uses Ersilia's HTTP API (`ersilia serve`/`run`/`close`).
+- **Requires:** Ersilia installed; model fetched via `ersilia fetch`
+- **Works:** with any Ersilia model (Docker, conda, or other packaging)
+- **Cost:** slower startup (server initialization) and process management overhead
+
+Use `run_sh` by default. Use `ersilia` only for models not conda-packed or not
+locally available:
 
 ```python
 HubGenerator("eos9taz", backend="ersilia")
