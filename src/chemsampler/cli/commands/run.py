@@ -114,6 +114,11 @@ def run_cmd(
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
+    except KeyboardInterrupt:
+        click.secho("\nInterrupted! Saving partial results...", fg="yellow")
+        write_results(summary, candidates_by_round, output_dir)
+        click.secho(f"Partial results written to {output_dir}", fg="yellow")
+        sys.exit(0)
 
     write_results(summary, candidates_by_round, output_dir)
 

@@ -251,6 +251,37 @@ def write_results(
         )
 
 
+def write_results_incremental(
+    summary: list[dict],
+    candidates_by_round: dict[int, pd.DataFrame],
+    output_dir: str,
+) -> None:
+    """
+    Write partial `hill_climb()` results incrementally during a run.
+
+    Use after each stage completes to save progress; call `write_results()` at the
+    end with the final DataFrame. This allows partial results to survive interruption.
+
+    Parameters
+    ----------
+    summary : list[dict]
+        In-progress history list from `hill_climb()`.
+    candidates_by_round : dict[int, pandas.DataFrame]
+        Candidates collected so far.
+    output_dir : str
+        Same as `write_results()`.
+    """
+    if not summary:
+        return
+    os.makedirs(output_dir, exist_ok=True)
+    summary_df = pd.DataFrame(summary)
+    summary_df.to_csv(os.path.join(output_dir, "summary.csv"), index=False)
+    for round_num, round_table in candidates_by_round.items():
+        round_table.to_csv(
+            os.path.join(output_dir, f"round{round_num}.csv"), index=False
+        )
+
+
 def _validate_annotators(annotators: list[AnnotatorSpec]) -> None:
     """Check the list-level invariants hill_climb depends on."""
     if not annotators:
