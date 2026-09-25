@@ -394,6 +394,7 @@ def _run_rounds(
     pick_winner,
     winner_direction: Direction | None,
     active_annotator_id: str | None,
+    active_cutoff: float | None = None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame], str | None, float, dict[str, float]]:
     """Shared loop: generate -> score -> pick_winner -> compare. Used by both modes."""
     history = []
@@ -483,6 +484,23 @@ def _run_rounds(
                 round_best_score,
                 round_best_row,
             )
+
+            if (
+                active_cutoff is not None
+                and winner_direction is not None
+                and math.isfinite(active_cutoff)
+            ):
+                cutoff_met = (
+                    round_best_score >= active_cutoff
+                    if winner_direction == "higher"
+                    else round_best_score <= active_cutoff
+                )
+                if cutoff_met:
+                    logger.info(
+                        f"{active_annotator_id}: cutoff {active_cutoff} satisfied, "
+                        "stopping this stage."
+                    )
+                    break
         else:
             logger.info(f"Round {round_num}: no improvement, stopping.")
             break
@@ -638,6 +656,7 @@ def _run_sequential(
             pick_winner=pick_winner,
             winner_direction=spec.direction,
             active_annotator_id=spec.annotator_id,
+            active_cutoff=spec.cutoff,
         )
         history.extend(stage_history)
         candidates_by_round.update(stage_candidates)
