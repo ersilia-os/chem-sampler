@@ -568,6 +568,22 @@ def _run_sequential(
                 )
             eligible = round_table[mask]
             if eligible.empty:
+                # No eligible candidate, but check for improvement anyway
+                tanimoto_mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+                if tanimoto_mask.any():
+                    best_overall = round_table[tanimoto_mask]
+                    idx = (
+                        best_overall[spec.annotator_id].idxmax()
+                        if spec.direction == "higher"
+                        else best_overall[spec.annotator_id].idxmin()
+                    )
+                    row = best_overall.loc[idx]
+                    logger.warning(
+                        f"{spec.annotator_id}: improved to {row[spec.annotator_id]}, "
+                        f"but did not satisfy cutoff of {spec.cutoff} (direction: {spec.direction}). "
+                        "Continuing to next round."
+                    )
+                    return row["smiles"], row[spec.annotator_id], _row_values(row, annotators)
                 return None
             idx = (
                 eligible[spec.annotator_id].idxmax()

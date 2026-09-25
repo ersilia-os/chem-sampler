@@ -306,14 +306,18 @@ def test_sequential_mode_own_cutoff_gates_its_own_stage():
         generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
     )
 
-    assert list(summary["round"]) == [0]
-    assert candidates_by_round[1].iloc[0]["cutoffs_satisfied"] == 0
+    # With new behavior: improvement (1.0→2.0) is recorded even if cutoff (5.0) not met
+    assert list(summary["round"]) == [0, 1]
+    assert summary.iloc[1]["score"] == 2.0  # Round 1 improved
+    assert candidates_by_round[1].iloc[0]["cutoffs_satisfied"] == 0  # But didn't satisfy cutoff
 
 
-def test_sequential_stage_with_no_eligible_candidate_stops_entire_run():
+def test_sequential_stage_with_no_eligible_candidate_but_improvement_continues():
+    # Test that improvement without meeting cutoff still advances to next stage
     a_scores = {"CCO": 1.0, "CCC": 2.0}
-    b_scores = {"CCO": 1.0, "CCC": 2.0}
-    generator = StubGenerator([["CCC"]])
+    b_scores = {"CCO": 1.0, "CCC": 3.0}
+    # First round generates CCC for stage a, second round repeats (no improvement, done)
+    generator = StubGenerator([["CCC"], ["CCC"]])
     annotators = [
         AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=5.0, direction="higher"),
         AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=0.0, direction="higher"),
@@ -323,8 +327,12 @@ def test_sequential_stage_with_no_eligible_candidate_stops_entire_run():
         generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
     )
 
-    # Stage "a" never clears its own cutoff, so stage "b" never starts.
-    assert list(summary["active_annotator_id"]) == ["a"]
+    # Stage "a" improves (1.0 → 2.0) but doesn't clear its cutoff (5.0).
+    # With its n_rounds budget spent, stage "b" starts and improves further (2.0 → 3.0).
+    assert list(summary["active_annotator_id"]) == ["a", "a", "b"]
+    assert summary.iloc[0]["score"] == 1.0  # Seed
+    assert summary.iloc[1]["score"] == 2.0  # Stage a improved from seed
+    assert summary.iloc[2]["score"] == 3.0  # Stage b improved further
 
 
 def test_sequential_stage_with_no_improvement_but_entry_eligible_moves_to_next_stage():
