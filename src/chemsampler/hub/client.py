@@ -88,32 +88,28 @@ class HubModel:
     def _run_via_run_sh(self, smiles_list: list[str]) -> pd.DataFrame:
         # No server, no port, no session: run.sh is a one-shot subprocess that
         # bakes its own interpreter path in at pack time, so nothing here needs
-        # conda activation, a cwd override, or env changes.
-        model = self._get_ersilia_model()
-        bundle = model.paths["repository"]
-        if bundle is None:
-            raise RuntimeError(
-                f"{self.model_id}: not fetched locally, or fetched but incomplete. "
-                "Fetch it first, or use backend='ersilia'."
-            )
+        # conda activation, a cwd override, or env changes. Avoids Ersilia entirely.
+        models_dir = os.path.expanduser(
+            os.getenv("CHEMSAMPLER_MODELS_DIR", "~/eos/dest")
+        )
+        bundle = os.path.join(models_dir, self.model_id)
 
-        service_class_path = os.path.join(bundle, "service_class.txt")
-        if not os.path.exists(service_class_path):
+        if not os.path.isdir(bundle):
             raise RuntimeError(
-                f"{self.model_id}: service_class.txt not found under {bundle}. Run it "
-                "once with backend='ersilia' so ersilia can determine its packaging, "
-                "then retry with backend='run_sh'."
-            )
-        with open(service_class_path) as f:
-            service_class = f.read().strip()
-        if service_class != "conda":
-            raise RuntimeError(
-                f"{self.model_id}: backend='run_sh' only supports conda-packed models "
-                f"(found {service_class!r}); use backend='ersilia' instead."
+                f"{self.model_id}: not found at {bundle}. "
+                f"Set CHEMSAMPLER_MODELS_DIR or fetch it to ~/eos/dest, "
+                "or use backend='ersilia'."
             )
 
         framework_dir = os.path.join(bundle, "model", "framework")
         run_sh_path = os.path.join(framework_dir, "run.sh")
+
+        if not os.path.isfile(run_sh_path):
+            raise RuntimeError(
+                f"{self.model_id}: run.sh not found at {run_sh_path}. "
+                "Model may not be fully fetched or conda-packed. "
+                "Use backend='ersilia' or fetch the model first."
+            )
         app_dir = os.path.join(bundle, "app")
 
         with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp_dir:

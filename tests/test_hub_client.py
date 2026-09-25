@@ -53,9 +53,11 @@ def test_ersilia_backend_closes_even_if_serve_fails():
 
 
 def test_run_sh_happy_path(tmp_path, monkeypatch):
-    bundle = tmp_path
+    models_dir = tmp_path / "models"
+    bundle = models_dir / "fake-model"
     (bundle / "model" / "framework").mkdir(parents=True)
-    (bundle / "service_class.txt").write_text("conda")
+    (bundle / "app").mkdir(parents=True)
+    (bundle / "model" / "framework" / "run.sh").write_text("#!/bin/bash\necho ok")
 
     calls = []
 
@@ -65,10 +67,9 @@ def test_run_sh_happy_path(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
+    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
     model = HubModel("fake-model", backend="run_sh")
-    model.model.paths = {"repository": str(bundle)}
-
     df = model.run(["C"])
 
     assert len(calls) == 1
@@ -80,42 +81,40 @@ def test_run_sh_happy_path(tmp_path, monkeypatch):
     assert df["score"].tolist() == [1.0]
 
 
-def test_run_sh_rejects_non_conda_service_class(tmp_path):
-    (tmp_path / "service_class.txt").write_text("docker")
+def test_run_sh_raises_when_run_sh_missing(tmp_path, monkeypatch):
+    models_dir = tmp_path / "models"
+    bundle = models_dir / "fake-model"
+    (bundle / "model" / "framework").mkdir(parents=True)
+    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
     model = HubModel("fake-model", backend="run_sh")
-    model.model.paths = {"repository": str(tmp_path)}
 
-    with pytest.raises(RuntimeError, match="conda-packed"):
+    with pytest.raises(RuntimeError, match="run.sh not found"):
         model.run(["C"])
 
 
-def test_run_sh_raises_when_service_class_missing(tmp_path):
+def test_run_sh_raises_when_bundle_missing(monkeypatch):
+    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", "/nonexistent")
+
     model = HubModel("fake-model", backend="run_sh")
-    model.model.paths = {"repository": str(tmp_path)}
 
-    with pytest.raises(RuntimeError, match="service_class.txt"):
-        model.run(["C"])
-
-
-def test_run_sh_raises_when_bundle_unresolved():
-    model = HubModel("fake-model", backend="run_sh")
-    model.model.paths = {"repository": None}
-
-    with pytest.raises(RuntimeError, match="not fetched"):
+    with pytest.raises(RuntimeError, match="not found at"):
         model.run(["C"])
 
 
 def test_run_sh_wraps_subprocess_failure(tmp_path, monkeypatch):
-    (tmp_path / "service_class.txt").write_text("conda")
+    models_dir = tmp_path / "models"
+    bundle = models_dir / "fake-model"
+    (bundle / "model" / "framework").mkdir(parents=True)
+    (bundle / "model" / "framework" / "run.sh").write_text("#!/bin/bash")
 
     def fake_run(argv, **kwargs):
         raise subprocess.CalledProcessError(1, argv, output="", stderr="boom")
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
+    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
     model = HubModel("fake-model", backend="run_sh")
-    model.model.paths = {"repository": str(tmp_path)}
 
     with pytest.raises(RuntimeError, match="boom"):
         model.run(["C"])
