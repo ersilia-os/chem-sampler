@@ -1,5 +1,5 @@
 from rdkit import Chem
-from rdkit.Chem import Crippen, Descriptors
+from rdkit.Chem import Descriptors
 
 
 class MolecularWeightAnnotator:
@@ -32,7 +32,7 @@ class MolecularWeightAnnotator:
         for smi in smiles_list:
             mol = Chem.MolFromSmiles(smi)
             if mol is not None:
-                scores[smi] = Crippen.MolWt(mol)
+                scores[smi] = Descriptors.MolWt(mol)
         return scores
 
 
