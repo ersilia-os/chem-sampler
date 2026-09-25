@@ -729,12 +729,20 @@ def _run_sequential(
                 )
             eligible = round_table[mask]
             if eligible.empty:
-                # No eligible candidate, but check for improvement anyway
-                tanimoto_mask = _tanimoto_eligible(
+                # No candidate clears this stage's own cutoff even with floors
+                # intact. Still report an improvement if one exists that respects
+                # every prior floor - floors are a hard invariant and are never
+                # dropped, even in this fallback (own cutoff is still excluded;
+                # that's the whole point of the fallback).
+                floor_mask = _tanimoto_eligible(
                     round_table, tanimoto_cutoff, tanimoto_direction
                 )
-                if tanimoto_mask.any():
-                    best_overall = round_table[tanimoto_mask]
+                for floor_id, floor_value, floor_direction in floors_snapshot:
+                    floor_mask &= _cutoff_satisfied_mask(
+                        round_table[floor_id], floor_value, floor_direction
+                    )
+                if floor_mask.any():
+                    best_overall = round_table[floor_mask]
                     idx = (
                         best_overall[spec.annotator_id].idxmax()
                         if spec.direction == "higher"

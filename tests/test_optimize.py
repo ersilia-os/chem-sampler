@@ -338,6 +338,50 @@ def test_sequential_stage_with_no_eligible_candidate_but_improvement_continues()
     assert summary.iloc[2]["score"] == 3.0  # Stage b improved further
 
 
+def test_sequential_fallback_respects_prior_stage_floor():
+    # "a" achieves a floor of 10.0 in stage 1. In stage 2, no candidate clears
+    # "b"'s (unreachable) cutoff, so the no-eligible-candidate fallback kicks
+    # in. CCN has by far the best "b" value but violates the "a" floor (2.0 <
+    # 10.0); CC has a worse "b" value but respects the floor (12.0 >= 10.0).
+    # The fallback must never trade away the floor, so CC must win, not CCN.
+    a_scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 2.0, "CC": 12.0}
+    b_scores = {"CCO": 1.0, "CCC": 5.0, "CCN": 50.0, "CC": 20.0}
+    generator = StubGenerator([["CCC"], ["CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec(
+            "b", StubAnnotator(b_scores), cutoff=100.0, direction="higher"
+        ),  # unreachable, so stage 2 always falls back
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert summary.iloc[-1]["smiles"] == "CC"
+    assert summary.iloc[-1]["score"] == 20.0
+
+
+def test_sequential_fallback_stops_run_when_nothing_respects_the_floor():
+    # Same shape as above, but both stage-2 candidates violate the "a" floor
+    # (10.0) - there is no floor-respecting candidate to fall back to at all,
+    # so the run must stop rather than return a floor-violating candidate.
+    a_scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 2.0, "CC": 3.0}
+    b_scores = {"CCO": 1.0, "CCC": 5.0, "CCN": 50.0, "CC": 20.0}
+    generator = StubGenerator([["CCC"], ["CCN", "CC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=100.0, direction="higher"),
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert list(summary["active_annotator_id"]) == ["a", "a"]
+    assert summary.iloc[-1]["smiles"] == "CCC"
+
+
 def test_sequential_stage_with_no_improvement_but_entry_eligible_moves_to_next_stage():
     a_scores = {"CCO": 10.0, "CCC": 3.0, "CCN": 15.0}  # CCC is worse than the seed
     b_scores = {"CCO": 0.0, "CCC": 0.0, "CCN": 7.0}
