@@ -2,6 +2,11 @@
 /data/
 tmp/
 .claude/
+/.eosvc/
+/examples/gen-models-audit/results/
+/examples/gen-models-audit/models/
+/examples/gen-models-audit/envs_cpu/
+/examples/gen-models-audit/CLAUDE.md
 
 # Juypter
 .jupyter_ystore.db
