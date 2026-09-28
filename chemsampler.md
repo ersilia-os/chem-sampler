@@ -103,18 +103,33 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 
 3. **Combination mode** — always ask, whatever the number of annotators (the
    CLI requires `--mode` and has no default, and with exactly one annotator
-   the two modes diverge sharply). Explain both. If the user's stated goal
+   the modes diverge sharply). Explain all four. If the user's stated goal
    clearly points to one (e.g. "get the best possible value" with a single
    annotator points to `sequential`), recommend it; the user picks:
    - `sequential` — annotators are optimized one at a time, in priority
-     order (the order the user listed them). Each finished stage's achieved
-     value becomes a hard floor for every later stage. Reproduces plain
+     order (the order the user listed them). Each finished stage's own
+     cutoff becomes a hard floor for every later stage. Reproduces plain
      maximization/minimization when there's a single annotator.
    - `joint` — all annotators optimized simultaneously; a candidate's score
      is how many cutoffs it satisfies. With a single annotator this is a
      threshold + arbitrary pick among passers, not maximization — mention
      this explicitly if the user has only one annotator and seems to expect
      "get the best possible value."
+   - `weighted` — all annotators optimized simultaneously as one scalarized
+     score (`weight * value`, summed, with `direction="lower"` annotators
+     negated first). Needs a `weight` per annotator (default 1.0); flag that
+     weight magnitudes are relative to each annotator's own scale, not
+     normalized, so a 0-1 score and a hundreds-scale score need very
+     different weights to pull comparably.
+   - `incremental` — like `sequential`, but each annotator is nudged only a
+     fraction of the way to its cutoff before moving to the next, cycling
+     through the full list `--n-steps` times (interim targets interpolate
+     linearly between the seed's own score and the cutoff). Needs a seed, a
+     finite cutoff for every annotator, and `--n-steps`. Slower than
+     `sequential` — recommend it only for cases where the user is worried
+     that pushing one annotator all the way before touching the next risks
+     an unrecoverable overshoot on an uncorrelated one (see the "Open
+     questions" note below on annotator correlation).
 
 4. **Seed compound (optional).** Ask for a SMILES. If the user names a
    compound instead of pasting a SMILES, look it up from an authoritative
@@ -209,7 +224,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    apply any silently either: state the value that will be used, so it is
    visible and easy to change (step 10 shows them again in the final
    command):
-   - `--n-rounds` (default 5)
+   - `--n-rounds` (default 5; applies per stage in `sequential` mode, per
+     step in `incremental` mode)
+   - `--n-steps` (only if `--mode incremental` was chosen; no default, must
+     be asked)
    - `--tolerance` (default 0.0)
    - `--backend` (default `run_sh`, which needs the model already fetched
      locally and conda-packed; `ersilia` is the fallback). If `run_sh` fails
@@ -270,3 +288,12 @@ When unsure whether something is the user's call, treat it as theirs and ask.
   Not designed; see session notes.
 - **Final skill location.** `.claude/skills/` (machine-local, gitignored)
   vs. the shared `ersilia-skills` repo — not decided.
+- **Annotator correlation.** Raised 2026-09-25: whether to estimate
+  correlation between annotators' scores before a run, and use it to warn or
+  suggest a mode. Motivating example: MAIP vs. molecular weight looked
+  anti-correlated in one real run (MAIP-only optimization drove MW from 180
+  to over 1000 Da by round 9) — for an anti-correlated pair, `sequential`'s
+  hard floors (or splitting into stages/steps at all, including
+  `incremental`) may be the wrong approach entirely, and `joint`/`weighted`
+  might suit it better. Not scoped, no estimation method chosen; see session
+  notes.

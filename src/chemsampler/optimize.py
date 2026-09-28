@@ -23,10 +23,11 @@ def hill_climb(
     generator,
     annotators: list[AnnotatorSpec],
     *,
-    mode: Literal["joint", "sequential", "weighted"],
+    mode: Literal["joint", "sequential", "weighted", "incremental"],
     seed_smiles: str | None = None,
     original_seed_smiles: str | None = None,
     n_rounds: int = 5,
+    n_steps: int | None = None,
     tolerance: float = 0.0,
     tanimoto_cutoff: float | None = None,
     tanimoto_direction: Direction = "higher",
@@ -58,6 +59,26 @@ def hill_climb(
       (e.g. a 0-1 QED score needs a much larger weight than a score in the
       hundreds to have comparable pull). A candidate any weighted annotator
       can't score is ineligible to win that round (its total is NaN).
+    - "incremental": every annotator is advanced a little at a time instead of
+      all the way to its own cutoff at once. Requires `seed_smiles` and
+      `n_steps`. Cycles through `annotators` in list order, `n_steps` times;
+      each of these `n_steps * len(annotators)` steps is a `sequential`-style
+      stage (same round budget, same early-stop-on-target, same "nothing
+      clears it but something respects every floor" fallback) targeting not
+      the annotator's own `cutoff` but an interim value that interpolates
+      linearly between its seed score and that cutoff: `seed_value +
+      (level / n_steps) * (cutoff - seed_value)`, where `level` is 1 on that
+      annotator's first visit, 2 on its second, and so on - always anchored to
+      the *original* seed score, never to whatever was actually achieved
+      along the way. `level == n_steps` (an annotator's last visit) always
+      lands exactly on its real `cutoff`. Once a step's own interim target is
+      reached, that target (not the achieved value) becomes a hard floor for
+      every later step, exactly as a finished stage's cutoff does in
+      "sequential". Slower than "sequential" (many small stages instead of
+      one per annotator), intended for difficult cases where committing an
+      annotator all the way to its final cutoff before touching the next one
+      risks overshooting in a way another, uncorrelated annotator can't
+      recover from.
 
     `tanimoto_cutoff` is a hard gate in every mode, in the direction set by
     `tanimoto_direction`, but is never counted toward any mode's own score.
@@ -69,15 +90,16 @@ def hill_climb(
         dict[str, list[str]]` (e.g. `HubGenerator`, `ChemblSampler`, or a
         `GeneratorPool`).
     annotators : list[AnnotatorSpec]
-        At least one. In "sequential" mode, list order is the priority order.
-    mode : {"joint", "sequential", "weighted"}
+        At least one. In "sequential" and "incremental" modes, list order is
+        the priority/cycling order.
+    mode : {"joint", "sequential", "weighted", "incremental"}
         How annotators combine. No default - with a single annotator the modes
         can still diverge sharply (sequential/weighted maximize or minimize it
         directly; joint only checks pass/fail against its cutoff and picks an
         eligible candidate arbitrarily), so the choice is never silently assumed.
     seed_smiles : str, optional
         SMILES of the starting molecule. If `None`, the first round's winner is
-        unconditionally the new best.
+        unconditionally the new best. Required if `mode="incremental"`.
     original_seed_smiles : str, optional
         SMILES of the true original molecule, for tracking similarity across a
         manually re-seeded chain of `hill_climb` calls. Adds
@@ -86,7 +108,12 @@ def hill_climb(
         search itself.
     n_rounds : int, optional
         Maximum rounds to run, by default 5. In "sequential" mode this budget
-        applies separately to each stage.
+        applies separately to each stage; in "incremental" mode, separately to
+        each step.
+    n_steps : int, optional
+        Number of interpolation levels per annotator in "incremental" mode -
+        required (and must be >= 1) only for that mode; a `ValueError` if given
+        with any other mode. See the "incremental" description above.
     tolerance : float, optional
         Minimum margin a round must beat the current best by to count as an
         improvement, by default 0.0.
@@ -104,32 +131,47 @@ def hill_climb(
     summary : pandas.DataFrame
         One row per round attempted, with columns `round`, `smiles`, `score`,
         `is_new_best`, `active_annotator_id` (the annotator that round was
-        driving; `None` for every "joint"/"weighted"-mode row).
+        driving; `None` for every "joint"/"weighted"-mode row), and
+        `step_level` (the 1-indexed interpolation level that round belonged
+        to; only present when `mode="incremental"`).
     candidates_by_round : dict[int, pandas.DataFrame]
         Every candidate considered each round (round 0 is the seed, if given),
-        continuously numbered across stage boundaries in "sequential" mode.
-        Columns: `smiles`, `source`, one column per `annotators` entry's
-        `annotator_id`, `cutoffs_satisfied` (always present, regardless of
-        `mode`), `weighted_score` (only present when `mode="weighted"`),
-        `tanimoto_to_seed` (only if a seed was given; always against
-        `seed_smiles` itself, never the rolling best-so-far molecule), and
-        `tanimoto_to_original_seed` (only if `original_seed_smiles` was
-        given).
+        continuously numbered across stage/step boundaries in "sequential" and
+        "incremental" modes. Columns: `smiles`, `source`, one column per
+        `annotators` entry's `annotator_id`, `cutoffs_satisfied` (always
+        present, regardless of `mode`), `weighted_score` (only present when
+        `mode="weighted"`), `tanimoto_to_seed` (only if a seed was given;
+        always against `seed_smiles` itself, never the rolling best-so-far
+        molecule), and `tanimoto_to_original_seed` (only if
+        `original_seed_smiles` was given).
 
     Raises
     ------
     ValueError
         If `annotators` is empty, has duplicate or reserved `annotator_id`
-        values, `mode` isn't "joint"/"sequential"/"weighted", `tanimoto_direction`
-        isn't "higher"/"lower", `tanimoto_cutoff` is given without a seed, or an
-        entering candidate can't be scored by the annotator whose stage it's
-        entering.
+        values, `mode` isn't "joint"/"sequential"/"weighted"/"incremental",
+        `tanimoto_direction` isn't "higher"/"lower", `tanimoto_cutoff` is given
+        without a seed, an entering candidate can't be scored by the annotator
+        whose stage it's entering, `mode="incremental"` is given without
+        `seed_smiles` or a valid `n_steps` (>= 1), `n_steps` is given with any
+        other mode, or (in "incremental" mode) any annotator has a non-finite
+        cutoff or can't score the seed.
     """
     _validate_annotators(annotators)
-    if mode not in ("joint", "sequential", "weighted"):
+    if mode not in ("joint", "sequential", "weighted", "incremental"):
         raise ValueError(
-            f"mode must be 'joint', 'sequential', or 'weighted', got {mode!r}"
+            "mode must be 'joint', 'sequential', 'weighted', or 'incremental', "
+            f"got {mode!r}"
         )
+    if mode == "incremental":
+        if seed_smiles is None:
+            raise ValueError("mode='incremental' requires seed_smiles")
+        if n_steps is None or n_steps < 1:
+            raise ValueError(
+                f"mode='incremental' requires n_steps >= 1, got {n_steps!r}"
+            )
+    elif n_steps is not None:
+        raise ValueError("n_steps is only used by mode='incremental'")
     if tanimoto_direction not in ("higher", "lower"):
         raise ValueError(
             f"tanimoto_direction must be 'higher' or 'lower', got {tanimoto_direction!r}"
@@ -162,6 +204,19 @@ def hill_climb(
         best_row = {
             spec.annotator_id: seed_row[spec.annotator_id] for spec in annotators
         }
+        if mode == "incremental":
+            for spec in annotators:
+                if not math.isfinite(spec.cutoff):
+                    raise ValueError(
+                        f"mode='incremental' requires a finite cutoff for every "
+                        f"annotator; {spec.annotator_id!r} has cutoff {spec.cutoff!r}"
+                    )
+                if math.isnan(best_row[spec.annotator_id]):
+                    raise ValueError(
+                        f"{seed_smiles!r} could not be scored by "
+                        f"{spec.annotator_id!r}, required to anchor the "
+                        "mode='incremental' schedule"
+                    )
         active_id = (
             None if mode in ("joint", "weighted") else annotators[0].annotator_id
         )
@@ -171,15 +226,16 @@ def hill_climb(
             best_score = seed_row["weighted_score"]
         else:
             best_score = seed_row[active_id]
-        history.append(
-            {
-                "round": 0,
-                "smiles": seed_smiles,
-                "score": best_score,
-                "is_new_best": True,
-                "active_annotator_id": active_id,
-            }
-        )
+        round0_history = {
+            "round": 0,
+            "smiles": seed_smiles,
+            "score": best_score,
+            "is_new_best": True,
+            "active_annotator_id": active_id,
+        }
+        if mode == "incremental":
+            round0_history["step_level"] = 0
+        history.append(round0_history)
         logger.info(f"Round 0: seed score = {best_score}")
 
     if mode == "joint":
@@ -209,6 +265,20 @@ def hill_climb(
             best_smiles=seed_smiles,
             best_score=best_score,
             best_row=best_row,
+        )
+    elif mode == "incremental":
+        stage_history, stage_candidates = _run_incremental(
+            generator,
+            annotators,
+            seed_smiles,
+            original_seed_smiles,
+            n_rounds,
+            tolerance,
+            tanimoto_cutoff,
+            tanimoto_direction,
+            best_smiles=seed_smiles,
+            best_row=best_row,
+            n_steps=n_steps,
         )
     else:
         stage_history, stage_candidates = _run_sequential(
@@ -352,13 +422,18 @@ def _score_candidates(
     }
 
 
-def _cutoff_satisfied(value: float, spec: AnnotatorSpec) -> bool:
+def _value_satisfies(value: float, cutoff: float, direction: Direction) -> bool:
     """A missing (NaN) value always fails, regardless of how permissive the cutoff is."""
     if value is None or math.isnan(value):
         return False
-    if spec.direction == "higher":
-        return value >= spec.cutoff
-    return value <= spec.cutoff
+    if direction == "higher":
+        return value >= cutoff
+    return value <= cutoff
+
+
+def _cutoff_satisfied(value: float, spec: AnnotatorSpec) -> bool:
+    """`_value_satisfies` against one annotator's own cutoff/direction."""
+    return _value_satisfies(value, spec.cutoff, spec.direction)
 
 
 def _cutoff_satisfied_mask(
@@ -376,6 +451,17 @@ def _cutoffs_satisfied_count(
     return sum(
         _cutoff_satisfied(scores_row[spec.annotator_id], spec) for spec in annotators
     )
+
+
+def _incremental_target(
+    seed_value: float, cutoff: float, level: int, n_steps: int
+) -> float:
+    """Linear interpolation target for one annotator at one step level (1..n_steps).
+
+    Direction-agnostic: works whether `cutoff` is above or below `seed_value`.
+    `level == n_steps` always lands exactly on `cutoff`.
+    """
+    return seed_value + (level / n_steps) * (cutoff - seed_value)
 
 
 def _weighted_score(
@@ -833,5 +919,171 @@ def _run_sequential(
 
         floor_value = spec.cutoff if _cutoff_satisfied(achieved, spec) else achieved
         floors.append((spec.annotator_id, floor_value, spec.direction))
+
+    return history, candidates_by_round
+
+
+def _run_incremental(
+    generator,
+    annotators: list[AnnotatorSpec],
+    seed_smiles: str,
+    original_seed_smiles: str | None,
+    n_rounds: int,
+    tolerance: float,
+    tanimoto_cutoff: float | None,
+    tanimoto_direction: Direction,
+    best_smiles: str,
+    best_row: dict[str, float],
+    n_steps: int,
+) -> tuple[list[dict], dict[int, pd.DataFrame]]:
+    """Like `_run_sequential`, but cycling `annotators` `n_steps` times through
+    interpolated interim targets instead of once through each own cutoff."""
+    history = []
+    candidates_by_round: dict[int, pd.DataFrame] = {}
+    seed_value = dict(best_row)
+    floors: dict[str, tuple[float, Direction]] = {}
+    next_round = 1
+
+    for level in range(1, n_steps + 1):
+        for spec in annotators:
+            target = _incremental_target(
+                seed_value[spec.annotator_id], spec.cutoff, level, n_steps
+            )
+
+            entry_value = best_row.get(spec.annotator_id, float("nan"))
+            if math.isnan(entry_value):
+                raise ValueError(
+                    f"{best_smiles!r} could not be scored by {spec.annotator_id!r} "
+                    "entering its step"
+                )
+            best_score = entry_value
+            entry_ok = _value_satisfies(entry_value, target, spec.direction)
+
+            floors_snapshot = [
+                (aid, floor_value, floor_direction)
+                for aid, (floor_value, floor_direction) in floors.items()
+                if aid != spec.annotator_id
+            ]
+
+            def pick_winner(
+                round_table: pd.DataFrame,
+                spec=spec,
+                target=target,
+                floors_snapshot=floors_snapshot,
+            ):
+                mask = _tanimoto_eligible(
+                    round_table, tanimoto_cutoff, tanimoto_direction
+                )
+                mask &= _cutoff_satisfied_mask(
+                    round_table[spec.annotator_id], target, spec.direction
+                )
+                for floor_id, floor_value, floor_direction in floors_snapshot:
+                    mask &= _cutoff_satisfied_mask(
+                        round_table[floor_id], floor_value, floor_direction
+                    )
+                eligible = round_table[mask]
+                if eligible.empty:
+                    # No candidate clears this step's own target even with floors
+                    # intact. Still report an improvement if one exists that
+                    # respects every prior floor - floors are a hard invariant and
+                    # are never dropped, even in this fallback (own target is
+                    # still excluded; that's the whole point of the fallback).
+                    floor_mask = _tanimoto_eligible(
+                        round_table, tanimoto_cutoff, tanimoto_direction
+                    )
+                    for floor_id, floor_value, floor_direction in floors_snapshot:
+                        floor_mask &= _cutoff_satisfied_mask(
+                            round_table[floor_id], floor_value, floor_direction
+                        )
+                    if floor_mask.any():
+                        best_overall = round_table[floor_mask]
+                        idx = (
+                            best_overall[spec.annotator_id].idxmax()
+                            if spec.direction == "higher"
+                            else best_overall[spec.annotator_id].idxmin()
+                        )
+                        row = best_overall.loc[idx]
+                        if logger._quiet_mode:
+                            logger.warning(
+                                f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} "
+                                f"(step target {target} not met)"
+                            )
+                        else:
+                            logger.warning(
+                                f"{spec.annotator_id}: improved to "
+                                f"{row[spec.annotator_id]}, but did not satisfy "
+                                f"this step's target of {target} (direction: "
+                                f"{spec.direction}). Continuing to next round."
+                            )
+                        return (
+                            row["smiles"],
+                            row[spec.annotator_id],
+                            _row_values(row, annotators),
+                        )
+                    return None
+                idx = (
+                    eligible[spec.annotator_id].idxmax()
+                    if spec.direction == "higher"
+                    else eligible[spec.annotator_id].idxmin()
+                )
+                row = eligible.loc[idx]
+                return (
+                    row["smiles"],
+                    row[spec.annotator_id],
+                    _row_values(row, annotators),
+                )
+
+            (
+                step_history,
+                step_candidates,
+                new_best_smiles,
+                new_best_score,
+                new_best_row,
+            ) = _run_rounds(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                start_round=next_round,
+                best_smiles=best_smiles,
+                best_score=best_score,
+                best_row=best_row,
+                pick_winner=pick_winner,
+                winner_direction=spec.direction,
+                active_annotator_id=spec.annotator_id,
+                active_cutoff=target,
+            )
+            for row in step_history:
+                row["step_level"] = level
+            history.extend(step_history)
+            candidates_by_round.update(step_candidates)
+            next_round += len(step_candidates)
+
+            if new_best_smiles is None:
+                logger.warning(
+                    f"{spec.annotator_id}: no candidate found, stopping the whole run."
+                )
+                return history, candidates_by_round
+
+            if new_best_smiles == best_smiles:
+                if not entry_ok:
+                    logger.warning(
+                        f"{spec.annotator_id}: no candidate satisfies this step's "
+                        "target, stopping the whole run."
+                    )
+                    return history, candidates_by_round
+                achieved = best_score
+            else:
+                achieved = new_best_score
+                best_smiles, best_row = new_best_smiles, new_best_row
+
+            floor_value = (
+                target
+                if _value_satisfies(achieved, target, spec.direction)
+                else achieved
+            )
+            floors[spec.annotator_id] = (floor_value, spec.direction)
 
     return history, candidates_by_round

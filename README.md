@@ -45,6 +45,17 @@ checking a seed's baseline:
   cross-annotator normalization is applied, so pick weight magnitudes relative
   to each annotator's own scale (e.g. a 0-1 QED score needs a much larger
   weight than a score in the hundreds to have comparable pull).
+- `mode="incremental"`: like `sequential`, but each annotator is advanced a
+  little at a time instead of all at once, cycling through `annotators`
+  `n_steps` times. Each visit targets an interim value that interpolates
+  linearly between the seed's own score and that annotator's cutoff (e.g. a
+  seed at MAIP=10 with a cutoff of 300 and `n_steps=10` asks for MAIP>=39 on
+  the first visit, MAIP>=68 on the second, ..., MAIP>=300 on the tenth). Once
+  reached, an interim target becomes a floor for later steps, same as a
+  finished `sequential` stage. Requires `seed_smiles`, `n_steps`, and a
+  finite cutoff for every annotator. Slower than `sequential`, useful for
+  difficult cases where committing one annotator all the way to its cutoff
+  before touching the next risks an unrecoverable overshoot.
 
 ```python
 from chemsampler.models.annotator import QEDAnnotator

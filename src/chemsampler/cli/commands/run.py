@@ -24,7 +24,7 @@ from ..create_cli import chemsampler_cli
 )
 @click.option(
     "--mode",
-    type=click.Choice(["joint", "sequential", "weighted"]),
+    type=click.Choice(["joint", "sequential", "weighted", "incremental"]),
     required=True,
     help="How annotators combine into a round's winner.",
 )
@@ -37,6 +37,13 @@ from ..create_cli import chemsampler_cli
     "--seed-smiles.",
 )
 @click.option("--n-rounds", default=5, show_default=True, type=int)
+@click.option(
+    "--n-steps",
+    default=None,
+    type=int,
+    help="Number of interpolation levels per annotator. Required for "
+    "--mode incremental; unused (and rejected) otherwise.",
+)
 @click.option("--tolerance", default=0.0, show_default=True, type=float)
 @click.option(
     "--tanimoto-cutoff",
@@ -78,6 +85,7 @@ def run_cmd(
     seed_smiles: str | None,
     original_seed_smiles: str | None,
     n_rounds: int,
+    n_steps: int | None,
     tolerance: float,
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
@@ -106,6 +114,7 @@ def run_cmd(
             seed_smiles=seed_smiles,
             original_seed_smiles=original_seed_smiles,
             n_rounds=n_rounds,
+            n_steps=n_steps,
             tolerance=tolerance,
             tanimoto_cutoff=tanimoto_cutoff,
             tanimoto_direction=tanimoto_direction,

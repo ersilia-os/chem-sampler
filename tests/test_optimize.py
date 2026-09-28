@@ -424,6 +424,225 @@ def test_sequential_mode_candidate_missing_active_score_cannot_win():
     assert summary.iloc[-1]["smiles"] == "CCN"
 
 
+# --- incremental mode: interpolated targets, floor-per-level, validation ---
+
+
+def test_incremental_mode_requires_seed_smiles():
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+    ]
+    with pytest.raises(ValueError, match="seed_smiles"):
+        hill_climb(StubGenerator([]), annotators, mode="incremental", n_steps=5)
+
+
+def test_incremental_mode_requires_n_steps():
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+    ]
+    with pytest.raises(ValueError, match="n_steps"):
+        hill_climb(StubGenerator([]), annotators, mode="incremental", seed_smiles="CCO")
+
+    with pytest.raises(ValueError, match="n_steps"):
+        hill_climb(
+            StubGenerator([]),
+            annotators,
+            mode="incremental",
+            seed_smiles="CCO",
+            n_steps=0,
+        )
+
+
+def test_n_steps_rejected_outside_incremental_mode():
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+    ]
+    with pytest.raises(ValueError, match="n_steps"):
+        hill_climb(
+            StubGenerator([["CCC"]]),
+            annotators,
+            mode="sequential",
+            seed_smiles="CCO",
+            n_steps=3,
+        )
+
+
+def test_incremental_mode_requires_finite_cutoff():
+    annotators = [
+        AnnotatorSpec(
+            "a", StubAnnotator({"CCO": 1.0}), cutoff=float("inf"), direction="higher"
+        )
+    ]
+    with pytest.raises(ValueError, match="finite"):
+        hill_climb(
+            StubGenerator([]),
+            annotators,
+            mode="incremental",
+            seed_smiles="CCO",
+            n_steps=5,
+        )
+
+
+def test_incremental_mode_requires_seed_scoreable_by_every_annotator():
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator({}), cutoff=10.0, direction="higher")
+    ]  # "CCO" missing from the score table
+    with pytest.raises(ValueError, match="anchor"):
+        hill_climb(
+            StubGenerator([]),
+            annotators,
+            mode="incremental",
+            seed_smiles="CCO",
+            n_steps=5,
+        )
+
+
+def test_incremental_mode_interpolates_and_cycles_annotators_round_robin():
+    # seed maip=10 -> cutoff 50 (higher); seed mw=100 -> cutoff 60 (lower);
+    # n_steps=2. Level-1 targets: maip 10+(1/2)*(50-10)=30, mw
+    # 100+(1/2)*(60-100)=80. Level-2 targets equal the real cutoffs (50, 60).
+    maip_scores = {
+        "CCO": 10.0,
+        "A1": 29.9,
+        "A2": 30.0,  # round 1 (maip, level 1, target 30): only A2 clears it
+        "A3": 40.0,
+        "A4": 35.0,  # round 2: floor check only (need >= 30)
+        "A5": 49.9,
+        "A6": 50.0,  # round 3 (maip, level 2, target 50): only A6 clears it
+        "A7": 55.0,
+        "A8": 55.0,  # round 4: floor check only (need >= 50)
+    }
+    mw_scores = {
+        "CCO": 100.0,
+        "A1": 90.0,
+        "A2": 85.0,  # round 1: not gated yet, values irrelevant
+        "A3": 80.1,
+        "A4": 80.0,  # round 2 (mw, level 1, target 80): only A4 clears it
+        "A5": 75.0,
+        "A6": 75.0,  # round 3: floor check only (need <= 80)
+        "A7": 60.1,
+        "A8": 60.0,  # round 4 (mw, level 2, target 60): only A8 clears it
+    }
+    generator = StubGenerator([["A1", "A2"], ["A3", "A4"], ["A5", "A6"], ["A7", "A8"]])
+    annotators = [
+        AnnotatorSpec(
+            "maip", StubAnnotator(maip_scores), cutoff=50.0, direction="higher"
+        ),
+        AnnotatorSpec("mw", StubAnnotator(mw_scores), cutoff=60.0, direction="lower"),
+    ]
+
+    summary, _ = hill_climb(
+        generator,
+        annotators,
+        mode="incremental",
+        seed_smiles="CCO",
+        n_rounds=1,
+        n_steps=2,
+    )
+
+    assert list(summary["smiles"]) == ["CCO", "A2", "A4", "A6", "A8"]
+    assert list(summary["active_annotator_id"]) == ["maip", "maip", "mw", "maip", "mw"]
+    assert list(summary["step_level"]) == [0, 1, 1, 2, 2]
+    assert summary.iloc[-1]["score"] == 60.0  # final level lands exactly on mw's cutoff
+
+
+def test_incremental_mode_floor_is_the_target_not_the_achieved_value():
+    # n_steps=1, so each annotator's single visit targets its real cutoff
+    # (maip >= 50.0, mw <= 60.0). "maip" overshoots to 100.0 - but the floor
+    # for "mw"'s step must be the *target* (50.0), not the incidental 100.0.
+    # "Y1" (maip=70.0, mw=55.0) clears a floor of 50.0 and improves on X1's mw
+    # (95.0), but would fail a floor of 100.0, so it only wins if the floor
+    # was computed correctly.
+    maip_scores = {"CCO": 10.0, "X1": 100.0, "X2": 20.0, "Y1": 70.0}
+    mw_scores = {"CCO": 100.0, "X1": 95.0, "Y1": 55.0}
+    generator = StubGenerator([["X1", "X2"], ["Y1"]])
+    annotators = [
+        AnnotatorSpec(
+            "maip", StubAnnotator(maip_scores), cutoff=50.0, direction="higher"
+        ),
+        AnnotatorSpec("mw", StubAnnotator(mw_scores), cutoff=60.0, direction="lower"),
+    ]
+
+    summary, _ = hill_climb(
+        generator,
+        annotators,
+        mode="incremental",
+        seed_smiles="CCO",
+        n_rounds=1,
+        n_steps=1,
+    )
+
+    assert list(summary["smiles"]) == ["CCO", "X1", "Y1"]
+
+
+def test_incremental_mode_stops_whole_run_when_a_step_finds_no_candidates():
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+    ]
+    generator = StubGenerator([[]])
+
+    summary, _ = hill_climb(
+        generator,
+        annotators,
+        mode="incremental",
+        seed_smiles="CCO",
+        n_rounds=1,
+        n_steps=3,
+    )
+
+    assert list(summary["smiles"]) == ["CCO"]
+
+
+def test_incremental_mode_stops_whole_run_when_step_has_no_improvement_and_entry_unmet():
+    a_scores = {"CCO": 1.0, "CCC": 0.5}  # CCC is worse than the seed
+    generator = StubGenerator([["CCC"]])
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=10.0, direction="higher")
+    ]
+
+    summary, _ = hill_climb(
+        generator,
+        annotators,
+        mode="incremental",
+        seed_smiles="CCO",
+        n_rounds=1,
+        n_steps=3,
+    )
+
+    # The failed attempt ("CCC", worse than the seed) is still recorded as an
+    # attempted round, but is_new_best=False and the run stops there - it
+    # never reaches level 2 or 3 (which would need a 2nd/3rd generator round).
+    assert list(summary["smiles"]) == ["CCO", "CCC"]
+    assert list(summary["is_new_best"]) == [True, False]
+    assert list(summary["step_level"]) == [0, 1]
+
+
+def test_step_level_column_only_present_in_incremental_mode():
+    scores = {"CCO": 1.0, "CCC": 2.0}
+    annotators = [
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+    ]
+
+    for mode in ("sequential", "joint", "weighted"):
+        summary, _ = hill_climb(
+            StubGenerator([["CCC"]]),
+            annotators,
+            mode=mode,
+            seed_smiles="CCO",
+            n_rounds=1,
+        )
+        assert "step_level" not in summary.columns
+
+    summary, _ = hill_climb(
+        StubGenerator([["CCC"]]),
+        annotators,
+        mode="incremental",
+        seed_smiles="CCO",
+        n_rounds=1,
+        n_steps=1,
+    )
+    assert "step_level" in summary.columns
+
+
 # --- joint mode: count-based scoring, tie-breaking, tanimoto exclusion ----
 
 
