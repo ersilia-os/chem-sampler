@@ -3,6 +3,7 @@
 tmp/
 .claude/
 /.eosvc/
+/.vscode/
 /examples/gen-models-audit/results/
 /examples/gen-models-audit/models/
 /examples/gen-models-audit/envs_cpu/

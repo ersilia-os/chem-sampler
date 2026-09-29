@@ -2,8 +2,9 @@
 Fetch every generative model from the Ersilia Model Hub catalog.
 
 Pulls the public catalog (https://catalog.ersilia.io/api/models), keeps
-models where Task == "Sampling" and Subtask == "Generation", reports how
-many there are, and for each one: clones its GitHub repo (or pulls it if
+models where Task == "Sampling", Subtask == "Generation" and Status ==
+"Ready" (Archived / In progress models are reported and skipped), reports
+how many there are, and for each one: clones its GitHub repo (or pulls it if
 already cloned) into --path-to-models, then runs `eosvc download --path .`
 inside it to fetch the model's checkpoint(s) from the public eosvc bucket.
 --models overrides this: skips the catalog and processes exactly the given
@@ -34,12 +35,20 @@ def fetch_catalog() -> list[dict]:
 
 
 def filter_generative(models: list[dict]) -> list[dict]:
-    """Keep only Task == "Sampling" and Subtask == "Generation" models."""
-    return [
+    """Keep only Sampling / Generation models whose Status is "Ready".
+
+    Generative models that are not Ready (e.g. Archived, In progress) are
+    printed with their status and left out.
+    """
+    generative = [
         m
         for m in models
         if m.get("Task") == "Sampling" and m.get("Subtask") == "Generation"
     ]
+    for m in generative:
+        if m.get("Status") != "Ready":
+            print(f"  {m['Identifier']}: skipped, Status is {m.get('Status')!r}")
+    return [m for m in generative if m.get("Status") == "Ready"]
 
 
 def clone_or_pull(identifier: str, models_dir: str) -> bool:
@@ -112,7 +121,9 @@ def main():
         print(f"Using {len(generative)} model(s) from --models, skipping catalog")
     else:
         generative = filter_generative(fetch_catalog())
-        print(f"Found {len(generative)} generative (Sampling / Generation) models")
+        print(
+            f"Found {len(generative)} Ready generative (Sampling / Generation) models"
+        )
 
     n_cloned = 0
     n_checkpoints_ok = 0
