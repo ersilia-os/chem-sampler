@@ -14,6 +14,12 @@ Two dependency-spec formats exist across the Ersilia Model Hub:
   simple package installs (e.g. eos4qda pipes a shell script through
   `curl | bash`).
 
+Every build step runs with PYTHONNOUSERSITE=1. Without it pip sees the
+packages in the builder's ~/.local as "already satisfied" and skips them, so
+the env only works on machines that share that home (it breaks on a cluster
+node). After the steps, `pip check` (user site off) warns about requirements
+that are still not installed.
+
 Requires `conda`, `git` (only for cloning, done by script 02) and PyYAML
 (the `audit` extra: `pip install -e ".[audit]"`) on PATH/importable. Fully
 self-contained: no imports from chemsampler.
@@ -34,6 +40,9 @@ DEFAULT_ENVS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "envs_cpu"))
 DOCKERFILE_PY_RE = re.compile(r"-py(\d)(\d+)")
 CONDA_INSTALL_RE = re.compile(r"^\s*conda\s+install\b")
 CONDA_YES_RE = re.compile(r"(^|\s)(-y|--yes)(\s|$)")
+
+# Keep the builder's ~/.local out of every step, see the module docstring.
+ISOLATED_ENV = {**os.environ, "PYTHONNOUSERSITE": "1"}
 
 
 def find_models(models_dir: str, only: list[str] | None) -> list[str]:
@@ -119,7 +128,27 @@ def run_step(prefix: str, step) -> subprocess.CompletedProcess:
         argv = ["conda", "run", "-p", prefix, "bash", "-c", step]
     else:
         argv = ["conda", "run", "-p", prefix, *step]
-    return subprocess.run(argv, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        argv, capture_output=True, text=True, check=False, env=ISOLATED_ENV
+    )
+
+
+def missing_requirements(prefix: str) -> list[str]:
+    """Return `pip check` lines saying a requirement is not installed in the
+    env (user site off). Version conflicts are not reported: some models pin
+    conflicting versions on purpose."""
+    result = subprocess.run(
+        [os.path.join(prefix, "bin", "python"), "-m", "pip", "check"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=ISOLATED_ENV,
+    )
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if "which is not installed" in line
+    ]
 
 
 def build_env(identifier: str, models_dir: str, envs_dir: str, force: bool) -> bool:
@@ -158,6 +187,9 @@ def build_env(identifier: str, models_dir: str, envs_dir: str, force: bool) -> b
         if result.returncode != 0:
             print(f"  {identifier}: step {i} failed - {result.stderr.strip()}")
             return False
+
+    for line in missing_requirements(prefix):
+        print(f"  {identifier}: WARNING {line}")
 
     print(f"  {identifier}: env ready at {prefix}")
     return True
