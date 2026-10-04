@@ -1,7 +1,7 @@
 Model ID,Slug,Title,Type,Latest release,Critical change since release,Output compounds
 eos2401,scaffold-decoration,Scaffold decoration,Fragment-seeded growth,v4.0.0,False,100
+eos8zvb,pymolgen,PyMolGen Drug-Like Molecule Generation,Fragment-seeded growth,v1.0.0,True,100
 eos4qda,fasmifra,FasmiFra molecule generator,Fragment recombination,v2.0.0,True,100
-eos8zvb,pymolgen,PyMolGen Drug-Like Molecule Generation,Fragment recombination,v1.0.0,True,100
 eos633t,moler-enamine-blocks,Extending molecular scaffolds with building blocks,Scaffold-based,v4.0.0,True,100
 eos6ost,reinvent4-libinvent,REINVENT 4 LibInvent,Scaffold-based,v3.0.0,True,100
 eos84nf,genmol-scaffold-decoration,GenMol Scaffold Decoration,Scaffold-based,v1.0.0,True,100
