@@ -156,7 +156,7 @@ def main():
         "throttled by --max-parallel)",
     )
     parser.add_argument(
-        "--max-parallel", type=int, default=20, help="Tasks running at once"
+        "--max-parallel", type=int, default=50, help="Tasks running at once"
     )
     parser.add_argument(
         "--ssh-host",

@@ -17,8 +17,13 @@ Highlighting follows the model's Type in gen-models-master.csv (override with
   input that is kept in the outputs, in blue. For each output it is the
   complete rings of its largest common substructure with the input (the whole
   common substructure if that has no ring, at least 3 atoms), so chain atoms
-  that merely happen to match are left out; the input shows the fragments
-  kept by any of its outputs, nothing else;
+  that merely happen to match are left out. The rule is chosen by hand per
+  model: by default the input shows the fragments kept by any of the 5 drawn
+  outputs (each output may keep a different one); for the models in
+  SHARED_FRAGMENT_MODELS, whose outputs all grow from one fragment of the
+  input, only that parent is marked: the largest ring system of the input
+  that every drawn output contains, wherever it occurs in the input (e.g. both
+  benzene rings) and in each output, and nothing else;
 - any other type: no highlighting.
 
 Outputs come from the model's shipped examples/run_output.csv by default, so
@@ -108,6 +113,10 @@ HIGHLIGHT_BOND_WIDTH = 16  # RDKit default 8
 HIGHLIGHT_RADIUS = 0.4  # RDKit default 0.3
 LEGEND_FONT_SIZE = 22  # RDKit default 16
 MCS_TIMEOUT_SECONDS = 2
+# Fragment models whose outputs all grow from one and the same fragment of the input, so what to
+# look at is the kind of fragment every drawn output keeps. For any other fragment model each
+# output may keep a different fragment, and what to look at is the fragments any output keeps.
+SHARED_FRAGMENT_MODELS = {"eos8zvb"}
 
 
 def read_rows(path: str) -> list[list[str]]:
@@ -168,39 +177,93 @@ def ring_systems(mol) -> list[set[int]]:
     return systems
 
 
-def fragment_highlights(input_mol, outputs: list) -> tuple[list[int], list[list[int]]]:
-    """Per output, the fragment it keeps from the input: the complete ring
-    systems inside its largest common substructure with the input (the whole
-    common substructure if there is none). For the input, the fragments kept
-    by any of its outputs."""
-    input_systems = ring_systems(input_mol)
+def kept_fragments(input_mol, mol) -> list[dict[int, int]]:
+    """The fragments `mol` keeps from the input, each as {input atom: output
+    atom}: the complete ring systems inside their largest common substructure
+    (the whole common substructure, as one fragment, if it has no ring; at least
+    MIN_FRAGMENT_ATOMS atoms). Empty if nothing is kept."""
+    mcs = rdFMCS.FindMCS(
+        [input_mol, mol],
+        timeout=MCS_TIMEOUT_SECONDS,
+        ringMatchesRingOnly=True,
+        completeRingsOnly=True,
+    )
+    query = Chem.MolFromSmarts(mcs.smartsString) if mcs.numAtoms else None
+    if query is None or mcs.numAtoms < MIN_FRAGMENT_ATOMS:
+        return []
+    # atom q of the query is matched to in_match[q] and out_match[q]
+    in_match = input_mol.GetSubstructMatch(query)
+    out_match = mol.GetSubstructMatch(query)
+    if not in_match or not out_match:
+        return []
+    pairs = dict(zip(in_match, out_match))
+    matched = set(in_match)
+    fragments = [
+        {atom: pairs[atom] for atom in system}
+        for system in ring_systems(input_mol)
+        if system <= matched
+    ]
+    return fragments or [pairs]
+
+
+def fragment_kind(mol, atoms) -> str:
+    """What kind of fragment `atoms` of `mol` are (their SMILES), so that the two
+    benzene rings of a molecule are one kind."""
+    return Chem.MolFragmentToSmiles(mol, atomsToUse=sorted(atoms), isomericSmiles=False)
+
+
+def parent_highlights(input_mol, outputs: list) -> tuple[list[int], list[list[int]]]:
+    """For a model whose outputs all grow from one fragment of the input: the
+    largest ring system of the input that every drawn output contains, marked
+    in every place it occurs in the input (the two benzene rings of a molecule
+    are the same kind of fragment) and in every place it occurs in each output.
+    Nothing else is marked, however much an output happens to share."""
+    systems: dict[str, list[set[int]]] = {}
+    for system in ring_systems(input_mol):
+        systems.setdefault(fragment_kind(input_mol, system), []).append(system)
+    # a molecule built from the kind's SMILES matches any substituted copy of it
+    # (hydrogen counts are not compared), unlike a SMARTS cut out of the input
+    patterns = {
+        kind: Chem.MolFromSmiles(kind) or Chem.MolFromSmarts(kind) for kind in systems
+    }
+    shared = [
+        kind
+        for kind, pattern in patterns.items()
+        if pattern is not None
+        and all(mol.HasSubstructMatch(pattern) for mol in outputs)
+    ]
+    if not shared or not outputs:
+        return [], [[] for _ in outputs]
+    size = {kind: len(systems[kind][0]) for kind in shared}
+    parents = [kind for kind in shared if size[kind] == max(size.values())]
+    in_atoms = {atom for kind in parents for place in systems[kind] for atom in place}
+    out_atoms = [
+        [
+            atom
+            for kind in parents
+            for match in mol.GetSubstructMatches(patterns[kind])
+            for atom in match
+        ]
+        for mol in outputs
+    ]
+    return sorted(in_atoms), out_atoms
+
+
+def fragment_highlights(
+    input_mol, outputs: list, shared: bool = False
+) -> tuple[list[int], list[list[int]]]:
+    """Per output, the fragment it keeps from the input (see kept_fragments); the
+    input shows the fragments kept by any of the drawn outputs, which is right
+    when each output keeps a different one. With `shared`, only the parent
+    fragment that every output grows from (see parent_highlights)."""
+    if shared:
+        return parent_highlights(input_mol, outputs)
     in_atoms: set[int] = set()
     out_atoms = []
     for mol in outputs:
-        mcs = rdFMCS.FindMCS(
-            [input_mol, mol],
-            timeout=MCS_TIMEOUT_SECONDS,
-            ringMatchesRingOnly=True,
-            completeRingsOnly=True,
-        )
-        query = Chem.MolFromSmarts(mcs.smartsString) if mcs.numAtoms else None
-        if query is None or mcs.numAtoms < MIN_FRAGMENT_ATOMS:
-            out_atoms.append([])
-            continue
-        # atom q of the query is matched to in_match[q] and out_match[q]
-        in_match = input_mol.GetSubstructMatch(query)
-        out_match = mol.GetSubstructMatch(query)
-        if not in_match or not out_match:
-            out_atoms.append([])
-            continue
-        matched = set(in_match)
-        kept = [
-            q
-            for q, atom in enumerate(in_match)
-            if any(atom in system and system <= matched for system in input_systems)
-        ] or list(range(len(in_match)))
-        in_atoms |= {in_match[q] for q in kept}
-        out_atoms.append([out_match[q] for q in kept])
+        fragments = kept_fragments(input_mol, mol)
+        in_atoms |= {atom for fragment in fragments for atom in fragment}
+        out_atoms.append([out for fragment in fragments for out in fragment.values()])
     return sorted(in_atoms), out_atoms
 
 
@@ -214,7 +277,9 @@ def bonds_between(mol, atoms: list[int]) -> list[int]:
     ]
 
 
-def build_grid(inputs: list[str], output_rows: list[list[str]], mode: str) -> dict:
+def build_grid(
+    inputs: list[str], output_rows: list[list[str]], mode: str, shared: bool = False
+) -> dict:
     """Everything the grid needs, cell by cell, row by row: molecules, legends,
     highlighted atoms and bonds, and the text to write into each blank cell
     (RDKit draws no legend for a missing molecule), keyed by cell position."""
@@ -238,7 +303,7 @@ def build_grid(inputs: list[str], output_rows: list[list[str]], mode: str) -> di
         if mode == "scaffold":
             in_atoms, out_atoms = scaffold_highlights(input_mol, outputs)
         elif mode == "fragment":
-            in_atoms, out_atoms = fragment_highlights(input_mol, outputs)
+            in_atoms, out_atoms = fragment_highlights(input_mol, outputs, shared)
         else:
             in_atoms, out_atoms = [], [[] for _ in outputs]
         add(input_mol, f"INPUT {number}", in_atoms)
@@ -561,7 +626,7 @@ def main():
         mode = mode_from_table(args.model, args.table)
     print(f"{args.model}: highlight = {mode}")
 
-    grid = build_grid(inputs, output_rows, mode)
+    grid = build_grid(inputs, output_rows, mode, args.model in SHARED_FRAGMENT_MODELS)
     options = Draw.MolDrawOptions()
     options.highlightBondWidthMultiplier = HIGHLIGHT_BOND_WIDTH
     options.highlightRadius = HIGHLIGHT_RADIUS
