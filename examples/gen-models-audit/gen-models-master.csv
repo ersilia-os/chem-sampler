@@ -1,0 +1,20 @@
+Model ID,Slug,Title,Type,Latest release,Critical change since release,Output compounds
+eos2401,scaffold-decoration,Scaffold decoration,Fragment-seeded growth,v4.0.0,False,100
+eos4qda,fasmifra,FasmiFra molecule generator,Fragment recombination,v2.0.0,True,100
+eos8zvb,pymolgen,PyMolGen Drug-Like Molecule Generation,Fragment recombination,v1.0.0,True,100
+eos633t,moler-enamine-blocks,Extending molecular scaffolds with building blocks,Scaffold-based,v4.0.0,True,100
+eos6ost,reinvent4-libinvent,REINVENT 4 LibInvent,Scaffold-based,v3.0.0,True,100
+eos84nf,genmol-scaffold-decoration,GenMol Scaffold Decoration,Scaffold-based,v1.0.0,True,100
+eos9taz,moler-enamine-fragments,Extending molecular scaffolds with fragments,Scaffold-based,v4.0.0,True,100
+eos4q1a,crem-mutate,CReM mutate-based structure generation,Direct edit,v3.0.0,True,100
+eos6a1h,cocograph-small,CoCoGraph Small-Fragment Inpainting,Direct edit,v1.0.0,False,100
+eos8fma,stoned-sampler,STONED analogue generation by SELFIES mutation,Direct edit,v2.0.0,True,100
+eos9p57,crem-grow,CReM Growth-Based Structure Generation,Direct edit,v1.0.0,True,100
+eos57bx,reinvent4-mol2mol-scaffold,REINVENT 4 Mol2MolScaffold,Similarity-conditioned translation,v1.0.0,True,100
+eos694w,reinvent4-mol2mol-medium-similarity,REINVENT 4 Mol2MolMediumSimilarity,Similarity-conditioned translation,v1.0.0,True,100
+eos55vx,cocograph-formula,CoCoGraph Formula-Preserving Generation,Descriptor-conditioned,v1.0.0,False,100
+eos5j3l,enscondflow-shape,Ensemble-Conditioned Molecular Design,Descriptor-conditioned,v1.0.0,False,10
+eos69e6,pgmg-pharmacophore,Pharmacophore-guided molecular generation,Descriptor-conditioned,v2.0.0,True,100
+eos8vud,squid,SQUID 3D shape generation,Descriptor-conditioned,v3.0.0,True,10
+eos92m1,transpharmer,TransPharmer Pharmacophore-Informed Molecule Generation,Descriptor-conditioned,v1.0.0,True,100
+eos935d,meta-trans,MetaTrans: human drug metabolites,Reaction-based,v2.0.0,False,15

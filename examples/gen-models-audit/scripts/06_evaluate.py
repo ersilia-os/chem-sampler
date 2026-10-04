@@ -31,7 +31,7 @@ over every compound found (a row is one compound, a cell one output slot):
 If split_<NNN>_repeated.csv files exist, the same split is also evaluated
 from each run, next to how many molecules the two runs share (identical
 canonical SMILES) per compound and whether the same compounds come back
-empty. Writes results/<model-id>/analysis.json and analysis.md and prints
+empty. Writes results/<model-id>/analysis.json and md/analysis.md and prints
 the markdown.
 
 Needs rdkit and numpy. Fully self-contained: no imports from chemsampler.
@@ -433,7 +433,8 @@ def main():
         json.dump(report, f, indent=2)
         f.write("\n")
     text = markdown(args.model, summary, times, repeat, args.null_threshold)
-    with open(os.path.join(model_out, "analysis.md"), "w") as f:
+    os.makedirs(os.path.join(model_out, "md"), exist_ok=True)
+    with open(os.path.join(model_out, "md", "analysis.md"), "w") as f:
         f.write(text)
     print(f"{len(outputs)} split(s) evaluated")
     print(text)
