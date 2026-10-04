@@ -33,6 +33,7 @@ dev = [
 ]
 audit = [
   "pyyaml==6.0.3",
+  "stylia==1.0.1",
 ]
 
 [tool.setuptools.packages.find]
