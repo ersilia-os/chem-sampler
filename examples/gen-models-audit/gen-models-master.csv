@@ -12,7 +12,7 @@ eos8fma,stoned-sampler,STONED analogue generation by SELFIES mutation,Direct edi
 eos9p57,crem-grow,CReM Growth-Based Structure Generation,Direct edit,v1.0.0,True,100
 eos57bx,reinvent4-mol2mol-scaffold,REINVENT 4 Mol2MolScaffold,Conditioned translation,v1.0.0,True,100
 eos694w,reinvent4-mol2mol-medium-similarity,REINVENT 4 Mol2MolMediumSimilarity,Conditioned translation,v1.0.0,True,100
-eos80sj,annalog,ANNalog Scaffold Hopping,Conditioned translation,v1.0.0,False,100
+eos80sj,annalog,ANNalog Scaffold Hopping,Conditioned translation,v1.0.0,True,100
 eos55vx,cocograph-formula,CoCoGraph Formula-Preserving Generation,Descriptor-conditioned,v1.0.0,False,100
 eos5j3l,enscondflow-shape,Ensemble-Conditioned Molecular Design,Descriptor-conditioned,v1.0.0,False,10
 eos69e6,pgmg-pharmacophore,Pharmacophore-guided molecular generation,Descriptor-conditioned,v2.0.0,True,100
