@@ -72,10 +72,15 @@ def model_commit(model_dir: str) -> str | None:
 
 
 def build_env(env_dir: str, cpus: int, hf_home: str) -> dict[str, str]:
-    """Environment for the model process: its env first on PATH, user site off,
-    BLAS/OpenMP threads pinned to the allotted CPUs, offline HF cache if any."""
+    """Environment for the model process: its env first on PATH and its own libraries
+    first on the loader path (a conda env used without activation otherwise loads the
+    node's older libstdc++), user site off, BLAS/OpenMP threads pinned to the allotted
+    CPUs, offline HF cache if any."""
     env = {**os.environ}
     env["PATH"] = os.path.join(env_dir, "bin") + os.pathsep + env["PATH"]
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(
+        filter(None, [os.path.join(env_dir, "lib"), env.get("LD_LIBRARY_PATH")])
+    )
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
     env["OMP_NUM_THREADS"] = env["MKL_NUM_THREADS"] = str(cpus)
