@@ -24,6 +24,9 @@ Highlighting follows the model's Type in gen-models-master.csv (override with
   input, only that parent is marked: the largest ring system of the input
   that every drawn output contains, wherever it occurs in the input (e.g. both
   benzene rings) and in each output, and nothing else;
+- models listed in MODEL_MODE with "murcko" (eos80sj, whose outputs differ from the
+  input in scaffold by construction): the molecule's own Murcko scaffold, in red, in
+  the input and in every output, so the change of scaffold is what is seen;
 - any other type: no highlighting.
 
 Outputs come from the model's shipped examples/run_output.csv by default, so
@@ -107,7 +110,13 @@ TYPE_TO_MODE = {
     "Fragment-seeded growth": "fragment",
     "Fragment recombination": "fragment",
 }
-MODE_COLOUR = {"scaffold": (0.9, 0.0, 0.0), "fragment": (0.0, 0.35, 1.0)}
+MODE_COLOUR = {
+    "scaffold": (0.9, 0.0, 0.0),
+    "murcko": (0.9, 0.0, 0.0),
+    "fragment": (0.0, 0.35, 1.0),
+}
+# Per-model rule that replaces the Type's: the highlight is chosen by hand, as for SHARED_FRAGMENT_MODELS.
+MODEL_MODE = {"eos80sj": "murcko"}
 MIN_FRAGMENT_ATOMS = 3
 HIGHLIGHT_BOND_WIDTH = 16  # RDKit default 8
 HIGHLIGHT_RADIUS = 0.4  # RDKit default 0.3
@@ -163,6 +172,17 @@ def scaffold_highlights(input_mol, outputs: list) -> tuple[list[int], list[list[
     return list(input_mol.GetSubstructMatch(scaffold)), [
         list(mol.GetSubstructMatch(scaffold)) for mol in outputs
     ]
+
+
+def murcko_highlights(input_mol, outputs: list) -> tuple[list[int], list[list[int]]]:
+    """Atoms of the input's own Murcko scaffold, and of each output's own (none for an
+    acyclic molecule)."""
+
+    def own(mol) -> list[int]:
+        scaffold = MurckoScaffold.GetScaffoldForMol(mol)
+        return list(mol.GetSubstructMatch(scaffold)) if scaffold.GetNumAtoms() else []
+
+    return own(input_mol), [own(mol) for mol in outputs]
 
 
 def ring_systems(mol) -> list[set[int]]:
@@ -302,6 +322,8 @@ def build_grid(
         outputs = [mol for _, mol in best]
         if mode == "scaffold":
             in_atoms, out_atoms = scaffold_highlights(input_mol, outputs)
+        elif mode == "murcko":
+            in_atoms, out_atoms = murcko_highlights(input_mol, outputs)
         elif mode == "fragment":
             in_atoms, out_atoms = fragment_highlights(input_mol, outputs, shared)
         else:
@@ -583,9 +605,9 @@ def main():
     )
     parser.add_argument(
         "--highlight",
-        choices=["auto", "scaffold", "fragment", "none"],
+        choices=["auto", "scaffold", "murcko", "fragment", "none"],
         default="auto",
-        help="What to highlight (default auto: from the model's Type in --table)",
+        help="What to highlight (default auto: MODEL_MODE, else the model's Type in --table)",
     )
     parser.add_argument(
         "--plots",
@@ -623,7 +645,7 @@ def main():
 
     mode = args.highlight
     if mode == "auto":
-        mode = mode_from_table(args.model, args.table)
+        mode = MODEL_MODE.get(args.model) or mode_from_table(args.model, args.table)
     print(f"{args.model}: highlight = {mode}")
 
     grid = build_grid(inputs, output_rows, mode, args.model in SHARED_FRAGMENT_MODELS)
