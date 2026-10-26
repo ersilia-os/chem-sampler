@@ -26,7 +26,8 @@ Highlighting follows the model's Type in gen-models-master.csv (override with
   benzene rings) and in each output, and nothing else;
 - models listed in MODEL_MODE with "murcko" (eos80sj, whose outputs differ from the
   input in scaffold by construction; eos633t and eos9taz, whose outputs keep the input's
-  scaffold but add rings to it in about 4 of 10 cases): the molecule's own Murcko
+  scaffold but add rings to it in about 4 of 10 cases; eos57bx and eos694w, whose priors
+  favour the input's scaffold without guaranteeing it): the molecule's own Murcko
   scaffold, in red, in the input and in every output, so the change of scaffold is what
   is seen;
 - any other type: no highlighting.
@@ -118,7 +119,13 @@ MODE_COLOUR = {
     "fragment": (0.0, 0.35, 1.0),
 }
 # Per-model rule that replaces the Type's: the highlight is chosen by hand, as for SHARED_FRAGMENT_MODELS.
-MODEL_MODE = {"eos80sj": "murcko", "eos633t": "murcko", "eos9taz": "murcko"}
+MODEL_MODE = {
+    "eos80sj": "murcko",
+    "eos633t": "murcko",
+    "eos9taz": "murcko",
+    "eos57bx": "murcko",
+    "eos694w": "murcko",
+}
 MIN_FRAGMENT_ATOMS = 3
 HIGHLIGHT_BOND_WIDTH = 16  # RDKit default 8
 HIGHLIGHT_RADIUS = 0.4  # RDKit default 0.3
