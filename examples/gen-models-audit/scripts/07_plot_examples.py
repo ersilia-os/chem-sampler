@@ -25,9 +25,10 @@ Highlighting follows the model's Type in gen-models-master.csv (override with
   that every drawn output contains, wherever it occurs in the input (e.g. both
   benzene rings) and in each output, and nothing else;
 - models listed in MODEL_MODE with "murcko" (eos80sj, whose outputs differ from the
-  input in scaffold by construction; eos633t and eos9taz, whose outputs keep the input's
-  scaffold but add rings to it in about 4 of 10 cases; eos57bx and eos694w, whose priors
-  favour the input's scaffold without guaranteeing it): the molecule's own Murcko
+  input in scaffold by construction; eos633t, eos9taz and eos6ost, whose outputs keep the
+  input's scaffold but add rings to it in about 4 to 5 of 10 cases; eos57bx and eos694w, whose priors
+  favour the input's scaffold without guaranteeing it; the Direct edit models eos4q1a, eos9p57,
+  eos8fma, eos6a1h and eos84nf, which edit or extend the input and may change its scaffold): the molecule's own Murcko
   scaffold, in red, in the input and in every output, so the change of scaffold is what
   is seen;
 - any other type: no highlighting.
@@ -123,8 +124,14 @@ MODEL_MODE = {
     "eos80sj": "murcko",
     "eos633t": "murcko",
     "eos9taz": "murcko",
+    "eos6ost": "murcko",
     "eos57bx": "murcko",
     "eos694w": "murcko",
+    "eos4q1a": "murcko",
+    "eos9p57": "murcko",
+    "eos8fma": "murcko",
+    "eos6a1h": "murcko",
+    "eos84nf": "murcko",
 }
 MIN_FRAGMENT_ATOMS = 3
 HIGHLIGHT_BOND_WIDTH = 16  # RDKit default 8
