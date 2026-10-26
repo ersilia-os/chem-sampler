@@ -16,7 +16,9 @@ over every compound found (a row is one compound, a cell one output slot):
 - Retention of the input, per compound as a share of its valid outputs, then
   mean +- std over the compounds that have outputs: % with the same Murcko
   scaffold as the input, % with the same generic scaffold (every atom a
-  carbon, every bond single), % containing the whole input as a substructure
+  carbon, every bond single), both compared ignoring stereochemistry (a model
+  that writes SMILES without stereo would otherwise never match the scaffold
+  of a chiral input), % containing the whole input as a substructure
   (all-structure), and % with more heavy atoms than the input. Compounds whose
   input has no ring are left out of the two scaffold figures. The same three
   levels are also read together as a breakdown that adds up to 100%: each
@@ -82,7 +84,9 @@ def generic_scaffold_smiles(scaffold) -> str | None:
     None when RDKit cannot build it (e.g. a hypervalent P or S becomes a
     five- or six-valent carbon)."""
     try:
-        return Chem.MolToSmiles(MurckoScaffold.MakeScaffoldGeneric(scaffold))
+        return Chem.MolToSmiles(
+            MurckoScaffold.MakeScaffoldGeneric(scaffold), isomericSmiles=False
+        )
     except Exception:  # noqa: BLE001
         return None
 
@@ -94,7 +98,9 @@ def analyse_compound(seed: str, cells: list[str]) -> dict:
     seed_fp = FP_GEN.GetFingerprint(seed_mol)
     seed_scaffold = MurckoScaffold.GetScaffoldForMol(seed_mol)
     has_scaffold = seed_scaffold.GetNumAtoms() > 0
-    seed_scaffold_smiles = Chem.MolToSmiles(seed_scaffold) if has_scaffold else None
+    seed_scaffold_smiles = (
+        canonical(seed_scaffold, isomeric=False) if has_scaffold else None
+    )
     seed_generic_smiles = (
         generic_scaffold_smiles(seed_scaffold) if has_scaffold else None
     )
@@ -134,7 +140,7 @@ def analyse_compound(seed: str, cells: list[str]) -> dict:
         same_scaffold = same_generic = False
         if has_scaffold:
             scaffold = MurckoScaffold.GetScaffoldForMol(mol)
-            same_scaffold = Chem.MolToSmiles(scaffold) == seed_scaffold_smiles
+            same_scaffold = canonical(scaffold, isomeric=False) == seed_scaffold_smiles
             if has_generic:
                 same_generic = generic_scaffold_smiles(scaffold) == seed_generic_smiles
         whole = mol.HasSubstructMatch(seed_mol)
