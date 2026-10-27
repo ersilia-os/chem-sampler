@@ -6,10 +6,10 @@ eos633t,moler-enamine-blocks,Scaffold-based generation with MoLeR,Scaffold-based
 eos6ost,reinvent4-libinvent,REINVENT 4 LibInvent,Scaffold-based,v5.0.0,True,100
 eos9taz,moler-enamine-fragments,MoLeR scaffold completion with fragment seeds,Scaffold-based,v5.0.0,True,100
 eos4q1a,crem-mutate,CReM mutate-based structure generation,Direct edit,v3.0.0,True,100
-eos6a1h,cocograph-small,CoCoGraph Small-Fragment Inpainting,Direct edit,v1.0.0,False,100
+eos6a1h,cocograph-small,CoCoGraph Small-Fragment Inpainting,Direct edit,v1.0.0,True,100
 eos8fma,stoned-sampler,STONED analogue generation by SELFIES mutation,Direct edit,v2.0.0,True,100
 eos9p57,crem-grow,CReM Growth-Based Structure Generation,Direct edit,v1.0.0,True,100
-eos84nf,genmol-scaffold-decoration,GenMol Scaffold Decoration,Direct edit,v1.0.0,True,100
+eos84nf,genmol-superstructure,GenMol Superstructure Generation,Direct edit,v1.0.0,True,100
 eos57bx,reinvent4-mol2mol-scaffold,REINVENT 4 Mol2MolScaffold,Conditioned translation,v2.0.0,False,100
 eos694w,reinvent4-mol2mol-medium-similarity,REINVENT 4 Mol2MolMediumSimilarity,Conditioned translation,v2.0.0,False,100
 eos80sj,annalog,ANNalog Scaffold Hopping,Conditioned translation,v2.0.0,False,100
