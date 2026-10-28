@@ -18,4 +18,4 @@ eos5j3l,enscondflow-shape,Ensemble-Conditioned Molecular Design,Descriptor-condi
 eos69e6,pgmg-pharmacophore,Pharmacophore-guided molecular generation,Descriptor-conditioned,v2.0.0,True,100
 eos8vud,squid,SQUID 3D shape generation,Descriptor-conditioned,v3.0.0,True,10
 eos92m1,transpharmer,TransPharmer Pharmacophore-Informed Molecule Generation,Descriptor-conditioned,v1.0.0,True,100
-eos935d,meta-trans,MetaTrans: human drug metabolites,Reaction-based,v2.0.0,False,15
+eos935d,meta-trans,MetaTrans: human drug metabolites,Reaction-based,v3.0.0,False,15
