@@ -48,6 +48,13 @@ from ..create_cli import chemsampler_cli
     help="Folder with one sub-folder per model. Required by the run_sh backend "
     "for Ersilia models.",
 )
+@click.option(
+    "--path-to-envs",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Folder with one conda environment per model, as built by "
+    "`chemsampler fetch`. Overrides the config file.",
+)
 @click.option("--smiles", required=True, help="SMILES of the molecule to score.")
 @click.option(
     "--backend",
@@ -62,6 +69,7 @@ def annotate_cmd(
     source: str | None,
     model_id: str | None,
     path_to_model_repositories: str | None,
+    path_to_envs: str | None,
     smiles: str,
     backend: str,
 ) -> None:
@@ -87,7 +95,11 @@ def annotate_cmd(
     try:
         if single:
             annotator = load_annotator(
-                source, model_id, path_to_model_repositories, backend=backend
+                source,
+                model_id,
+                path_to_model_repositories,
+                backend=backend,
+                path_to_envs=path_to_envs,
             )
             value = annotator.score([smiles]).get(smiles, float("nan"))
         else:
@@ -97,6 +109,7 @@ def annotate_cmd(
                 path_to_model_repositories,
                 backend=backend,
                 annotators=annotators_file,
+                path_to_envs=path_to_envs,
             )
             result = annotate(smiles, annotators)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

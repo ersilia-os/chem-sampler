@@ -8,7 +8,7 @@ from chemsampler.models.similarity import HubSimilarity
 class FakeHubModel:
     """Stands in for HubModel, returning ranked neighbours that include the seed."""
 
-    def __init__(self, model_id, backend="ersilia", models_dir=None):
+    def __init__(self, model_id, backend="ersilia", models_dir=None, envs_dir=None):
         self.model_id = model_id
         self.backend = backend
 

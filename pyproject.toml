@@ -19,6 +19,8 @@ dependencies = [
   "pandas==2.3.0",
   "rich==14.1.0",
   "click==8.2.1",
+  "eosvc==1.2.0",
+  "pyyaml==6.0.3",
   "matplotlib==3.9.0",
 ]
 
@@ -31,8 +33,6 @@ dev = [
   "ruff==0.16.7",
 ]
 audit = [
-  "eosvc==1.2.0",
-  "pyyaml==6.0.3",
   "stylia==1.0.1",
 ]
 

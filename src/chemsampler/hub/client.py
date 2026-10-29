@@ -6,6 +6,7 @@ from typing import Literal
 import pandas as pd
 
 from ..utils.logging import logger
+from .envs import env_path, is_complete
 
 Backend = Literal["ersilia", "run_sh"]
 
@@ -52,6 +53,12 @@ class HubModel:
     models_dir : str, optional
         Folder holding one sub-folder per model (`models_dir/model_id`).
         Required by the "run_sh" backend, unused by "ersilia".
+    envs_dir : str, optional
+        Folder holding one conda environment per model (`envs_dir/model_id`), as
+        built by `chemsampler fetch`. With it, the "run_sh" backend runs the
+        model inside its own environment, which is what a plain git clone needs.
+        Without it the model is expected to bring its own interpreter (a model
+        fetched by `ersilia fetch`).
 
     Raises
     ------
@@ -64,6 +71,7 @@ class HubModel:
         model_id: str,
         backend: Backend = "run_sh",
         models_dir: str | None = None,
+        envs_dir: str | None = None,
     ):
         if backend not in ("ersilia", "run_sh"):
             raise ValueError(f"backend must be 'ersilia' or 'run_sh', got {backend!r}")
@@ -75,6 +83,7 @@ class HubModel:
         self.model_id = model_id
         self.backend = backend
         self.models_dir = models_dir
+        self.envs_dir = envs_dir
         self._ersilia_model = None
 
     def _get_ersilia_model(self):
@@ -129,6 +138,36 @@ class HubModel:
         finally:
             model.close()
 
+    def _process_env(self) -> dict[str, str] | None:
+        """
+        The environment variables for the model's process, or None to inherit ours.
+
+        A model cloned and built by `chemsampler fetch` has a plain `run.sh`
+        (`python main.py ...`), so it must run as if its conda env were active:
+        that env's `bin` first on PATH and its own libraries first on the loader
+        path (otherwise the system's older libstdc++ is loaded), the user site off,
+        and nothing of chemsampler's own PYTHONPATH.
+        """
+        if not self.envs_dir:
+            return None
+        env_dir = env_path(os.path.expanduser(self.envs_dir), self.model_id)
+        if not is_complete(env_dir):
+            raise RuntimeError(
+                f"{self.model_id}: no complete environment at {env_dir}; "
+                "run `chemsampler fetch` first"
+            )
+        env = {**os.environ}
+        env.pop("PYTHONPATH", None)
+        env["PATH"] = os.pathsep.join(
+            filter(None, [str(env_dir / "bin"), env.get("PATH")])
+        )
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(
+            filter(None, [str(env_dir / "lib"), env.get("LD_LIBRARY_PATH")])
+        )
+        env["PYTHONNOUSERSITE"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        return env
+
     def _run_via_run_sh(self, smiles_list: list[str]) -> pd.DataFrame:
         # No server, no port, no session: run.sh is a one-shot subprocess that
         # bakes its own interpreter path in at pack time, so nothing here needs
@@ -151,6 +190,7 @@ class HubModel:
                 "Use backend='ersilia' or fetch the model first."
             )
         app_dir = os.path.join(bundle, "app")
+        process_env = self._process_env()
 
         with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp_dir:
             input_csv = os.path.join(tmp_dir, "input.csv")
@@ -169,6 +209,7 @@ class HubModel:
                     check=True,
                     capture_output=True,
                     text=True,
+                    env=process_env,
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(

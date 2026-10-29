@@ -35,6 +35,9 @@ class HubAnnotator:
     models_dir : str, optional
         Folder holding the model repositories, passed through to `HubModel`.
         Required by the "run_sh" backend.
+    envs_dir : str, optional
+        Folder holding the models' conda environments, passed through to
+        `HubModel`.
 
     Raises
     ------
@@ -48,6 +51,7 @@ class HubAnnotator:
         column: str | None = None,
         backend: Backend = "run_sh",
         models_dir: str | None = None,
+        envs_dir: str | None = None,
     ):
         if model_id in SIMILARITY_MODEL_IDS:
             raise ValueError(
@@ -56,7 +60,9 @@ class HubAnnotator:
             )
         self.model_id = model_id
         self.column = column
-        self._hub_model = HubModel(model_id, backend=backend, models_dir=models_dir)
+        self._hub_model = HubModel(
+            model_id, backend=backend, models_dir=models_dir, envs_dir=envs_dir
+        )
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """

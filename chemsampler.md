@@ -231,7 +231,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    (offline), so one that is not in it (not Ready, such as `eos2401` today, or
    newer than the catalog) or is labelled for another role is refused with a
    message; relay it and let the user decide. If the user says a model should be
-   there, suggest `chemsampler setup`, which refreshes the catalog from the Hub.
+   there, suggest `chemsampler update-catalog`, which refreshes the catalog from the Hub.
    Similarity and generators are each optional, but at least one is needed.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
@@ -243,22 +243,24 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    - `--n-steps` (only if `--mode incremental` was chosen; no default, must
      be asked)
    - `--tolerance` (default 0.0)
-   - `--backend` (default `run_sh`, which needs the models already fetched
-     locally and conda-packed, in the folder given by
-     `--path-to-model-repositories`, which is then required; `ersilia` is the
-     fallback and does not need it). If `run_sh` fails
+   - `--backend` (default `run_sh`, which needs each model's clone and its
+     conda environment, i.e. `chemsampler fetch` in a workspace, or a folder of
+     models fetched by `ersilia fetch`; `ersilia` is the fallback and needs
+     neither). If a model is missing, `run` says to use `chemsampler fetch`:
+     relay that rather than switching backend on your own. If `run_sh` fails
      because a model isn't available locally, tell the user and let them
      choose whether to fetch it or fall back to `ersilia`; never switch on
      its own.
 
-9. **Output directory.** Propose a fresh, dedicated `--output-dir` per
-   invocation (e.g. timestamped) — `chemsampler run` never clears stale
-   files in a reused directory, so reusing one across runs can leave old
-   `round4.csv`/`round5.csv` behind from an earlier, longer run. If the user
-   wants to reuse a directory, explain that risk and let them decide. Write the
-   `similarity.csv`, `generators.csv` and `annotators.csv` built above into
-   that same directory (and pass it as `--path-to-models`) so each run is
-   self-contained and reproducible.
+9. **Where the run lives.** Inside a workspace (`chemsampler setup`), write the
+   three CSVs into its `input/` folder and let `run` pick its own dated folder
+   under `rounds/`, which also stores an `inputs.json` of what was resolved — no
+   `--output-dir` to choose and nothing stale to inherit. Outside a workspace,
+   propose a fresh, dedicated `--output-dir` per invocation (e.g. timestamped):
+   `chemsampler run` never clears stale files in a reused directory, so reusing
+   one can leave old `round4.csv`/`round5.csv` behind from an earlier, longer
+   run. If the user wants to reuse a directory, explain that risk and let them
+   decide.
 
 10. **Confirm before running.** Show the exact `chemsampler run` command,
     with every value that will be used (defaults included), before executing

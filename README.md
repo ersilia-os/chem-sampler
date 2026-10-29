@@ -22,6 +22,46 @@ pip install -e .
 
 ChemSampler relies on the [Ersilia Model Hub](https://github.com/ersilia-os/ersilia) to fetch and run generative models. To also run the test suite, install with the `dev` extra instead: `pip install -e ".[dev]"`.
 
+## Getting started
+
+A run lives in a **workspace**: one folder with the inputs, the models, their
+environments and the results. Create it outside the clone, on a local disk.
+
+```bash
+mkdir my-run && cd my-run
+chemsampler setup                     # creates the layout below
+$EDITOR input/*.csv                   # the models to use (templates are written for you)
+chemsampler fetch                     # clone the models, download checkpoints, build envs
+chemsampler run --mode sequential --seed-smiles "CCO"
+```
+
+```
+my-run/
+  chemsampler.json   the marker file: commands find the workspace from here or below
+  input/             similarity.csv, generators.csv, annotators.csv
+  models/            one git clone per model
+  envs/              one conda environment per model
+  rounds/            one dated folder per run: summary.csv, round<n>.csv, inputs.json
+  logs/              what fetch ran, per model
+```
+
+Every command works anywhere inside the workspace and takes its folders from the
+marker file, so `run` needs no paths and no `--output-dir`. **Do not move or
+rename a workspace** after `fetch`: conda environments record their own path.
+
+`fetch` is safe to repeat. It clones only what is missing and reports the rest:
+
+- An existing clone is only inspected (`up to date`, `3 behind`, `local changes`).
+  `fetch --update` pulls the ones that are behind, fast-forward only, and never
+  touches a clone with local changes or local commits.
+- An existing environment is compared with its model's recipe (`install.yml`, or
+  the Dockerfile for older models) and differences are reported, for example
+  `torch: installed 2.8.0, recipe 2.9.1`. `fetch --rebuild` rebuilds only the
+  environments that differ. Recipe lines that pin nothing (an unpinned package, a
+  GitHub install, a shell line) cannot be compared, and `fetch` says how many it
+  skipped.
+- An environment left half-built by an interrupted run is removed and rebuilt.
+
 ## Usage
 
 Generators and a similarity model propose molecules, and annotators score them.
@@ -136,7 +176,7 @@ Every Hub model is checked against the catalog in
 must be labelled Sampling / Generation, the similarity model Sampling /
 Similarity search, annotators Annotation. The catalog lists only models the Hub
 lists (the Ready ones), and a similarity model other than `eos8nyg` is refused.
-The check is instant and works offline. `chemsampler setup` rebuilds the catalog
+The check is instant and works offline. `chemsampler update-catalog` rebuilds the catalog
 from the Hub (about 20 s, needs a network connection), tells you which models are
 new or gone, and leaves the file untouched if the Hub cannot be reached. Commit
 the file after running it.
@@ -151,7 +191,8 @@ molecule join each round's candidates, and the `source` column shows
 Two backends are available for running models:
 
 **`run_sh` (default)**: Shells out directly to a model's bundled `run.sh` script.
-- **Requires:** Model folder at `<path-to-model-repositories>/{model_id}`
+- **Requires:** Model folder at `<path-to-model-repositories>/{model_id}`, and its
+  conda environment at `<path-to-envs>/{model_id}` for a model cloned by `fetch`
 - **No:** persistent server, ports, or Ersilia initialization
 - **Fast:** minimal startup overhead
 - **Limitation:** only works for conda-packed models fetched locally
@@ -168,22 +209,25 @@ locally available (`--backend ersilia`; the repositories folder is then not need
 
 | Command | Description |
 |---|---|
+| `chemsampler setup` | Create a workspace for the inputs, models, environments and results. |
+| `chemsampler fetch` | Clone the models, download their checkpoints and build their conda environments. |
 | `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
-| `chemsampler setup` | Rebuild the model catalog from the Ersilia Model Hub and report what changed. |
+| `chemsampler update-catalog` | Rebuild the model catalog from the Ersilia Model Hub and report what changed. |
 
 ```bash
+# inside a workspace: the folders and the output directory come from it
 chemsampler run \
-  --path-to-models examples/inputs/csv \
-  --path-to-model-repositories /path/to/model/repositories \
   --mode sequential \
-  --seed-smiles "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5=C4C=CC(=C5)OC)OC(=O)C6=CC(=C(C(=C6)OC)OC)OC" \
-  --output-dir results/
+  --seed-smiles "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5=C4C=CC(=C5)OC)OC(=O)C6=CC(=C(C(=C6)OC)OC)OC"
 
-chemsampler run --config config.json --mode joint --seed-smiles "CCO" --output-dir results/
-chemsampler annotate --path-to-models examples/inputs/csv --smiles "CCO"
+chemsampler fetch --update --rebuild
+chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"
-chemsampler setup
+
+# outside a workspace: say where everything is
+chemsampler run --config config.json --mode joint --seed-smiles "CCO" --output-dir results/
+chemsampler update-catalog
 ```
 
 `--backend` picks between `"ersilia"` and `"run_sh"` for every Hub model in the

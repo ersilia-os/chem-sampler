@@ -9,6 +9,6 @@ def chemsampler_cli() -> None:
 def create_cli() -> click.Group:
     """Import every command module, registering it via its decorator's side
     effect, and return the assembled group."""
-    from .commands import annotate, run, setup  # noqa: F401
+    from .commands import annotate, fetch, run, setup, update_catalog  # noqa: F401
 
     return chemsampler_cli

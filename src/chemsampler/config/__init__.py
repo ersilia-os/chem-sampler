@@ -1,18 +1,22 @@
 """Load and validate chemsampler's inputs: similarity, generators and annotators."""
 
 import csv
+import datetime
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..hub.catalog import validate_models
 from ..hub.client import Backend
+from ..hub.envs import env_path, is_complete
+from ..hub.fetch import FetchPlan
 from ..models.annotator import RDKIT_ANNOTATORS
 from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
 from ..models.similarity import HubSimilarity
 from ..models.spec import AnnotatorSpec
 from ..utils.logging import logger
+from ..workspace import WORKSPACE_FILE, Workspace, find_workspace
 from .schema import (
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
@@ -27,7 +31,13 @@ from .schema import (
 #: all of those, in the working directory). The CSVs' single column has the same
 #: name; annotators.csv has the columns of `schema.REQUIRED_FIELDS`.
 INPUT_NAMES = ("similarity", "generators", "annotators")
-CONFIG_KEYS = ("path_to_models", "path_to_model_repositories", *INPUT_NAMES)
+PATH_KEYS = (
+    "path_to_models",
+    "path_to_model_repositories",
+    "path_to_envs",
+    "path_to_rounds",
+)
+CONFIG_KEYS = (*PATH_KEYS, *INPUT_NAMES)
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,46 @@ class Inputs:
     similarity: HubSimilarity | None
     annotators: list[AnnotatorSpec]
     models_dir: str | None
+    envs_dir: str | None
+    rounds_dir: str | None
+
+    def describe(self) -> dict:
+        """What was resolved, to save next to a run's results."""
+        return {
+            "similarity": None if self.similarity is None else self.similarity.model_id,
+            "generators": (
+                None
+                if self.generators is None
+                else [g.model_id for g in self.generators.generators]
+            ),
+            "annotators": [
+                {
+                    "model": spec.annotator_id,
+                    "cutoff": list(spec.cutoff)
+                    if isinstance(spec.cutoff, tuple)
+                    else spec.cutoff,
+                    "direction": spec.direction,
+                    "priority": spec.priority,
+                    "weight": spec.weight,
+                }
+                for spec in self.annotators
+            ],
+            "path_to_model_repositories": self.models_dir,
+            "path_to_envs": self.envs_dir,
+        }
+
+    def new_round_dir(self) -> Path | None:
+        """A fresh, dated folder under `rounds/` for one run's results."""
+        if self.rounds_dir is None:
+            return None
+        # Local time: the folder name is read by whoever started the run.
+        stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
+        folder = Path(self.rounds_dir) / stamp
+        suffix = 2
+        while folder.exists():
+            folder = Path(self.rounds_dir) / f"{stamp}_{suffix}"
+            suffix += 1
+        return folder
 
 
 def load_inputs(
@@ -49,6 +99,7 @@ def load_inputs(
     similarity: str | None = None,
     generators: str | None = None,
     annotators: str | None = None,
+    path_to_envs: str | None = None,
 ) -> Inputs:
     """
     Load the inputs and check them against the catalog of Ersilia Hub models.
@@ -75,6 +126,15 @@ def load_inputs(
         Passed to every Hub model, by default "run_sh".
     similarity, generators, annotators : str, optional
         CSV files with that input, each with its own header (see the README).
+    path_to_envs : str, optional
+        Folder with one conda environment per model, for models cloned and built
+        by `chemsampler fetch`. Overrides the config file's key. When it is set,
+        every model needs a complete environment there.
+
+    Notes
+    -----
+    Inside a workspace (a folder with `chemsampler.json`, here or in a parent) and
+    with no `config`, the workspace's marker file is the config.
 
     Returns
     -------
@@ -101,12 +161,15 @@ def load_inputs(
         path_to_model_repositories,
         backend,
         files,
+        path_to_envs,
     )
     return Inputs(
         generators=loaded["generators"],
         similarity=loaded["similarity"],
         annotators=loaded["annotators"],
         models_dir=loaded["models_dir"],
+        envs_dir=loaded["envs_dir"],
+        rounds_dir=loaded["rounds_dir"],
     )
 
 
@@ -117,6 +180,7 @@ def load_annotators(
     backend: Backend = "run_sh",
     *,
     annotators: str | None = None,
+    path_to_envs: str | None = None,
 ) -> list[AnnotatorSpec]:
     """
     Load only the annotators, for commands that score without generating.
@@ -137,6 +201,7 @@ def load_annotators(
         path_to_model_repositories,
         backend,
         {"annotators": annotators},
+        path_to_envs,
     )
     return loaded["annotators"]
 
@@ -146,12 +211,15 @@ def load_annotator(
     model: str,
     path_to_model_repositories: str | None = None,
     backend: Backend = "run_sh",
+    *,
+    path_to_envs: str | None = None,
 ):
     """
     Build and check one annotator, to score a molecule against a single model.
 
     An Ersilia model gets the same checks as in `load_annotators` (repositories
-    folder for "run_sh", Hub label, model folder); an rdkit one needs none.
+    folder for "run_sh", catalog label, model folder and environment); an rdkit
+    one needs none.
 
     Parameters
     ----------
@@ -159,9 +227,10 @@ def load_annotator(
         Where the annotator comes from.
     model : str
         An Ersilia Hub model id, or an in-house name ("mw", "qed").
-    path_to_model_repositories : str, optional
-        Folder with the model repositories; required for an Ersilia model with
-        the "run_sh" backend.
+    path_to_model_repositories, path_to_envs : str, optional
+        Folders with the model repositories and their environments. Inside a
+        workspace they default to its `models/` and `envs/`; the repositories
+        folder is required for an Ersilia model with the "run_sh" backend.
     backend : {"ersilia", "run_sh"}, optional
         By default "run_sh".
 
@@ -170,17 +239,18 @@ def load_annotator(
     MolecularWeightAnnotator, QEDAnnotator or HubAnnotator
         An object with a `score(smiles_list)` method.
     """
-    models_dir = None
+    models_dir = envs_dir = None
     if source == "ersilia":
-        repos = path_to_model_repositories
+        loc = _locations(None, None, path_to_model_repositories, path_to_envs)
+        envs_dir = _as_text(loc.envs)
         if backend == "run_sh":
-            models_dir = _check_repositories(None if repos is None else Path(repos))
+            models_dir = _check_repositories(loc.repos)
         else:
-            models_dir = repos
+            models_dir = _as_text(loc.repos)
         validate_models(annotators=[model])
         if backend == "run_sh":
-            _check_model_folders(models_dir, [model])
-    return build_annotator(source, model, None, backend, models_dir)
+            _check_model_folders(models_dir, envs_dir, [model])
+    return build_annotator(source, model, None, backend, models_dir, envs_dir)
 
 
 def build_annotator(
@@ -189,6 +259,7 @@ def build_annotator(
     column: str | None = None,
     backend: Backend = "run_sh",
     models_dir: str | None = None,
+    envs_dir: str | None = None,
 ):
     """
     Build an annotator from its source and model name.
@@ -207,6 +278,8 @@ def build_annotator(
         Passed to `HubAnnotator`, by default "run_sh". Not used by rdkit.
     models_dir : str, optional
         Folder with the model repositories, passed to `HubAnnotator`.
+    envs_dir : str, optional
+        Folder with the models' conda environments, passed to `HubAnnotator`.
 
     Returns
     -------
@@ -227,7 +300,11 @@ def build_annotator(
         return RDKIT_ANNOTATORS[model]()
     if source == "ersilia":
         return HubAnnotator(
-            model, column=column, backend=backend, models_dir=models_dir
+            model,
+            column=column,
+            backend=backend,
+            models_dir=models_dir,
+            envs_dir=envs_dir,
         )
     raise ValueError(f"source must be one of {list(SOURCES)}, got {source!r}")
 
@@ -250,7 +327,7 @@ def _read_config(path: Path) -> dict:
         raise ValueError(
             f"{path}: unknown key(s) {unknown}; allowed: {list(CONFIG_KEYS)}"
         )
-    for key in ("path_to_models", "path_to_model_repositories"):
+    for key in PATH_KEYS:
         if key in data and not isinstance(data[key], str):
             raise ValueError(f"{path}: '{key}' must be a path (text)")
     for key in ("similarity", "generators"):
@@ -361,8 +438,43 @@ def _annotator_rows(items: list[dict]) -> list[AnnotatorRow]:
     ]
 
 
-def _locations(config, path_to_models, path_to_model_repositories):
-    """The config contents and the two folders, flags taking precedence."""
+#: The `Workspace` attribute that holds each folder, for configs that are workspace markers.
+_WORKSPACE_FOLDER = {
+    "path_to_models": "input",
+    "path_to_model_repositories": "models",
+    "path_to_envs": "envs",
+    "path_to_rounds": "rounds",
+}
+
+
+@dataclass(frozen=True)
+class _Locations:
+    """The config contents and the folders, flags taking precedence over the config."""
+
+    data: dict
+    models: Path | None
+    repos: Path | None
+    envs: Path | None
+    rounds: Path | None
+    root: Path | None  # the workspace root, when the config is a workspace marker
+
+
+def _locations(
+    config, path_to_models, path_to_model_repositories, path_to_envs=None
+) -> _Locations:
+    """
+    Read the config and settle the folders.
+
+    With no config given, the marker file of the workspace the working directory
+    is in (if any) is the config, and the folders it does not name get their
+    defaults. Relative paths in a config resolve against the config file.
+    """
+    root = workspace = None
+    if config is None:
+        root = find_workspace()
+        if root is not None:
+            config = root / WORKSPACE_FILE
+            workspace = Workspace.load(root)
     data, base = {}, Path.cwd()
     if config is not None:
         config_path = Path(config)
@@ -375,39 +487,34 @@ def _locations(config, path_to_models, path_to_model_repositories):
         if key in data:
             path = Path(data[key]).expanduser()
             return path if path.is_absolute() else base / path
+        if workspace is not None:
+            return getattr(workspace, _WORKSPACE_FOLDER[key])
         return None
 
-    return (
+    return _Locations(
         data,
         folder(path_to_models, "path_to_models"),
         folder(path_to_model_repositories, "path_to_model_repositories"),
+        folder(path_to_envs, "path_to_envs"),
+        folder(None, "path_to_rounds"),
+        root,
     )
 
 
 # --- loading ----------------------------------------------------------------------
 
 
-def _load(
-    names, config, path_to_models, path_to_model_repositories, backend, files
-) -> dict:
-    """
-    Resolve, validate and build the named inputs.
-
-    The order is cheap checks first: file contents, then the repositories
-    folder, then the catalog, then each model's own folder.
-    """
-    data, models_path, repos = _locations(
-        config, path_to_models, path_to_model_repositories
-    )
-    if models_path is not None and not models_path.is_dir():
-        raise ValueError(f"--path-to-models {models_path} is not a folder")
+def _read_inputs(names, loc: _Locations, files):
+    """Read the named inputs and check them without looking at the Hub or the disk."""
+    if loc.models is not None and not loc.models.is_dir():
+        raise ValueError(f"--path-to-models {loc.models} is not a folder")
 
     def ids(name):
         return _find_source(
             name,
             files.get(name),
-            data,
-            models_path,
+            loc.data,
+            loc.models,
             lambda p: _read_ids_csv(p, name),
             lambda values: _unique_ids(values, name),
             required=False,
@@ -433,19 +540,40 @@ def _load(
     rows = _find_source(
         "annotators",
         files.get("annotators"),
-        data,
-        models_path,
+        loc.data,
+        loc.models,
         _read_annotators_csv,
         _annotator_rows,
         required=True,
     )
     _check_annotator_rows(rows)
+    return generators, similarity, rows
+
+
+def _load(
+    names,
+    config,
+    path_to_models,
+    path_to_model_repositories,
+    backend,
+    files,
+    path_to_envs=None,
+) -> dict:
+    """
+    Read, validate and build the named inputs.
+
+    The order is cheap checks first: file contents, then the repositories
+    folder, then the catalog, then each model's own folder and environment.
+    """
+    loc = _locations(config, path_to_models, path_to_model_repositories, path_to_envs)
+    generators, similarity, rows = _read_inputs(names, loc, files)
 
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
     hub_ids = [*(generators or []), *(similarity or []), *ersilia_annotators]
 
     run_sh = backend == "run_sh" and bool(hub_ids)
-    models_dir = _check_repositories(repos) if run_sh else _as_text(repos)
+    models_dir = _check_repositories(loc.repos) if run_sh else _as_text(loc.repos)
+    envs_dir = _as_text(loc.envs)
 
     validate_models(
         generators=generators or [],
@@ -453,26 +581,81 @@ def _load(
         annotators=ersilia_annotators,
     )
     if run_sh:
-        _check_model_folders(models_dir, hub_ids)
+        _check_model_folders(models_dir, envs_dir, hub_ids)
 
     loaded = {
         "models_dir": models_dir,
-        "annotators": [_to_spec(row, backend, models_dir) for row in rows],
+        "envs_dir": envs_dir,
+        "rounds_dir": _as_text(loc.rounds),
+        "annotators": [_to_spec(row, backend, models_dir, envs_dir) for row in rows],
         "generators": None,
         "similarity": None,
     }
     if generators is not None:
         loaded["generators"] = GeneratorPool(
             [
-                HubGenerator(i, backend=backend, models_dir=models_dir)
+                HubGenerator(
+                    i, backend=backend, models_dir=models_dir, envs_dir=envs_dir
+                )
                 for i in generators
             ]
         )
     if similarity is not None:
         loaded["similarity"] = HubSimilarity(
-            similarity[0], backend=backend, models_dir=models_dir
+            similarity[0], backend=backend, models_dir=models_dir, envs_dir=envs_dir
         )
     return loaded
+
+
+def plan_fetch(
+    config: str | None = None,
+    path_to_models: str | None = None,
+    path_to_model_repositories: str | None = None,
+    path_to_envs: str | None = None,
+    *,
+    similarity: str | None = None,
+    generators: str | None = None,
+    annotators: str | None = None,
+) -> FetchPlan:
+    """
+    List the Hub models the inputs need and the folders to put them in.
+
+    Reads and checks the inputs like `load_inputs` does, but looks at no model
+    folder, since creating them is what `chemsampler fetch` is for. Models that
+    appear in several inputs are listed once.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are invalid, or the models and envs folders are not set
+        (flags, config keys, or a workspace).
+    """
+    loc = _locations(config, path_to_models, path_to_model_repositories, path_to_envs)
+    files = {
+        "similarity": similarity,
+        "generators": generators,
+        "annotators": annotators,
+    }
+    generators_ids, similarity_ids, rows = _read_inputs(INPUT_NAMES, loc, files)
+    ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
+    validate_models(
+        generators=generators_ids or [],
+        similarity=similarity_ids or [],
+        annotators=ersilia_annotators,
+    )
+    if loc.repos is None or loc.envs is None:
+        raise ValueError(
+            "fetch needs the folders for the clones and the environments: run it "
+            "inside a workspace (chemsampler setup), or pass "
+            "--path-to-model-repositories and --path-to-envs"
+        )
+    wanted = [*(generators_ids or []), *(similarity_ids or []), *ersilia_annotators]
+    return FetchPlan(
+        model_ids=tuple(dict.fromkeys(wanted)),
+        models_dir=loc.repos,
+        envs_dir=loc.envs,
+        logs_dir=(loc.root or Path.cwd()) / "logs" / "fetch",
+    )
 
 
 def _check_annotator_rows(rows: list[AnnotatorRow]) -> None:
@@ -503,20 +686,34 @@ def _check_repositories(repos: Path | None) -> str:
     return str(repos)
 
 
-def _check_model_folders(models_dir: str, model_ids: list[str]) -> None:
+def _check_model_folders(
+    models_dir: str, envs_dir: str | None, model_ids: list[str]
+) -> None:
+    """Every model needs its folder and, when environments are used, a built one."""
     missing = [i for i in model_ids if not (Path(models_dir) / i).is_dir()]
     if missing:
-        raise ValueError(
-            f"no folder for {missing} in {models_dir}; the run_sh backend needs one "
-            "folder per model there"
+        hint = (
+            "run `chemsampler fetch` to clone them"
+            if envs_dir
+            else "the run_sh backend needs one folder per model there"
         )
+        raise ValueError(f"no folder for {missing} in {models_dir}; {hint}")
+    if envs_dir:
+        unbuilt = [i for i in model_ids if not is_complete(env_path(envs_dir, i))]
+        if unbuilt:
+            raise ValueError(
+                f"no complete environment for {unbuilt} in {envs_dir}; run "
+                "`chemsampler fetch` to build them"
+            )
 
 
-def _to_spec(row: AnnotatorRow, backend: Backend, models_dir: str | None):
+def _to_spec(
+    row: AnnotatorRow, backend: Backend, models_dir: str | None, envs_dir: str | None
+):
     return AnnotatorSpec(
         annotator_id=row.model,
         annotator=build_annotator(
-            row.source, row.model, row.column, backend, models_dir
+            row.source, row.model, row.column, backend, models_dir, envs_dir
         ),
         cutoff=row.cutoff,
         direction=row.direction,

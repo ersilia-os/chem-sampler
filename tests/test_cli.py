@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 
 import pandas as pd
 import pytest
@@ -8,12 +9,14 @@ from click.testing import CliRunner
 from chemsampler import config
 from chemsampler.cli import cli
 from chemsampler.hub import catalog
+from chemsampler.hub.envs import write_marker
+from chemsampler.workspace import create_workspace
 
 
 class FakeHubModel:
     """Stands in for HubModel so fake Hub models need no real Ersilia calls."""
 
-    def __init__(self, model_id, backend="ersilia", models_dir=None):
+    def __init__(self, model_id, backend="ersilia", models_dir=None, envs_dir=None):
         self.model_id = model_id
         self.backend = backend
 
@@ -46,6 +49,12 @@ def _inputs(tmp_path, annotators=(QED,)):
     _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"]])
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, list(annotators))
     return folder
+
+
+def _run_without_output(*args):
+    return CliRunner().invoke(
+        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", *args]
+    )
 
 
 def _run(tmp_path, *args):
@@ -352,7 +361,7 @@ def test_annotate_rejects_inconsistent_options(tmp_path, monkeypatch, args, mess
     assert message in result.output
 
 
-# --- setup --------------------------------------------------------------------------
+# --- update-catalog --------------------------------------------------------------------------
 
 GENERATOR = catalog.CatalogEntry(
     "generators", "eos9taz", "MoLeR", "Sampling", "Generation"
@@ -364,23 +373,23 @@ def _catalog(*entries, built="2026-10-01"):
     return catalog.Catalog(built, "0.1.62", tuple(entries))
 
 
-def _setup(monkeypatch, outcome):
+def _update_catalog(monkeypatch, outcome):
     def update(*args, **kwargs):
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
     monkeypatch.setattr(catalog, "update_catalog", update)
-    return CliRunner().invoke(cli, ["setup"])
+    return CliRunner().invoke(cli, ["update-catalog"])
 
 
-def test_setup_reports_an_up_to_date_catalog(monkeypatch):
+def test_update_catalog_reports_an_up_to_date_catalog(monkeypatch):
     current = _catalog(GENERATOR, ANNOTATOR)
     outcome = catalog.CatalogUpdate(
         current, current, catalog.CatalogDiff((), ()), False
     )
 
-    result = _setup(monkeypatch, outcome)
+    result = _update_catalog(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert (
@@ -391,13 +400,13 @@ def test_setup_reports_an_up_to_date_catalog(monkeypatch):
     assert "Commit" not in result.output
 
 
-def test_setup_reports_new_and_removed_models(monkeypatch):
+def test_update_catalog_reports_new_and_removed_models(monkeypatch):
     diff = catalog.CatalogDiff(added=(GENERATOR,), removed=(ANNOTATOR,))
     outcome = catalog.CatalogUpdate(
         _catalog(GENERATOR, built="2026-10-29"), _catalog(ANNOTATOR), diff, True
     )
 
-    result = _setup(monkeypatch, outcome)
+    result = _update_catalog(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert "Catalog updated (was built 2026-10-01)" in result.output
@@ -406,25 +415,27 @@ def test_setup_reports_new_and_removed_models(monkeypatch):
     assert "Commit" in result.output
 
 
-def test_setup_creates_a_missing_catalog(monkeypatch):
+def test_update_catalog_creates_a_missing_catalog(monkeypatch):
     diff = catalog.CatalogDiff(added=(GENERATOR,), removed=())
     outcome = catalog.CatalogUpdate(_catalog(GENERATOR), None, diff, True)
 
-    result = _setup(monkeypatch, outcome)
+    result = _update_catalog(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert "Catalog created" in result.output
 
 
-def test_setup_fails_cleanly_when_the_hub_cannot_be_reached(monkeypatch):
-    result = _setup(monkeypatch, RuntimeError("could not query the Ersilia Model Hub"))
+def test_update_catalog_fails_cleanly_when_the_hub_cannot_be_reached(monkeypatch):
+    result = _update_catalog(
+        monkeypatch, RuntimeError("could not query the Ersilia Model Hub")
+    )
 
     assert result.exit_code == 1
     assert "existing catalog was left untouched" in result.output
 
 
-def test_setup_fails_cleanly_when_the_catalog_cannot_be_written(monkeypatch):
-    result = _setup(monkeypatch, PermissionError("read-only file system"))
+def test_update_catalog_fails_cleanly_when_the_catalog_cannot_be_written(monkeypatch):
+    result = _update_catalog(monkeypatch, PermissionError("read-only file system"))
 
     assert result.exit_code == 1
     assert (
@@ -432,7 +443,7 @@ def test_setup_fails_cleanly_when_the_catalog_cannot_be_written(monkeypatch):
     )
 
 
-def test_setup_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
+def test_update_catalog_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
     path = tmp_path / "catalog.csv"
     monkeypatch.setattr(catalog, "CATALOG_PATH", path)
 
@@ -445,8 +456,8 @@ def test_setup_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
 
     monkeypatch.setattr(catalog, "_run_ersilia", hub)
 
-    result = CliRunner().invoke(cli, ["setup"])
-    again = CliRunner().invoke(cli, ["setup"])
+    result = CliRunner().invoke(cli, ["update-catalog"])
+    again = CliRunner().invoke(cli, ["update-catalog"])
 
     assert result.exit_code == 0 and "Catalog created: 1 generators" in result.output
     assert [e.identifier for e in catalog.read_catalog(path).entries] == [
@@ -454,3 +465,117 @@ def test_setup_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
         "eos4zfy",
     ]
     assert "up to date" in again.output
+
+
+# --- a run inside a workspace ---------------------------------------------------------
+
+
+def _workspace(tmp_path, built=("eos9taz", "eos8nyg")):
+    """A workspace whose models are cloned and whose environments are built."""
+    create_workspace(tmp_path)
+    _write_csv(tmp_path / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
+    for model in built:
+        (tmp_path / "models" / model).mkdir(parents=True)
+        env = tmp_path / "envs" / model
+        env.mkdir(parents=True)
+        write_marker(env, model=model)
+    return tmp_path
+
+
+def test_a_run_in_a_workspace_writes_a_dated_round_folder(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(
+        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    rounds = list((root / "rounds").iterdir())
+    assert len(rounds) == 1
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", rounds[0].name)
+    assert (rounds[0] / "summary.csv").exists() and (rounds[0] / "round1.csv").exists()
+
+
+def test_a_run_saves_what_it_resolved_next_to_its_results(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(
+        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    [round_dir] = list((root / "rounds").iterdir())
+    saved = json.loads((round_dir / "inputs.json").read_text())
+    assert saved["similarity"] == "eos8nyg" and saved["generators"] == ["eos9taz"]
+    assert saved["annotators"] == [
+        {
+            "model": "qed",
+            "cutoff": 0.0,
+            "direction": "higher",
+            "priority": "primary",
+            "weight": 1.0,
+        }
+    ]
+    assert saved["path_to_envs"] == str(root / "envs")
+
+
+def test_two_runs_in_a_row_get_separate_folders(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    monkeypatch.chdir(root)
+    command = ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
+
+    first = CliRunner().invoke(cli, command)
+    second = CliRunner().invoke(cli, command)
+
+    assert first.exit_code == 0 and second.exit_code == 0, second.output
+    assert len(list((root / "rounds").iterdir())) == 2
+
+
+def test_an_explicit_output_dir_still_wins_in_a_workspace(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "run",
+            "--mode",
+            "sequential",
+            "--seed-smiles",
+            "CCO",
+            "--n-rounds",
+            "1",
+            "--output-dir",
+            str(tmp_path / "elsewhere"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "elsewhere" / "summary.csv").exists()
+    assert not list((root / "rounds").iterdir())
+
+
+def test_outside_a_workspace_the_output_dir_is_still_required(tmp_path, monkeypatch):
+    folder = _inputs(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = _run_without_output(
+        "--path-to-models", str(folder), "--backend", "ersilia"
+    )
+
+    assert result.exit_code == 1
+    assert "--output-dir is required outside a workspace" in result.output
+
+
+def test_a_model_without_a_built_environment_says_to_run_fetch(tmp_path, monkeypatch):
+    root = _workspace(tmp_path, built=["eos9taz"])  # eos8nyg has neither clone nor env
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(
+        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO"]
+    )
+
+    assert result.exit_code == 1
+    assert "chemsampler fetch" in result.output

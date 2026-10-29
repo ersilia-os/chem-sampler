@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from chemsampler.hub.client import HubModel
+from chemsampler.hub.envs import env_path, write_marker
 
 
 class FakeErsiliaModel:
@@ -121,4 +122,72 @@ def test_run_sh_wraps_subprocess_failure(tmp_path, monkeypatch):
     model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
 
     with pytest.raises(RuntimeError, match="boom"):
+        model.run(["C"])
+
+
+# --- running a plain clone inside its own environment -------------------------------
+
+
+def _clone_with_env(tmp_path, complete=True):
+    """A model clone (run.sh is `python ...`) and its conda env, as fetch leaves them."""
+    models_dir, envs_dir = tmp_path / "models", tmp_path / "envs"
+    framework = models_dir / "fake-model" / "model" / "framework"
+    framework.mkdir(parents=True)
+    (framework / "run.sh").write_text("python $1/code/main.py $2 $3")
+    env = env_path(envs_dir, "fake-model")
+    env.mkdir(parents=True)
+    if complete:
+        write_marker(env, model="fake-model")
+    return str(models_dir), str(envs_dir), env
+
+
+def _capture_run(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["env"] = kwargs.get("env")
+        pd.DataFrame({"smiles": ["C"], "score": [1.0]}).to_csv(argv[4], index=False)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
+    return seen
+
+
+def test_a_clone_runs_inside_its_environment(tmp_path, monkeypatch):
+    models_dir, envs_dir, env = _clone_with_env(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/chemsampler/src")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/system/lib")
+    seen = _capture_run(monkeypatch)
+
+    HubModel(
+        "fake-model", backend="run_sh", models_dir=models_dir, envs_dir=envs_dir
+    ).run(["C"])
+
+    process_env = seen["env"]
+    assert process_env["PATH"].startswith(f"{env}/bin:")
+    assert process_env["LD_LIBRARY_PATH"] == f"{env}/lib:/system/lib"
+    assert process_env["PYTHONNOUSERSITE"] == "1"
+    assert "PYTHONPATH" not in process_env  # the model sees only its own environment
+
+
+def test_a_fetched_bundle_without_environments_inherits_our_environment(
+    tmp_path, monkeypatch
+):
+    models_dir, _, _ = _clone_with_env(tmp_path)
+    seen = _capture_run(monkeypatch)
+
+    HubModel("fake-model", backend="run_sh", models_dir=models_dir).run(["C"])
+
+    assert seen["env"] is None
+
+
+def test_an_unfinished_environment_is_refused_with_the_fix(tmp_path, monkeypatch):
+    models_dir, envs_dir, _ = _clone_with_env(tmp_path, complete=False)
+    _capture_run(monkeypatch)
+
+    model = HubModel(
+        "fake-model", backend="run_sh", models_dir=models_dir, envs_dir=envs_dir
+    )
+
+    with pytest.raises(RuntimeError, match="chemsampler fetch"):
         model.run(["C"])

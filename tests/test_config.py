@@ -4,10 +4,17 @@ import json
 import pytest
 
 from chemsampler import config
-from chemsampler.config import build_annotator, load_annotators, load_inputs
+from chemsampler.config import (
+    build_annotator,
+    load_annotators,
+    load_inputs,
+    plan_fetch,
+)
+from chemsampler.hub.envs import env_path, write_marker
 from chemsampler.models.annotator import MolecularWeightAnnotator, QEDAnnotator
 from chemsampler.models.hub_annotator import HubAnnotator
 from chemsampler.models.similarity import HubSimilarity
+from chemsampler.workspace import create_workspace
 
 ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
 ANNOTATOR_ROWS = [
@@ -468,3 +475,138 @@ def test_build_annotator_rejects_unknown_names():
         build_annotator("rdkit", "logp")
     with pytest.raises(ValueError, match="source must be one of"):
         build_annotator("pubchem", "mw")
+
+
+# --- a workspace as the config ------------------------------------------------------
+
+
+def test_inside_a_workspace_its_marker_file_is_the_config(tmp_path, monkeypatch):
+    create_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path / "rounds")  # any folder inside the workspace will do
+
+    inputs = load_inputs(backend="ersilia")
+
+    root = tmp_path.resolve()
+    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.models_dir == str(root / "models")
+    assert inputs.envs_dir == str(root / "envs")
+    assert inputs.rounds_dir == str(root / "rounds")
+
+
+def test_a_flag_overrides_a_workspace_folder(tmp_path, monkeypatch):
+    create_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    inputs = load_inputs(path_to_envs=str(tmp_path / "elsewhere"), backend="ersilia")
+
+    assert inputs.envs_dir == str(tmp_path / "elsewhere")
+
+
+def test_an_explicit_config_ignores_the_workspace(tmp_path, monkeypatch):
+    create_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    path = _write_config(tmp_path / "other.json", **INLINE)
+
+    inputs = load_inputs(config=path, backend="ersilia")
+
+    assert inputs.envs_dir is None and inputs.rounds_dir is None
+
+
+# --- environments built by fetch ----------------------------------------------------
+
+
+def _repositories(tmp_path, built):
+    repos, envs = tmp_path / "repos", tmp_path / "envs"
+    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
+        (repos / model).mkdir(parents=True)
+    for model in built:
+        env_path(envs, model).mkdir(parents=True)
+        write_marker(env_path(envs, model), model=model)
+    return repos, envs
+
+
+def test_a_missing_or_unfinished_environment_says_to_run_fetch(inputs_dir, tmp_path):
+    repos, envs = _repositories(tmp_path, built=["eos9taz", "eos80sj", "eos8nyg"])
+    env_path(envs, "eos4zfy").mkdir()  # started, never marked complete
+
+    with pytest.raises(ValueError, match=r"no complete environment for \['eos4zfy'\]"):
+        _load(
+            inputs_dir,
+            backend="run_sh",
+            path_to_model_repositories=str(repos),
+            path_to_envs=str(envs),
+        )
+
+
+def test_complete_environments_pass_the_check(inputs_dir, tmp_path):
+    repos, envs = _repositories(
+        tmp_path, built=["eos9taz", "eos80sj", "eos8nyg", "eos4zfy"]
+    )
+
+    inputs = _load(
+        inputs_dir,
+        backend="run_sh",
+        path_to_model_repositories=str(repos),
+        path_to_envs=str(envs),
+    )
+
+    assert inputs.envs_dir == str(envs)
+
+
+def test_a_missing_clone_with_environments_in_use_says_to_run_fetch(
+    inputs_dir, tmp_path
+):
+    repos, envs = _repositories(tmp_path, built=[])
+    (repos / "eos80sj").rmdir()
+
+    with pytest.raises(
+        ValueError, match=r"no folder for \['eos80sj'\].*chemsampler fetch"
+    ):
+        _load(
+            inputs_dir,
+            backend="run_sh",
+            path_to_model_repositories=str(repos),
+            path_to_envs=str(envs),
+        )
+
+
+# --- what fetch needs ---------------------------------------------------------------
+
+
+def test_plan_fetch_lists_each_hub_model_once_with_the_workspace_folders(
+    tmp_path, monkeypatch, hub
+):
+    create_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _write_csv(
+        tmp_path / "input" / "generators.csv",
+        ["generators"],
+        [["eos9taz"], ["eos8nyg"]],
+    )
+
+    plan = plan_fetch()
+
+    root = tmp_path.resolve()
+    assert plan.model_ids == ("eos9taz", "eos8nyg", "eos4zfy")  # eos8nyg only once
+    assert plan.models_dir == root / "models" and plan.envs_dir == root / "envs"
+    assert plan.logs_dir == root / "logs" / "fetch"
+    assert hub[0]["annotators"] == ["eos4zfy"]
+
+
+def test_plan_fetch_needs_no_folder_to_exist(inputs_dir, tmp_path):
+    plan = plan_fetch(
+        path_to_models=str(inputs_dir),
+        path_to_model_repositories=str(tmp_path / "new" / "models"),
+        path_to_envs=str(tmp_path / "new" / "envs"),
+    )
+
+    assert plan.model_ids == ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy")
+
+
+def test_plan_fetch_outside_a_workspace_needs_the_two_folders(
+    inputs_dir, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="chemsampler setup"):
+        plan_fetch(path_to_models=str(inputs_dir))

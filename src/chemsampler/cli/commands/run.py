@@ -1,3 +1,4 @@
+import os
 import sys
 
 import click
@@ -27,6 +28,13 @@ from ..create_cli import chemsampler_cli
     type=click.Path(file_okay=False),
     help="Folder with one sub-folder per model. Required by the run_sh backend. "
     "Overrides the config file.",
+)
+@click.option(
+    "--path-to-envs",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Folder with one conda environment per model, as built by "
+    "`chemsampler fetch`. Overrides the config file.",
 )
 @click.option(
     "--similarity",
@@ -98,9 +106,10 @@ from ..create_cli import chemsampler_cli
 )
 @click.option(
     "--output-dir",
-    required=True,
+    default=None,
     type=click.Path(file_okay=False),
-    help="Directory to write summary.csv and round<n>.csv into.",
+    help="Directory to write summary.csv and round<n>.csv into. Inside a "
+    "workspace it defaults to a new dated folder under rounds/.",
 )
 @click.option(
     "--verbose",
@@ -112,6 +121,7 @@ def run_cmd(
     config: str | None,
     path_to_models: str | None,
     path_to_model_repositories: str | None,
+    path_to_envs: str | None,
     similarity_file: str | None,
     generators_file: str | None,
     annotators_file: str | None,
@@ -124,11 +134,14 @@ def run_cmd(
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
     backend: str,
-    output_dir: str,
+    output_dir: str | None,
     verbose: bool,
 ) -> None:
     """Generate and score candidate molecules across rounds, saving the result."""
+    import json
     import time
+
+    import pandas as pd
 
     from ...config import load_inputs
     from ...optimize import hill_climb, write_results
@@ -138,6 +151,7 @@ def run_cmd(
         logger.set_quiet_mode(True)
 
     start_time = time.time()
+    summary, candidates_by_round = pd.DataFrame(), {}
     try:
         inputs = load_inputs(
             config,
@@ -147,7 +161,18 @@ def run_cmd(
             similarity=similarity_file,
             generators=generators_file,
             annotators=annotators_file,
+            path_to_envs=path_to_envs,
         )
+        if output_dir is None:
+            round_dir = inputs.new_round_dir()
+            if round_dir is None:
+                click.secho(
+                    "--output-dir is required outside a workspace (see "
+                    "`chemsampler setup`).",
+                    fg="red",
+                )
+                sys.exit(1)
+            output_dir = str(round_dir)
         summary, candidates_by_round = hill_climb(
             inputs.generators,
             inputs.annotators,
@@ -172,6 +197,9 @@ def run_cmd(
         sys.exit(0)
 
     write_results(summary, candidates_by_round, output_dir)
+    with open(os.path.join(output_dir, "inputs.json"), "w") as f:
+        json.dump(inputs.describe(), f, indent=2)
+        f.write("\n")
 
     if summary.empty:
         click.secho("No candidates were generated; nothing to report.", fg="yellow")
