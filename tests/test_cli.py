@@ -708,7 +708,7 @@ def test_the_help_lists_commands_in_the_order_a_user_needs_them():
 
     positions = [
         result.output.index(f"  {name} ")
-        for name in ("init", "fetch", "run", "annotate", "catalog")
+        for name in ("init", "fetch", "run", "annotate", "catalog", "suggest")
     ]
 
     assert positions == sorted(positions)

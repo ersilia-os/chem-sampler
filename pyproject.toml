@@ -35,6 +35,9 @@ dev = [
 audit = [
   "stylia==1.0.1",
 ]
+isaura = [
+  "isaura==2.4.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
