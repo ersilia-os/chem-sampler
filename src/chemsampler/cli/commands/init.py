@@ -6,7 +6,9 @@ import click
 from ..create_cli import chemsampler_cli
 
 
-@chemsampler_cli.command("init")
+@chemsampler_cli.command(
+    "init", short_help="Create a project for one analysis (inputs and results)."
+)
 @click.argument("path", default=".", type=click.Path(file_okay=False))
 def init_cmd(path: str) -> None:
     """Create a project in PATH (default: here) for one analysis's inputs and results."""

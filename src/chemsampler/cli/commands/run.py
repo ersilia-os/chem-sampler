@@ -6,7 +6,9 @@ import click
 from ..create_cli import chemsampler_cli
 
 
-@chemsampler_cli.command("run")
+@chemsampler_cli.command(
+    "run", short_help="Generate and score candidates around a seed, over rounds."
+)
 @click.option(
     "--config",
     default=None,
@@ -26,15 +28,16 @@ from ..create_cli import chemsampler_cli
     "--path-to-model-repositories",
     default=None,
     type=click.Path(file_okay=False),
-    help="Folder with one sub-folder per model. Required by the run_sh backend. "
-    "Overrides the config file.",
+    help="Folder with one sub-folder per model. Default: this machine's store "
+    "(see `chemsampler catalog`). Overrides the config file.",
 )
 @click.option(
     "--path-to-envs",
     default=None,
     type=click.Path(file_okay=False),
     help="Folder with one conda environment per model, as built by "
-    "`chemsampler fetch`. Overrides the config file.",
+    "`chemsampler fetch`. Default: this machine's store. Overrides the config "
+    "file.",
 )
 @click.option(
     "--similarity",

@@ -685,3 +685,37 @@ def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
 
     assert result.exit_code == 1
     assert "plan" not in fetched and not store_root.exists()
+
+
+# --- the top-level help ---------------------------------------------------------------
+
+
+def test_every_command_is_described_in_full_in_the_help():
+    result = CliRunner().invoke(cli, ["--help"], terminal_width=80)
+
+    assert result.exit_code == 0, result.output
+    for name, command in cli.commands.items():
+        assert command.short_help, f"{name} has no short description"
+        # click cuts a description with "..." when it is too long for the line
+        assert command.short_help in result.output, name
+    # the usage line ends in `[ARGS]...` by design: look only at the command list
+    command_list = result.output.split("Commands:")[1].split("Typical use:")[0]
+    assert "..." not in command_list
+
+
+def test_the_help_lists_commands_in_the_order_a_user_needs_them():
+    result = CliRunner().invoke(cli, ["--help"], terminal_width=80)
+
+    positions = [
+        result.output.index(f"  {name} ")
+        for name in ("init", "fetch", "run", "annotate", "catalog")
+    ]
+
+    assert positions == sorted(positions)
+
+
+def test_the_help_ends_with_a_typical_use():
+    result = CliRunner().invoke(cli, ["--help"], terminal_width=80)
+
+    for step in ("chemsampler init", "chemsampler fetch", "chemsampler run"):
+        assert step in result.output

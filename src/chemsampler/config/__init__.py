@@ -121,16 +121,17 @@ def load_inputs(
         Folder with `similarity.csv`, `generators.csv` and `annotators.csv`.
         Overrides the config file's key.
     path_to_model_repositories : str, optional
-        Folder with one sub-folder per model. Required by the "run_sh" backend
-        and overrides the config file's key.
+        Folder with one sub-folder per model. Defaults to the machine's store;
+        overrides the config file's key. Named on its own, it is taken to hold
+        models that bring their own interpreter, as `ersilia fetch` leaves them.
     backend : {"ersilia", "run_sh"}, optional
         Passed to every Hub model, by default "run_sh".
     similarity, generators, annotators : str, optional
         CSV files with that input, each with its own header (see the README).
     path_to_envs : str, optional
         Folder with one conda environment per model, for models cloned and built
-        by `chemsampler fetch`. Overrides the config file's key. When it is set,
-        every model needs a complete environment there.
+        by `chemsampler fetch`. Defaults to the machine's store; overrides the
+        config file's key. Every model then needs a complete environment there.
 
     Notes
     -----

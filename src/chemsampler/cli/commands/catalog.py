@@ -9,7 +9,9 @@ from ..create_cli import chemsampler_cli
 _ROLES = ["generators", "similarity", "annotators"]
 
 
-@chemsampler_cli.command("catalog")
+@chemsampler_cli.command(
+    "catalog", short_help="List models on this machine or the Hub; refresh the catalog."
+)
 @click.option(
     "--hub",
     is_flag=True,

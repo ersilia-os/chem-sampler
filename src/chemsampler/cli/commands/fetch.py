@@ -5,7 +5,9 @@ import click
 from ..create_cli import chemsampler_cli
 
 
-@chemsampler_cli.command("fetch")
+@chemsampler_cli.command(
+    "fetch", short_help="Clone models, download checkpoints, build their conda envs."
+)
 @click.option(
     "--config",
     default=None,

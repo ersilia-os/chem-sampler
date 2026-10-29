@@ -5,7 +5,9 @@ import click
 from ..create_cli import chemsampler_cli
 
 
-@chemsampler_cli.command("annotate")
+@chemsampler_cli.command(
+    "annotate", short_help="Score one molecule against the annotators (no generation)."
+)
 @click.option(
     "--config",
     default=None,
@@ -45,15 +47,16 @@ from ..create_cli import chemsampler_cli
     "--path-to-model-repositories",
     default=None,
     type=click.Path(file_okay=False),
-    help="Folder with one sub-folder per model. Required by the run_sh backend "
-    "for Ersilia models.",
+    help="Folder with one sub-folder per model. Default: this machine's store "
+    "(see `chemsampler catalog`).",
 )
 @click.option(
     "--path-to-envs",
     default=None,
     type=click.Path(file_okay=False),
     help="Folder with one conda environment per model, as built by "
-    "`chemsampler fetch`. Overrides the config file.",
+    "`chemsampler fetch`. Default: this machine's store. Overrides the config "
+    "file.",
 )
 @click.option("--smiles", required=True, help="SMILES of the molecule to score.")
 @click.option(
