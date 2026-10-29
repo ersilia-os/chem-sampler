@@ -119,6 +119,7 @@ def test_candidates_table_has_expected_columns():
         "source",
         "score",
         "cutoffs_satisfied",
+        "guardrails_satisfied",
         "tanimoto_to_seed",
     ]
 
@@ -1175,8 +1176,210 @@ def test_similarity_is_skipped_with_a_warning_when_there_is_no_seed(
 def test_similarity_model_is_rejected_as_generator():
     with pytest.raises(TypeError, match="similarity="):
         hill_climb(
-            HubSimilarity("eos8nyg"),
+            HubSimilarity("eos8nyg", backend="ersilia"),
             _score_only({"CCO": 1.0}),
             mode="sequential",
             seed_smiles="CCO",
         )
+
+
+# --- guard-rails (secondary annotators) ---------------------------------------------
+
+
+def _primary(scores, cutoff=1.5, direction="higher", annotator_id="score"):
+    return AnnotatorSpec(
+        annotator_id, StubAnnotator(scores), cutoff=cutoff, direction=direction
+    )
+
+
+def _guard(scores, cutoff, direction="higher", annotator_id="guard"):
+    return AnnotatorSpec(
+        annotator_id,
+        StubAnnotator(scores),
+        cutoff=cutoff,
+        direction=direction,
+        priority="secondary",
+    )
+
+
+PRIMARY_SCORES = {"CCO": 1.0, "CCC": 2.0, "CCN": 3.0}
+GUARD_SCORES = {"CCO": 1.0, "CCC": 1.0, "CCN": 0.0}
+
+
+@pytest.mark.parametrize(
+    "mode, extra",
+    [
+        ("joint", {}),
+        ("weighted", {}),
+        ("sequential", {}),
+        ("incremental", {"n_steps": 1}),
+    ],
+)
+def test_guard_rail_blocks_the_best_primary_candidate_in_every_mode(mode, extra):
+    # CCN is listed first and scores best, so it would win without the guard-rail.
+    annotators = [_primary(PRIMARY_SCORES), _guard(GUARD_SCORES, cutoff=0.5)]
+
+    summary, candidates_by_round = hill_climb(
+        StubGenerator([["CCN", "CCC"]]),
+        annotators,
+        mode=mode,
+        seed_smiles="CCO",
+        n_rounds=1,
+        **extra,
+    )
+
+    assert summary.iloc[-1]["smiles"] == "CCC"
+    round1 = candidates_by_round[1].set_index("smiles")
+    assert not round1.loc["CCN", "guardrails_satisfied"]
+    assert round1.loc["CCC", "guardrails_satisfied"]
+
+
+def test_secondary_annotators_do_not_count_or_weigh():
+    annotators = [
+        _primary({"CCO": 1.0, "CCC": 2.0}),
+        _guard({"CCO": 100.0, "CCC": 100.0}, cutoff=0.0),
+    ]
+
+    _, candidates_by_round = hill_climb(
+        StubGenerator([["CCC"]]),
+        annotators,
+        mode="weighted",
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    row = candidates_by_round[1].iloc[0]
+    assert row["cutoffs_satisfied"] == 1
+    assert row["weighted_score"] == 2.0
+    assert row["guard"] == 100.0
+
+
+def test_guardrails_are_satisfied_when_there_are_none():
+    _, candidates_by_round = hill_climb(
+        StubGenerator([["CCC"]]),
+        [_primary(PRIMARY_SCORES)],
+        mode="sequential",
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    assert candidates_by_round[1]["guardrails_satisfied"].all()
+
+
+def test_range_guard_rail_accepts_only_values_inside_and_never_missing_ones():
+    guard = _guard(
+        {"CCO": 5.0, "CCC": 5.0, "CCN": 9.0},  # "CCCC" is deliberately unscorable
+        cutoff=(4.0, 6.0),
+        direction="range",
+    )
+    annotators = [_primary({"CCO": 1.0, "CCC": 2.0, "CCN": 3.0, "CCCC": 4.0}), guard]
+
+    summary, candidates_by_round = hill_climb(
+        StubGenerator([["CCCC", "CCN", "CCC"]]),
+        annotators,
+        mode="sequential",
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    round1 = candidates_by_round[1].set_index("smiles")
+    assert round1["guardrails_satisfied"].to_dict() == {
+        "CCCC": False,
+        "CCN": False,
+        "CCC": True,
+    }
+    assert summary.iloc[-1]["smiles"] == "CCC"
+
+
+def test_run_stops_when_every_candidate_breaks_a_guard_rail():
+    annotators = [
+        _primary(PRIMARY_SCORES),
+        _guard({"CCO": 1.0, "CCN": 0.0}, cutoff=0.5),
+    ]
+
+    summary, _ = hill_climb(
+        StubGenerator([["CCN"]]),
+        annotators,
+        mode="sequential",
+        seed_smiles="CCO",
+        n_rounds=3,
+    )
+
+    assert list(summary["round"]) == [0]
+
+
+def test_a_run_needs_at_least_one_primary_annotator():
+    with pytest.raises(ValueError, match="primary"):
+        hill_climb(
+            StubGenerator([["CCC"]]),
+            [_guard(GUARD_SCORES, cutoff=0.5)],
+            mode="joint",
+            seed_smiles="CCO",
+        )
+
+
+def test_secondary_annotators_never_become_the_active_annotator():
+    annotators = [_guard(GUARD_SCORES, cutoff=0.5), _primary(PRIMARY_SCORES)]
+
+    summary, _ = hill_climb(
+        StubGenerator([["CCC"]]),
+        annotators,
+        mode="sequential",
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    assert set(summary["active_annotator_id"]) == {"score"}
+
+
+def test_a_seed_that_breaks_a_guard_rail_only_warns(caplog, verbose_logger):
+    annotators = [
+        _primary(PRIMARY_SCORES),
+        _guard({"CCO": 0.0, "CCC": 1.0}, cutoff=0.5),
+    ]
+
+    with caplog.at_level("WARNING"):
+        summary, _ = hill_climb(
+            StubGenerator([["CCC"]]),
+            annotators,
+            mode="sequential",
+            seed_smiles="CCO",
+            n_rounds=1,
+        )
+
+    assert any(
+        "guard-rail" in r.message and "guard" in r.message for r in caplog.records
+    )
+    assert summary.iloc[-1]["smiles"] == "CCC"
+
+
+def test_annotate_accepts_guard_rails_alone_and_reports_them():
+    result = annotate("CCO", [_guard({"CCO": 1.0}, cutoff=0.5)])
+
+    row = result.iloc[0]
+    assert row["cutoffs_satisfied"] == 0
+    assert row["guardrails_satisfied"]
+
+
+# --- a similarity model without a generator -----------------------------------------
+
+
+def test_a_similarity_model_can_drive_a_run_alone():
+    annotators = _score_only({"CCO": 1.0, "CCC": 2.0, "CCN": 3.0})
+
+    summary, candidates_by_round = hill_climb(
+        None,
+        annotators,
+        mode="sequential",
+        similarity=StubSimilarity(["CCN", "CCC"]),
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    assert set(candidates_by_round[1]["source"]) == {"stub_sim"}
+    assert summary.iloc[-1]["smiles"] == "CCN"
+
+
+def test_a_run_needs_a_generator_or_a_similarity_model():
+    with pytest.raises(ValueError, match="generator, a similarity model"):
+        hill_climb(None, _score_only({"CCO": 1.0}), mode="joint", seed_smiles="CCO")

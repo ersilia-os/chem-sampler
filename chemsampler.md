@@ -10,7 +10,7 @@
 ## Purpose
 
 Help a chemist run `chemsampler run` without needing to hand-write the
-annotators/generators CSVs or remember the CLI flags. The skill's job is to
+input files (similarity, generators and annotators CSVs, or a config.json) or remember the CLI flags. The skill's job is to
 ask a small number of questions, build the input CSVs, invoke the CLI, and
 report the result — not to reimplement any optimization logic itself.
 
@@ -58,13 +58,16 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    you have a starting molecule?" — a chemist typically knows their target
    property before they know a seed. For each annotator the user names,
    collect:
-   - `annotator_id` — an Ersilia Hub model id, or `qed`.
-   - `cutoff` — the threshold value.
-   - `direction` — `higher` or `lower`.
+   - `source` and `model` — `ersilia` with a Hub annotation model id, or
+     `rdkit` with `mw` or `qed`.
+   - `cutoff` — the threshold value, or `min-max` for a range.
+   - `direction` — `higher`, `lower`, or `range` (a range is only valid for a
+     secondary annotator; `higher`/`lower` take a single number).
+   - `priority` — `primary` (optimized; usually the activity) or `secondary` (a
+     guard-rail every candidate must satisfy, e.g. an MW range or a QED floor;
+     it is never optimized and takes no weight). At least one primary.
 
-   All annotators are treated uniformly; there is no directing/controlling
-   distinction. Do not write `annotators.csv` yet — run the feasibility
-   check below first.
+   Do not write `annotators.csv` yet — run the feasibility check below first.
 
 2. **Feasibility & relevance check.** For every cutoff collected above (and
    for `--tanimoto-cutoff` in step 5, once given), judge it two distinct
@@ -106,22 +109,22 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    the modes diverge sharply). Explain all four. If the user's stated goal
    clearly points to one (e.g. "get the best possible value" with a single
    annotator points to `sequential`), recommend it; the user picks:
-   - `sequential` — annotators are optimized one at a time, in priority
-     order (the order the user listed them). Each finished stage's own
+   - `sequential` — primary annotators are optimized one at a time, in
+     priority order (the order the user listed them). Each finished stage's own
      cutoff becomes a hard floor for every later stage. Reproduces plain
      maximization/minimization when there's a single annotator.
-   - `joint` — all annotators optimized simultaneously; a candidate's score
-     is how many cutoffs it satisfies. With a single annotator this is a
+   - `joint` — all primaries optimized simultaneously; a candidate's score
+     is how many primary cutoffs it satisfies. With a single annotator this is a
      threshold + arbitrary pick among passers, not maximization — mention
      this explicitly if the user has only one annotator and seems to expect
      "get the best possible value."
    - `weighted` — all annotators optimized simultaneously as one scalarized
      score (`weight * value`, summed, with `direction="lower"` annotators
-     negated first). Needs a `weight` per annotator (default 1.0); flag that
+     negated first). Takes an optional `weight` per primary (default 1.0); flag that
      weight magnitudes are relative to each annotator's own scale, not
      normalized, so a 0-1 score and a hundreds-scale score need very
      different weights to pull comparably.
-   - `incremental` — like `sequential`, but each annotator is nudged only a
+   - `incremental` — like `sequential`, but each primary is nudged only a
      fraction of the way to its cutoff before moving to the next, cycling
      through the full list `--n-steps` times (interim targets interpolate
      linearly between the seed's own score and the cutoff). Needs a seed, a
@@ -130,6 +133,9 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      that pushing one annotator all the way before touching the next risks
      an unrecoverable overshoot on an uncorrelated one (see the "Open
      questions" note below on annotator correlation).
+
+   Whatever the mode, secondary annotators apply as guard-rails: a candidate
+   that fails one is never eligible.
 
 4. **Seed compound (optional).** Ask for a SMILES. If the user names a
    compound instead of pasting a SMILES, look it up from an authoritative
@@ -152,14 +158,13 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    generators or running anything substantial, offer to get the seed's
    current score against each annotator, and do it once the user agrees (it
    is a run against the Hub, so step 10's rule applies):
-   `chemsampler run --n-rounds 0` (annotators only;
-   `--generators` can stay at its default, since no generator is ever
-   invoked when `n_rounds=0` — the round loop simply doesn't execute, only
-   the seed's own round-0 score is computed) returns immediately with that
-   baseline via `hill_climb`'s existing round-0 behavior. Compare it to each
-   annotator's cutoff and use the gap to inform a generator
+   `chemsampler annotate --path-to-models <dir> --smiles <seed>` (it needs
+   only the annotators, and generates nothing) prints the seed's value for
+   each annotator and whether its cutoffs and guard-rails are met. Compare it
+   to each primary's cutoff and use the gap to inform a generator
    **recommendation**, which the user is free to override:
-   - **The 6 shipped generators, in the user's two groups** (mean Tanimoto to
+   - **The 6 generators of the former default list, in the user's two groups**
+     (`eos2401` is in maintenance, so the Hub check refuses it; mean Tanimoto to
      input and time per seed from the shared benchmark in
      ersilia-os/ersilia#1919; times are best-case, amortised over a
      100-compound batch, and generators run sequentially, so they add up to
@@ -184,14 +189,14 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      regardless of how large the annotator gap is — a candidate that fails
      the similarity gate is wasted no matter its score, so the floor takes
      precedence over the gap, and a slow generator that mostly gets filtered out is doubly
-     wasted (`eos633t` is the slowest shipped generator and, at 0.33 mean
+     wasted (`eos633t` is the slowest of the former default generators and, at 0.33 mean
      Tanimoto, the likeliest to be gated out; see also the eos6ost note
      below).
    - **Low-Tanimoto generators to flag under a binding floor**:
      `eos8vud` (0.15) and `eos2401` (0.13) on the #1919 benchmark, and to a
      lesser degree `eos633t` (0.33).
-   - **A recorded contradiction, `eos6ost` (no longer in the shipped
-     default)**: live-tested twice (aspirin seed, two different Tanimoto
+   - **A recorded contradiction, `eos6ost` (not in the former
+     default list)**: live-tested twice (aspirin seed, two different Tanimoto
      floors), its candidates landed almost entirely at Tanimoto 0.04-0.1 to
      the seed, and it was by far the slowest generator (~15-22 minutes vs.
      well under a minute for the others combined). The #1919 benchmark
@@ -205,7 +210,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      evidence over documentation when you have it.** Absent measured data,
      this is qualitative guidance from each generator's documented behavior
      (see the docstring in `src/chemsampler/models/generator.py`) — say so,
-     and let the user override it. The 6 shipped generators have measured
+     and let the user override it. The generators of the former default list have measured
      Tanimoto figures (#1919); any other Hub generator does not, so say so
      when recommending one. When step 11's empirical
      `source`/`tanimoto_to_seed` history is available from a prior run
@@ -213,11 +218,21 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      guessing from docs — that's exactly how the `eos6ost` finding above
      was made.
 
-7. **Generators.** Propose the shipped 6-generator CSV, adjusted by step 6's
-   recommendation when a seed was given, and show the list. The user accepts
+7. **Generators and similarity.** There is no built-in generator list: propose
+   one (`examples/inputs/csv/generators.csv` is a starting point), adjusted by
+   step 6's recommendation when a seed was given, and show it. The user accepts
    it or removes/adds generators; the final list is theirs, and the skill
    never drops or adds one on its own. Whatever the user confirms is what
-   step 9 writes to `generators.csv`.
+   step 9 writes to `generators.csv`. A similarity model is also required;
+   `eos8nyg` is the only one supported, so propose it for `similarity.csv` and
+   say that it returns known compounds from a reference library (not generated
+   ones) and is slow per call (about 30 s for one input in its metadata).
+   Every model is checked against the catalog in `src/chemsampler/hub/catalog.csv`
+   (offline), so one that is not in it (not Ready, such as `eos2401` today, or
+   newer than the catalog) or is labelled for another role is refused with a
+   message; relay it and let the user decide. If the user says a model should be
+   there, suggest `chemsampler setup`, which refreshes the catalog from the Hub.
+   Similarity and generators are each optional, but at least one is needed.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
    apply any silently either: state the value that will be used, so it is
@@ -228,8 +243,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    - `--n-steps` (only if `--mode incremental` was chosen; no default, must
      be asked)
    - `--tolerance` (default 0.0)
-   - `--backend` (default `run_sh`, which needs the model already fetched
-     locally and conda-packed; `ersilia` is the fallback). If `run_sh` fails
+   - `--backend` (default `run_sh`, which needs the models already fetched
+     locally and conda-packed, in the folder given by
+     `--path-to-model-repositories`, which is then required; `ersilia` is the
+     fallback and does not need it). If `run_sh` fails
      because a model isn't available locally, tell the user and let them
      choose whether to fetch it or fall back to `ersilia`; never switch on
      its own.
@@ -239,8 +256,9 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    files in a reused directory, so reusing one across runs can leave old
    `round4.csv`/`round5.csv` behind from an earlier, longer run. If the user
    wants to reuse a directory, explain that risk and let them decide. Write the
-   `annotators.csv`/`generators.csv` built above into that same directory
-   so each run is self-contained and reproducible.
+   `similarity.csv`, `generators.csv` and `annotators.csv` built above into
+   that same directory (and pass it as `--path-to-models`) so each run is
+   self-contained and reproducible.
 
 10. **Confirm before running.** Show the exact `chemsampler run` command,
     with every value that will be used (defaults included), before executing

@@ -7,7 +7,7 @@ import pandas as pd
 
 from .models.generator import SeedRequiredError
 from .models.similarity import HubSimilarity
-from .models.spec import AnnotatorSpec, Direction
+from .models.spec import AnnotatorDirection, AnnotatorSpec, Cutoff, Direction
 from .utils.logging import logger
 from .utils.similarity import tanimoto_to_seed
 
@@ -15,6 +15,7 @@ _RESERVED_COLUMNS = {
     "smiles",
     "source",
     "cutoffs_satisfied",
+    "guardrails_satisfied",
     "weighted_score",
     "tanimoto_to_seed",
     "tanimoto_to_original_seed",
@@ -38,8 +39,11 @@ def hill_climb(
     """
     Iteratively improve a seed molecule by alternating generation and scoring.
 
-    Every annotator in `annotators` is uniform: a cutoff and a direction, nothing
-    more. How they combine into a round's winner is decided by `mode`:
+    Annotators are either *primary* (optimized) or *secondary* (guard-rails). A
+    secondary annotator is a hard constraint: a candidate that does not satisfy
+    its cutoff or range is never eligible to win, in any mode, in any round or
+    stage, and it takes no part in the optimization itself. The primaries are
+    what `mode` combines into a round's winner:
 
     - "sequential": annotators are optimized one at a time, in list order. Each
       finished stage's own cutoff becomes a hard floor for every later stage -
@@ -88,12 +92,14 @@ def hill_climb(
 
     Parameters
     ----------
-    generator : object
+    generator : object or None
         Any object exposing `.generate_by_model(seed_smiles: str | None) ->
-        dict[str, list[str]]` (e.g. `HubGenerator` or a `GeneratorPool`).
+        dict[str, list[str]]` (e.g. `HubGenerator` or a `GeneratorPool`). May be
+        `None` when `similarity` is given.
     annotators : list[AnnotatorSpec]
-        At least one. In "sequential" and "incremental" modes, list order is
-        the priority/cycling order.
+        At least one must be primary. In "sequential" and "incremental" modes,
+        the order of the primaries is the priority/cycling order. Secondary
+        annotators are guard-rails (see above).
     mode : {"joint", "sequential", "weighted", "incremental"}
         How annotators combine. No default - with a single annotator the modes
         can still diverge sharply (sequential/weighted maximize or minimize it
@@ -101,9 +107,10 @@ def hill_climb(
         eligible candidate arbitrarily), so the choice is never silently assumed.
     similarity : HubSimilarity, optional
         A similarity-search model whose nearest neighbours of the current best
-        molecule join each round's candidates next to the generator's. Kept
-        separate from `generator`, which only takes generative models. Skipped
-        with a warning when there is no seed to search from.
+        molecule join each round's candidates next to the generator's, or are
+        the only candidates when `generator` is `None`. Kept separate from
+        `generator`, which only takes generative models. Skipped with a warning
+        when there is no seed to search from.
     seed_smiles : str, optional
         SMILES of the starting molecule. If `None`, the first round's winner is
         unconditionally the new best. Required if `mode="incremental"`.
@@ -146,7 +153,9 @@ def hill_climb(
         continuously numbered across stage/step boundaries in "sequential" and
         "incremental" modes. Columns: `smiles`, `source`, one column per
         `annotators` entry's `annotator_id`, `cutoffs_satisfied` (always
-        present, regardless of `mode`), `weighted_score` (only present when
+        present, regardless of `mode`; counts the primaries only),
+        `guardrails_satisfied` (True when every secondary annotator is
+        satisfied; only such candidates can win), `weighted_score` (only present when
         `mode="weighted"`), `tanimoto_to_seed` (only if a seed was given;
         always against `seed_smiles` itself, never the rolling best-so-far
         molecule), and `tanimoto_to_original_seed` (only if
@@ -155,8 +164,8 @@ def hill_climb(
     Raises
     ------
     ValueError
-        If `annotators` is empty, has duplicate or reserved `annotator_id`
-        values, `mode` isn't "joint"/"sequential"/"weighted"/"incremental",
+        If neither `generator` nor `similarity` is given, `annotators` is empty
+        or has no primary one, has duplicate or reserved `annotator_id` values, `mode` isn't "joint"/"sequential"/"weighted"/"incremental",
         `tanimoto_direction` isn't "higher"/"lower", `tanimoto_cutoff` is given
         without a seed, an entering candidate can't be scored by the annotator
         whose stage it's entering, `mode="incremental"` is given without
@@ -171,6 +180,8 @@ def hill_climb(
             f"{generator.model_id} is a similarity-search model, not a generator; "
             "pass it as hill_climb(similarity=...)"
         )
+    if generator is None and similarity is None:
+        raise ValueError("give a generator, a similarity model, or both")
     _validate_annotators(annotators)
     if mode not in ("joint", "sequential", "weighted", "incremental"):
         raise ValueError(
@@ -218,11 +229,21 @@ def hill_climb(
         )
         candidates_by_round[0] = round0_table
         seed_row = round0_table.iloc[0]
+        failing = [
+            spec.annotator_id
+            for spec in _guards(annotators)
+            if not _cutoff_satisfied(seed_row[spec.annotator_id], spec)
+        ]
+        if failing:
+            logger.warning(
+                f"The seed does not satisfy the guard-rail(s) {', '.join(failing)}; "
+                "its candidates must."
+            )
         best_row = {
             spec.annotator_id: seed_row[spec.annotator_id] for spec in annotators
         }
         if mode == "incremental":
-            for spec in annotators:
+            for spec in _primaries(annotators):
                 if not math.isfinite(spec.cutoff):
                     raise ValueError(
                         f"mode='incremental' requires a finite cutoff for every "
@@ -235,7 +256,9 @@ def hill_climb(
                         "mode='incremental' schedule"
                     )
         active_id = (
-            None if mode in ("joint", "weighted") else annotators[0].annotator_id
+            None
+            if mode in ("joint", "weighted")
+            else _primaries(annotators)[0].annotator_id
         )
         if mode == "joint":
             best_score = seed_row["cutoffs_satisfied"]
@@ -329,16 +352,16 @@ def annotate(smiles: str, annotators: list[AnnotatorSpec]) -> pd.DataFrame:
     smiles : str
         SMILES of the molecule to score.
     annotators : list[AnnotatorSpec]
-        At least one. See `hill_climb` for the shared invariants (unique,
-        non-reserved `annotator_id` values).
+        At least one, primary or secondary. See `hill_climb` for the shared
+        invariants (unique, non-reserved `annotator_id` values).
 
     Returns
     -------
     pandas.DataFrame
         Exactly one row, shaped like a `hill_climb` round table: `smiles`,
         `source` (always "input"), one column per `annotators` entry's
-        `annotator_id` (`NaN` where that annotator can't score `smiles`), and
-        `cutoffs_satisfied`.
+        `annotator_id` (`NaN` where that annotator can't score `smiles`),
+        `cutoffs_satisfied` (primaries only) and `guardrails_satisfied`.
 
     Raises
     ------
@@ -346,7 +369,7 @@ def annotate(smiles: str, annotators: list[AnnotatorSpec]) -> pd.DataFrame:
         If `annotators` is empty or has duplicate/reserved `annotator_id`
         values.
     """
-    _validate_annotators(annotators)
+    _validate_annotators(annotators, need_primary=False)
     scores = _score_candidates([smiles], annotators)
     return _round_table({smiles: "input"}, scores, annotators, tanimoto=None)
 
@@ -415,10 +438,17 @@ class _CandidateSources:
         self._generator = generator
         self._similarity = similarity
         # The per-round log line reads `.generators`; a lone generator has none.
-        self.generators = [*getattr(generator, "generators", [generator]), similarity]
+        generators = (
+            [] if generator is None else getattr(generator, "generators", [generator])
+        )
+        self.generators = [*generators, similarity]
 
     def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
-        by_model = dict(self._generator.generate_by_model(seed_smiles))
+        by_model = (
+            {}
+            if self._generator is None
+            else dict(self._generator.generate_by_model(seed_smiles))
+        )
         try:
             by_model.update(self._similarity.search_by_model(seed_smiles))
         except SeedRequiredError:
@@ -428,10 +458,27 @@ class _CandidateSources:
         return by_model
 
 
-def _validate_annotators(annotators: list[AnnotatorSpec]) -> None:
+def _primaries(annotators: list[AnnotatorSpec]) -> list[AnnotatorSpec]:
+    """The annotators a mode optimizes, in list order."""
+    return [spec for spec in annotators if spec.priority == "primary"]
+
+
+def _guards(annotators: list[AnnotatorSpec]) -> list[AnnotatorSpec]:
+    """The secondary annotators: constraints every candidate must satisfy."""
+    return [spec for spec in annotators if spec.priority == "secondary"]
+
+
+def _validate_annotators(
+    annotators: list[AnnotatorSpec], need_primary: bool = True
+) -> None:
     """Check the list-level invariants hill_climb depends on."""
     if not annotators:
         raise ValueError("annotators must not be empty")
+    if need_primary and not _primaries(annotators):
+        raise ValueError(
+            "at least one primary annotator is required: secondary annotators "
+            "are guard-rails and are not optimized"
+        )
 
     ids = [spec.annotator_id for spec in annotators]
     if len(set(ids)) != len(ids):
@@ -459,10 +506,15 @@ def _score_candidates(
     }
 
 
-def _value_satisfies(value: float, cutoff: float, direction: Direction) -> bool:
+def _value_satisfies(
+    value: float, cutoff: Cutoff, direction: AnnotatorDirection
+) -> bool:
     """A missing (NaN) value always fails, regardless of how permissive the cutoff is."""
     if value is None or math.isnan(value):
         return False
+    if direction == "range":
+        low, high = cutoff
+        return low <= value <= high
     if direction == "higher":
         return value >= cutoff
     return value <= cutoff
@@ -474,9 +526,12 @@ def _cutoff_satisfied(value: float, spec: AnnotatorSpec) -> bool:
 
 
 def _cutoff_satisfied_mask(
-    values: pd.Series, cutoff: float, direction: Direction
+    values: pd.Series, cutoff: Cutoff, direction: AnnotatorDirection
 ) -> pd.Series:
     """Vectorized `_cutoff_satisfied`; NaN comparisons are already False in pandas."""
+    if direction == "range":
+        low, high = cutoff
+        return (values >= low) & (values <= high)
     if direction == "higher":
         return values >= cutoff
     return values <= cutoff
@@ -527,13 +582,22 @@ def _round_table(
     original_seed_tanimoto: dict[str, float] | None = None,
     include_weighted_score: bool = False,
 ) -> pd.DataFrame:
-    """Assemble one round's candidate table: smiles, source, annotator values, cutoff count."""
+    """Assemble one round's candidate table: smiles, source, annotator values, cutoff count.
+
+    The count and the weighted score cover the primary annotators only; the
+    secondary ones decide `guardrails_satisfied`.
+    """
+    primaries = _primaries(annotators)
+    guards = _guards(annotators)
     rows = []
     for smi, source in source_by_smiles.items():
         row = {"smiles": smi, "source": source, **scores[smi]}
-        row["cutoffs_satisfied"] = _cutoffs_satisfied_count(scores[smi], annotators)
+        row["cutoffs_satisfied"] = _cutoffs_satisfied_count(scores[smi], primaries)
+        row["guardrails_satisfied"] = _cutoffs_satisfied_count(
+            scores[smi], guards
+        ) == len(guards)
         if include_weighted_score:
-            row["weighted_score"] = _weighted_score(scores[smi], annotators)
+            row["weighted_score"] = _weighted_score(scores[smi], primaries)
         if tanimoto is not None:
             row["tanimoto_to_seed"] = tanimoto.get(smi, float("nan"))
         if original_seed_tanimoto is not None:
@@ -571,17 +635,22 @@ def _sort_round_table(
     ).reset_index(drop=True)
 
 
-def _tanimoto_eligible(
+def _eligible(
     round_table: pd.DataFrame,
     tanimoto_cutoff: float | None,
     tanimoto_direction: Direction,
 ) -> pd.Series:
-    """All True if no cutoff is given; else Tanimoto-to-seed must clear it (missing -> False)."""
-    if tanimoto_cutoff is None:
-        return pd.Series(True, index=round_table.index)
-    return _cutoff_satisfied_mask(
-        round_table["tanimoto_to_seed"], tanimoto_cutoff, tanimoto_direction
-    )
+    """Candidates allowed to win: they clear the Tanimoto gate and every guard-rail.
+
+    Without a Tanimoto cutoff only the guard-rails apply. A missing Tanimoto
+    value or guard-rail score never passes.
+    """
+    mask = round_table["guardrails_satisfied"].astype(bool)
+    if tanimoto_cutoff is not None:
+        mask &= _cutoff_satisfied_mask(
+            round_table["tanimoto_to_seed"], tanimoto_cutoff, tanimoto_direction
+        )
+    return mask
 
 
 def _improved(
@@ -751,7 +820,7 @@ def _run_joint(
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     def pick_winner(round_table: pd.DataFrame):
         eligible = round_table[
-            _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+            _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
         ]
         if eligible.empty:
             return None
@@ -791,7 +860,7 @@ def _run_weighted(
     best_row: dict[str, float],
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     def pick_winner(round_table: pd.DataFrame):
-        mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+        mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
         mask &= round_table["weighted_score"].notna()
         eligible = round_table[mask]
         if eligible.empty:
@@ -837,7 +906,7 @@ def _run_sequential(
     floors: list[tuple[str, float, Direction]] = []
     next_round = 1
 
-    for spec in annotators:
+    for spec in _primaries(annotators):
         if best_smiles is None:
             best_score = float("-inf") if spec.direction == "higher" else float("inf")
             entry_ok = True  # no entry candidate to check; the "no candidates" path handles failure
@@ -856,7 +925,7 @@ def _run_sequential(
         def pick_winner(
             round_table: pd.DataFrame, spec=spec, floors_snapshot=floors_snapshot
         ):
-            mask = _tanimoto_eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+            mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
             mask &= _cutoff_satisfied_mask(
                 round_table[spec.annotator_id], spec.cutoff, spec.direction
             )
@@ -871,9 +940,7 @@ def _run_sequential(
                 # every prior floor - floors are a hard invariant and are never
                 # dropped, even in this fallback (own cutoff is still excluded;
                 # that's the whole point of the fallback).
-                floor_mask = _tanimoto_eligible(
-                    round_table, tanimoto_cutoff, tanimoto_direction
-                )
+                floor_mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
                 for floor_id, floor_value, floor_direction in floors_snapshot:
                     floor_mask &= _cutoff_satisfied_mask(
                         round_table[floor_id], floor_value, floor_direction
@@ -982,7 +1049,7 @@ def _run_incremental(
     next_round = 1
 
     for level in range(1, n_steps + 1):
-        for spec in annotators:
+        for spec in _primaries(annotators):
             target = _incremental_target(
                 seed_value[spec.annotator_id], spec.cutoff, level, n_steps
             )
@@ -1008,9 +1075,7 @@ def _run_incremental(
                 target=target,
                 floors_snapshot=floors_snapshot,
             ):
-                mask = _tanimoto_eligible(
-                    round_table, tanimoto_cutoff, tanimoto_direction
-                )
+                mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
                 mask &= _cutoff_satisfied_mask(
                     round_table[spec.annotator_id], target, spec.direction
                 )
@@ -1025,7 +1090,7 @@ def _run_incremental(
                     # respects every prior floor - floors are a hard invariant and
                     # are never dropped, even in this fallback (own target is
                     # still excluded; that's the whole point of the fallback).
-                    floor_mask = _tanimoto_eligible(
+                    floor_mask = _eligible(
                         round_table, tanimoto_cutoff, tanimoto_direction
                     )
                     for floor_id, floor_value, floor_direction in floors_snapshot:

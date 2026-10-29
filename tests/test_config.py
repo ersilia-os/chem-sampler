@@ -1,25 +1,28 @@
 import csv
+import json
 
 import pytest
 
-from chemsampler.config import build_annotator, load_annotators, load_generators
-from chemsampler.models.annotator import QEDAnnotator
-from chemsampler.models.generator import HubGenerator
+from chemsampler import config
+from chemsampler.config import build_annotator, load_annotators, load_inputs
+from chemsampler.models.annotator import MolecularWeightAnnotator, QEDAnnotator
 from chemsampler.models.hub_annotator import HubAnnotator
+from chemsampler.models.similarity import HubSimilarity
 
-
-class FakeHubModel:
-    """Stands in for HubModel so constructing a HubGenerator/HubAnnotator is free."""
-
-    def __init__(self, model_id, backend="ersilia"):
-        self.model_id = model_id
-        self.backend = backend
+ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
+ANNOTATOR_ROWS = [
+    ["ersilia", "eos4zfy", "0.5", "higher", "primary", "2"],
+    ["rdkit", "mw", "250-450", "range", "secondary", ""],
+    ["rdkit", "qed", "0.3", "higher", "secondary", ""],
+]
 
 
 @pytest.fixture(autouse=True)
-def no_real_hub_calls(monkeypatch):
-    monkeypatch.setattr("chemsampler.models.generator.HubModel", FakeHubModel)
-    monkeypatch.setattr("chemsampler.models.hub_annotator.HubModel", FakeHubModel)
+def hub(monkeypatch):
+    """Record what would be sent to the Hub instead of querying it."""
+    calls = []
+    monkeypatch.setattr(config, "validate_models", lambda **kw: calls.append(kw))
+    return calls
 
 
 def _write_csv(path, header, rows):
@@ -29,193 +32,439 @@ def _write_csv(path, header, rows):
         writer.writerows(rows)
 
 
-def test_load_generators_default_backend_is_run_sh():
-    pool = load_generators()
-
-    assert all(g._hub_model.backend == "run_sh" for g in pool.generators)
-
-
-def test_load_generators_threads_backend_to_hub_generator(tmp_path):
-    path = tmp_path / "generators.csv"
-    _write_csv(path, ["generator_id"], [["eos9taz"]])
-
-    pool = load_generators(str(path), backend="run_sh")
-
-    assert pool.generators[0]._hub_model.backend == "run_sh"
+@pytest.fixture
+def inputs_dir(tmp_path):
+    folder = tmp_path / "inputs"
+    folder.mkdir()
+    _write_csv(folder / "similarity.csv", ["similarity"], [["eos8nyg"]])
+    _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"], ["eos80sj"]])
+    _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS)
+    return folder
 
 
-def test_load_generators_rejects_missing_column(tmp_path):
-    path = tmp_path / "generators.csv"
-    _write_csv(path, ["wrong_column"], [["eos9taz"]])
-
-    with pytest.raises(ValueError, match="generator_id"):
-        load_generators(str(path))
+def _load(inputs_dir, **kwargs):
+    kwargs.setdefault("backend", "ersilia")
+    return load_inputs(path_to_models=str(inputs_dir), **kwargs)
 
 
-def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path, ["annotator_id", "cutoff", "direction"], [["eos4zfy", "0.0", "higher"]]
-    )
-
-    specs = load_annotators(str(path), backend="run_sh")
-
-    assert specs[0].annotator._hub_model.backend == "run_sh"
+# --- the three CSVs -----------------------------------------------------------------
 
 
-def test_load_generators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
+def test_loads_the_three_inputs_from_csvs(inputs_dir):
+    inputs = _load(inputs_dir)
+
+    assert isinstance(inputs.similarity, HubSimilarity)
+    assert inputs.similarity.model_id == "eos8nyg"
+    assert [g.model_id for g in inputs.generators.generators] == ["eos9taz", "eos80sj"]
+    specs = {s.annotator_id: s for s in inputs.annotators}
+    assert list(specs) == ["eos4zfy", "mw", "qed"]
+    assert isinstance(specs["eos4zfy"].annotator, HubAnnotator)
+    assert (specs["eos4zfy"].priority, specs["eos4zfy"].weight) == ("primary", 2.0)
+    assert isinstance(specs["mw"].annotator, MolecularWeightAnnotator)
+    assert isinstance(specs["qed"].annotator, QEDAnnotator)
+    assert (specs["mw"].cutoff, specs["mw"].direction) == ((250.0, 450.0), "range")
+    assert specs["mw"].priority == "secondary"
+
+
+def test_every_hub_model_is_checked_but_in_house_annotators_are_not(inputs_dir, hub):
+    _load(inputs_dir)
+
+    assert hub == [
+        {
+            "generators": ["eos9taz", "eos80sj"],
+            "similarity": ["eos8nyg"],
+            "annotators": ["eos4zfy"],
+        }
+    ]
+
+
+def test_annotators_are_required_and_the_error_lists_every_way(inputs_dir):
+    (inputs_dir / "annotators.csv").unlink()
+
+    with pytest.raises(ValueError) as error:
+        _load(inputs_dir)
+
+    message = str(error.value)
+    assert "annotators is required" in message
+    for way in (
+        "--annotators FILE",
+        "config file",
+        "--path-to-models",
+        "working directory",
+    ):
+        assert way in message
+
+
+def test_similarity_and_generators_are_each_optional(inputs_dir, hub):
+    (inputs_dir / "similarity.csv").unlink()
+    without_similarity = _load(inputs_dir)
+    (inputs_dir / "similarity.csv").write_text("similarity\neos8nyg\n")
+    (inputs_dir / "generators.csv").unlink()
+    without_generators = _load(inputs_dir)
+
+    assert without_similarity.similarity is None
+    assert without_similarity.generators is not None
+    assert without_generators.generators is None
+    assert without_generators.similarity.model_id == "eos8nyg"
+    assert hub[0]["similarity"] == [] and hub[1]["generators"] == []
+
+
+def test_at_least_one_of_similarity_and_generators_is_needed(inputs_dir):
+    (inputs_dir / "similarity.csv").unlink()
+    (inputs_dir / "generators.csv").unlink()
+
+    with pytest.raises(ValueError, match="at least one of similarity and generators"):
+        _load(inputs_dir)
+
+
+def test_without_any_source_the_error_lists_the_ways(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["eos9taz"]])
 
-    pool = load_generators()
-
-    assert [g.model_id for g in pool.generators] == ["eos9taz"]
+    with pytest.raises(ValueError, match="config file.*--path-to-models"):
+        load_inputs(backend="ersilia")
 
 
-def test_load_generators_default_still_used_when_no_cwd_csv(tmp_path, monkeypatch):
+# --- flags and the working directory ------------------------------------------------
+
+
+def test_a_flag_overrides_the_config_and_the_folder(inputs_dir, tmp_path):
+    other = tmp_path / "other.csv"
+    _write_csv(other, ["generators"], [["eos8vud"]])
+
+    inputs = _load(inputs_dir, generators=str(other))
+
+    assert [g.model_id for g in inputs.generators.generators] == ["eos8vud"]
+    assert inputs.similarity.model_id == "eos8nyg"  # the other inputs are unaffected
+
+
+def test_a_flag_overrides_an_inline_config_value(tmp_path):
+    other = tmp_path / "annotators.csv"
+    _write_csv(other, ANNOTATOR_HEADER, ANNOTATOR_ROWS[:1])
+    path = _write_config(tmp_path / "config.json", **INLINE)
+
+    inputs = load_inputs(config=path, annotators=str(other), backend="ersilia")
+
+    assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy"]
+
+
+def test_a_flag_file_needs_the_right_header(inputs_dir, tmp_path):
+    other = tmp_path / "other.csv"
+    _write_csv(other, ["generator_id"], [["eos8vud"]])
+
+    with pytest.raises(ValueError, match="bad header"):
+        _load(inputs_dir, generators=str(other))
+
+
+def test_inputs_are_found_in_the_working_directory(inputs_dir, monkeypatch):
+    monkeypatch.chdir(inputs_dir)
+
+    inputs = load_inputs(backend="ersilia")
+
+    assert inputs.similarity.model_id == "eos8nyg"
+    assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw", "qed"]
+
+
+def test_a_named_folder_never_falls_back_to_the_working_directory(
+    inputs_dir, tmp_path, monkeypatch
+):
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    (inputs_dir / "similarity.csv").rename(tmp_path / "similarity.csv")
+    (inputs_dir / "generators.csv").rename(folder / "generators.csv")
+    (inputs_dir / "annotators.csv").rename(folder / "annotators.csv")
+    monkeypatch.chdir(tmp_path)  # holds a similarity.csv that must be ignored
+
+    inputs = _load(folder)
+
+    assert inputs.similarity is None
+
+
+def test_path_to_models_must_be_a_folder(tmp_path):
+    with pytest.raises(ValueError, match="is not a folder"):
+        load_inputs(path_to_models=str(tmp_path / "nowhere"), backend="ersilia")
+
+
+def test_csv_headers_must_be_the_input_names(inputs_dir):
+    _write_csv(inputs_dir / "generators.csv", ["generator_id"], [["eos9taz"]])
+
+    with pytest.raises(ValueError, match="bad header"):
+        _load(inputs_dir)
+
+
+def test_blank_rows_are_skipped_and_repeats_rejected(inputs_dir):
+    _write_csv(
+        inputs_dir / "generators.csv", ["generators"], [["eos9taz"], [""], [" "]]
+    )
+    assert [g.model_id for g in _load(inputs_dir).generators.generators] == ["eos9taz"]
+
+    _write_csv(
+        inputs_dir / "generators.csv", ["generators"], [["eos9taz"], ["eos9taz"]]
+    )
+    with pytest.raises(ValueError, match="more than once"):
+        _load(inputs_dir)
+
+
+def test_an_empty_list_is_rejected(inputs_dir):
+    _write_csv(inputs_dir / "generators.csv", ["generators"], [])
+
+    with pytest.raises(ValueError, match="at least one model"):
+        _load(inputs_dir)
+
+
+def test_only_one_similarity_model_for_now(inputs_dir):
+    _write_csv(
+        inputs_dir / "similarity.csv", ["similarity"], [["eos8nyg"], ["eos2a9n"]]
+    )
+
+    with pytest.raises(ValueError, match="only one similarity model"):
+        _load(inputs_dir)
+
+
+def test_annotator_errors_say_the_file_and_row(inputs_dir):
+    rows = [ANNOTATOR_ROWS[0], ["rdkit", "mw", "250", "range", "secondary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    with pytest.raises(ValueError, match=r"annotators\.csv row 2 \(mw\).*min-max"):
+        _load(inputs_dir)
+
+
+def test_a_run_needs_a_primary_annotator(inputs_dir):
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS[1:])
+
+    with pytest.raises(ValueError, match="at least one primary"):
+        _load(inputs_dir)
+
+
+def test_an_annotator_cannot_be_listed_twice(inputs_dir):
+    rows = [ANNOTATOR_ROWS[0], ANNOTATOR_ROWS[0]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    with pytest.raises(ValueError, match="more than once"):
+        _load(inputs_dir)
+
+
+def test_weight_defaults_to_one_and_column_reaches_the_hub_annotator(inputs_dir):
+    header = ["source", "model", "cutoff", "direction", "priority", "column"]
+    rows = [["ersilia", "eos4zfy", "0.5", "higher", "primary", "score"]]
+    _write_csv(inputs_dir / "annotators.csv", header, rows)
+
+    spec = _load(inputs_dir).annotators[0]
+
+    assert spec.weight == 1.0
+    assert spec.annotator.column == "score"
+
+
+# --- the config file ----------------------------------------------------------------
+
+INLINE = {
+    "similarity": ["eos8nyg"],
+    "generators": ["eos9taz"],
+    "annotators": [
+        {
+            "source": "ersilia",
+            "model": "eos4zfy",
+            "cutoff": 0.5,
+            "direction": "higher",
+            "priority": "primary",
+        },
+        {
+            "source": "rdkit",
+            "model": "mw",
+            "cutoff": "250-450",
+            "direction": "range",
+            "priority": "secondary",
+        },
+    ],
+}
+
+
+def _write_config(path, **keys):
+    path.write_text(json.dumps(keys))
+    return str(path)
+
+
+def test_everything_can_be_given_inline_in_the_config(tmp_path):
+    path = _write_config(tmp_path / "config.json", **INLINE)
+
+    inputs = load_inputs(config=path, backend="ersilia")
+
+    assert inputs.similarity.model_id == "eos8nyg"
+    assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw"]
+    assert inputs.annotators[1].cutoff == (250.0, 450.0)
+
+
+def test_config_paths_are_relative_to_the_config_file_not_the_cwd(
+    tmp_path, monkeypatch
+):
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    (config_dir / "models").mkdir()
+    _write_csv(config_dir / "models" / "generators.csv", ["generators"], [["eos9taz"]])
+    path = _write_config(
+        config_dir / "config.json",
+        path_to_models="models",
+        similarity=INLINE["similarity"],
+        annotators=INLINE["annotators"],
+    )
     monkeypatch.chdir(tmp_path)
 
-    pool = load_generators()
+    inputs = load_inputs(config=path, backend="ersilia")
 
-    assert len(pool.generators) == 6
-    assert all(isinstance(g, HubGenerator) for g in pool.generators)
+    assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
 
 
-def test_load_annotators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    _write_csv(
-        tmp_path / "annotators.csv",
-        ["annotator_id", "cutoff", "direction"],
-        [["qed", "0.3", "higher"]],
+def test_flags_override_the_config_paths(tmp_path, inputs_dir):
+    path = _write_config(tmp_path / "config.json", path_to_models="nowhere")
+
+    inputs = load_inputs(config=path, path_to_models=str(inputs_dir), backend="ersilia")
+
+    assert inputs.similarity.model_id == "eos8nyg"
+
+
+def test_an_input_in_both_the_config_and_a_csv_is_rejected(tmp_path, inputs_dir):
+    path = _write_config(
+        tmp_path / "config.json", path_to_models=str(inputs_dir), generators=["eos9taz"]
     )
 
-    specs = load_annotators()
-
-    assert specs[0].annotator_id == "qed"
-
-
-def test_load_annotators_raises_when_nothing_available(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="annotators.csv"):
-        load_annotators()
+    with pytest.raises(ValueError, match="generators is given twice"):
+        load_inputs(config=path, backend="ersilia")
 
 
-def test_build_annotator_dispatches_qed_and_hub_ids():
-    assert isinstance(build_annotator("qed"), QEDAnnotator)
-    assert isinstance(build_annotator("eos4zfy"), HubAnnotator)
+@pytest.mark.parametrize(
+    "keys, message",
+    [
+        ({"colour": 1}, "unknown key"),
+        ({"path_to_models": 3}, "must be a path"),
+        ({"generators": "eos9taz"}, "list of model ids"),
+        ({"annotators": ["mw"]}, "list of objects"),
+    ],
+)
+def test_malformed_configs_are_explained(tmp_path, keys, message):
+    path = _write_config(tmp_path / "config.json", **keys)
+
+    with pytest.raises(ValueError, match=message):
+        load_inputs(config=path, backend="ersilia")
 
 
-def test_load_annotators_builds_specs_from_csv(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction"],
-        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
+def test_config_must_be_a_json_object(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("[1, 2]")
+    with pytest.raises(ValueError, match="expected a JSON object"):
+        load_inputs(config=str(path), backend="ersilia")
+
+    path.write_text("{oops")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        load_inputs(config=str(path), backend="ersilia")
+
+
+def test_inline_annotator_errors_say_which_entry(tmp_path):
+    bad = {**INLINE["annotators"][1], "cutoff": "250"}
+    path = _write_config(
+        tmp_path / "config.json",
+        **{**INLINE, "annotators": [INLINE["annotators"][0], bad]},
     )
 
-    specs = load_annotators(str(path))
-
-    assert [spec.annotator_id for spec in specs] == ["qed", "eos4zfy"]
-    assert specs[0].cutoff == 0.3
-    assert specs[0].direction == "higher"
-    assert specs[1].cutoff == 50.0
-    assert specs[1].direction == "lower"
+    with pytest.raises(ValueError, match=r"annotators\[1\] \(mw\)"):
+        load_inputs(config=path, backend="ersilia")
 
 
-def test_load_annotators_preserves_csv_row_order(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction"],
-        [
-            ["eos4zfy", "0", "higher"],
-            ["qed", "0.3", "higher"],
-            ["eos6ost", "1", "higher"],
-        ],
-    )
-
-    specs = load_annotators(str(path))
-
-    assert [spec.annotator_id for spec in specs] == ["eos4zfy", "qed", "eos6ost"]
+# --- model repositories and the Hub -------------------------------------------------
 
 
-def test_load_annotators_rejects_missing_cutoff(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(path, ["annotator_id", "cutoff", "direction"], [["qed", "", "higher"]])
+def test_run_sh_needs_the_repositories_folder(inputs_dir, hub):
+    with pytest.raises(ValueError, match="path-to-model-repositories"):
+        _load(inputs_dir, backend="run_sh")
 
-    with pytest.raises(ValueError, match="cutoff"):
-        load_annotators(str(path))
-
-
-def test_load_annotators_rejects_invalid_cutoff_value(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction"],
-        [["qed", "not-a-number", "higher"]],
-    )
-
-    with pytest.raises(ValueError, match="cutoff"):
-        load_annotators(str(path))
+    assert hub == []  # a cheap local check comes before the network one
 
 
-def test_load_annotators_rejects_unknown_direction(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path, ["annotator_id", "cutoff", "direction"], [["qed", "0.3", "sideways"]]
-    )
-
-    with pytest.raises(ValueError, match="direction"):
-        load_annotators(str(path))
-
-
-def test_load_annotators_rejects_duplicate_annotator_id(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction"],
-        [["qed", "0.3", "higher"], ["qed", "0.5", "higher"]],
-    )
-
-    with pytest.raises(ValueError, match="duplicate"):
-        load_annotators(str(path))
+def test_the_repositories_folder_must_exist(inputs_dir, tmp_path):
+    with pytest.raises(ValueError, match="does not exist"):
+        _load(
+            inputs_dir,
+            backend="run_sh",
+            path_to_model_repositories=str(tmp_path / "nowhere"),
+        )
 
 
-def test_load_annotators_weight_defaults_to_one_when_column_missing(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction"],
-        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
-    )
+def test_every_missing_model_folder_is_listed(inputs_dir, tmp_path):
+    repos = tmp_path / "repos"
+    (repos / "eos9taz").mkdir(parents=True)
 
-    specs = load_annotators(str(path))
+    with pytest.raises(ValueError) as error:
+        _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
 
-    assert [spec.weight for spec in specs] == [1.0, 1.0]
+    assert "['eos80sj', 'eos8nyg', 'eos4zfy']" in str(error.value)
 
 
-def test_load_annotators_parses_weight_column(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction", "weight"],
-        [["qed", "0.3", "higher", "2.5"], ["eos4zfy", "50", "lower", ""]],
-    )
+def test_run_sh_loads_when_every_folder_is_there(inputs_dir, tmp_path):
+    repos = tmp_path / "repos"
+    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
+        (repos / model).mkdir(parents=True)
 
-    specs = load_annotators(str(path))
+    inputs = _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
 
-    assert specs[0].weight == 2.5
-    assert specs[1].weight == 1.0  # blank cell falls back to the default
+    assert inputs.models_dir == str(repos)
+    assert inputs.generators.generators[0]._hub_model.models_dir == str(repos)
 
 
-def test_load_annotators_rejects_negative_weight(tmp_path):
-    path = tmp_path / "annotators.csv"
-    _write_csv(
-        path,
-        ["annotator_id", "cutoff", "direction", "weight"],
-        [["qed", "0.3", "higher", "-1"]],
-    )
+def test_the_ersilia_backend_does_not_need_the_repositories_folder(inputs_dir):
+    assert _load(inputs_dir, backend="ersilia").models_dir is None
 
-    with pytest.raises(ValueError, match="weight"):
-        load_annotators(str(path))
+
+def test_a_malformed_input_never_reaches_the_hub(inputs_dir, hub):
+    _write_csv(inputs_dir / "generators.csv", ["generator_id"], [["eos9taz"]])
+
+    with pytest.raises(ValueError):
+        _load(inputs_dir)
+
+    assert hub == []
+
+
+def test_a_hub_rejection_is_raised_as_is(inputs_dir, monkeypatch):
+    def reject(**kwargs):
+        raise ValueError("the Ersilia Model Hub does not accept these models")
+
+    monkeypatch.setattr(config, "validate_models", reject)
+
+    with pytest.raises(ValueError, match="does not accept"):
+        _load(inputs_dir)
+
+
+# --- annotators on their own --------------------------------------------------------
+
+
+def test_load_annotators_reads_nothing_else(inputs_dir, hub):
+    (inputs_dir / "similarity.csv").unlink()
+    (inputs_dir / "generators.csv").unlink()
+
+    specs = load_annotators(path_to_models=str(inputs_dir), backend="ersilia")
+
+    assert [s.annotator_id for s in specs] == ["eos4zfy", "mw", "qed"]
+    assert hub == [{"generators": [], "similarity": [], "annotators": ["eos4zfy"]}]
+
+
+def test_in_house_annotators_need_no_repositories_even_with_run_sh(inputs_dir):
+    rows = [["rdkit", "mw", "250", "higher", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    specs = load_annotators(path_to_models=str(inputs_dir), backend="run_sh")
+
+    assert [s.annotator_id for s in specs] == ["mw"]
+
+
+# --- build_annotator ----------------------------------------------------------------
+
+
+def test_build_annotator_dispatches_on_source():
+    assert isinstance(build_annotator("rdkit", "mw"), MolecularWeightAnnotator)
+    assert isinstance(build_annotator("rdkit", "qed"), QEDAnnotator)
+    hub_annotator = build_annotator("ersilia", "eos4zfy", "score", backend="ersilia")
+    assert isinstance(hub_annotator, HubAnnotator) and hub_annotator.column == "score"
+
+
+def test_build_annotator_rejects_unknown_names():
+    with pytest.raises(ValueError, match="unknown rdkit model"):
+        build_annotator("rdkit", "logp")
+    with pytest.raises(ValueError, match="source must be one of"):
+        build_annotator("pubchem", "mw")

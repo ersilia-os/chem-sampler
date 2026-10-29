@@ -32,6 +32,9 @@ class HubAnnotator:
         column; required when the model returns more than one.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
+    models_dir : str, optional
+        Folder holding the model repositories, passed through to `HubModel`.
+        Required by the "run_sh" backend.
 
     Raises
     ------
@@ -40,7 +43,11 @@ class HubAnnotator:
     """
 
     def __init__(
-        self, model_id: str, column: str | None = None, backend: Backend = "run_sh"
+        self,
+        model_id: str,
+        column: str | None = None,
+        backend: Backend = "run_sh",
+        models_dir: str | None = None,
     ):
         if model_id in SIMILARITY_MODEL_IDS:
             raise ValueError(
@@ -49,7 +56,7 @@ class HubAnnotator:
             )
         self.model_id = model_id
         self.column = column
-        self._hub_model = HubModel(model_id, backend=backend)
+        self._hub_model = HubModel(model_id, backend=backend, models_dir=models_dir)
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """

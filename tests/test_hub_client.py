@@ -32,9 +32,18 @@ def fake_ersilia_model(monkeypatch):
 
 
 def test_run_sh_backend_is_default():
-    model = HubModel("fake-model")
+    model = HubModel("fake-model", models_dir="/models")
 
     assert model.backend == "run_sh"
+
+
+def test_run_sh_requires_the_models_dir():
+    with pytest.raises(ValueError, match="path-to-model-repositories"):
+        HubModel("fake-model")
+
+
+def test_ersilia_backend_does_not_need_the_models_dir():
+    assert HubModel("fake-model", backend="ersilia").models_dir is None
 
 
 def test_rejects_unknown_backend():
@@ -67,9 +76,8 @@ def test_run_sh_happy_path(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
-    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
-    model = HubModel("fake-model", backend="run_sh")
+    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
     df = model.run(["C"])
 
     assert len(calls) == 1
@@ -81,22 +89,19 @@ def test_run_sh_happy_path(tmp_path, monkeypatch):
     assert df["score"].tolist() == [1.0]
 
 
-def test_run_sh_raises_when_run_sh_missing(tmp_path, monkeypatch):
+def test_run_sh_raises_when_run_sh_missing(tmp_path):
     models_dir = tmp_path / "models"
     bundle = models_dir / "fake-model"
     (bundle / "model" / "framework").mkdir(parents=True)
-    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
-    model = HubModel("fake-model", backend="run_sh")
+    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
 
     with pytest.raises(RuntimeError, match="run.sh not found"):
         model.run(["C"])
 
 
-def test_run_sh_raises_when_bundle_missing(monkeypatch):
-    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", "/nonexistent")
-
-    model = HubModel("fake-model", backend="run_sh")
+def test_run_sh_raises_when_bundle_missing():
+    model = HubModel("fake-model", backend="run_sh", models_dir="/nonexistent")
 
     with pytest.raises(RuntimeError, match="not found at"):
         model.run(["C"])
@@ -112,9 +117,8 @@ def test_run_sh_wraps_subprocess_failure(tmp_path, monkeypatch):
         raise subprocess.CalledProcessError(1, argv, output="", stderr="boom")
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
-    monkeypatch.setenv("CHEMSAMPLER_MODELS_DIR", str(models_dir))
 
-    model = HubModel("fake-model", backend="run_sh")
+    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
 
     with pytest.raises(RuntimeError, match="boom"):
         model.run(["C"])

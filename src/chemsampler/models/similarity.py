@@ -1,4 +1,9 @@
-from ..hub.client import SIMILARITY_MODEL_IDS, Backend, HubModel
+from ..hub.client import (
+    SIMILARITY_MODEL_IDS,
+    Backend,
+    HubModel,
+    not_allowed_similarity_message,
+)
 from ._smiles import candidates_from_output
 from .generator import SeedRequiredError
 
@@ -20,6 +25,9 @@ class HubSimilarity:
         Reference Library Similarity) is supported for now.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
+    models_dir : str, optional
+        Folder holding the model repositories, passed through to `HubModel`.
+        Required by the "run_sh" backend.
 
     Raises
     ------
@@ -27,14 +35,16 @@ class HubSimilarity:
         If `model_id` is not a supported similarity model.
     """
 
-    def __init__(self, model_id: str, backend: Backend = "run_sh"):
+    def __init__(
+        self,
+        model_id: str,
+        backend: Backend = "run_sh",
+        models_dir: str | None = None,
+    ):
         if model_id not in SIMILARITY_MODEL_IDS:
-            supported = ", ".join(sorted(SIMILARITY_MODEL_IDS))
-            raise ValueError(
-                f"{model_id} is not a supported similarity model (supported: {supported})"
-            )
+            raise ValueError(not_allowed_similarity_message(model_id))
         self.model_id = model_id
-        self._hub_model = HubModel(model_id, backend=backend)
+        self._hub_model = HubModel(model_id, backend=backend, models_dir=models_dir)
 
     def search(self, seed_smiles: str | None) -> list[str]:
         """

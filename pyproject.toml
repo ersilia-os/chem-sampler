@@ -40,7 +40,7 @@ audit = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-chemsampler = ["config/*.csv"]
+chemsampler = ["hub/*.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
