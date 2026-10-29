@@ -29,6 +29,19 @@ ORG_URL = "https://github.com/ersilia-os"
 #: for which commit the checkpoints were downloaded.
 STATE_FILE = ".chemsampler-fetch.json"
 
+#: What a model needs to run: its checkpoints. `fit` (the training data eosvc also
+#: manages) is deliberately not downloaded.
+CHECKPOINTS_PATH = "model/checkpoints"
+
+#: eosvc marks a failure with this and exits non-zero even when a path it manages is
+#: simply empty in S3 - which is the case for a model that keeps its data in git.
+_EOSVC_FAILURE = "\u2717"
+_EOSVC_EMPTY_PATH = "Nothing found at"
+
+#: eosvc keeps its own state here, inside the clone. Model repositories do not
+#: ignore it, so it would otherwise make every clone we fetched look modified.
+_EOSVC_STATE_DIR = ".eosvc"
+
 _LOW_DISK_GB = 10
 
 #: `pip install` options that take a value, so the value is not read as a package.
@@ -160,6 +173,24 @@ class _Log:
 
 def _tail(result: subprocess.CompletedProcess, size: int = 400) -> str:
     return (result.stderr or result.stdout or "").strip()[-size:]
+
+
+def _eosvc_problem(output: str) -> str | None:
+    """
+    What went wrong in an eosvc run, or None if only empty paths were reported.
+
+    eosvc exits non-zero when a path it manages holds nothing in S3, which is
+    not a failure: the model simply keeps that data in git. Anything else it
+    reports (no credentials, no network, a broken object) is a real failure.
+    """
+    failures = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip().startswith(_EOSVC_FAILURE)
+    ]
+    if failures and all(_EOSVC_EMPTY_PATH in line for line in failures):
+        return None
+    return output.strip()[-400:] or "eosvc failed without saying why"
 
 
 def _eosvc() -> str:
@@ -456,13 +487,30 @@ def repo_state(model_dir: Path, log: _Log) -> RepoState:
     ahead = behind = 0
     if counts.returncode == 0 and len(counts.stdout.split()) == 2:
         ahead, behind = (int(n) for n in counts.stdout.split())
-    dirty = bool(
-        log.run(["git", "-C", model_dir, "status", "--porcelain"]).stdout.strip()
-    )
+    changed = log.run(["git", "-C", model_dir, "status", "--porcelain"]).stdout
+    dirty = bool(_local_changes(changed))
     commit = log.run(
         ["git", "-C", model_dir, "rev-parse", "--short", "HEAD"]
     ).stdout.strip()
     return RepoState(commit, ahead, behind, dirty)
+
+
+def _local_changes(porcelain: str) -> list[str]:
+    """
+    The lines of `git status --porcelain` that are the user's own work.
+
+    Whatever eosvc leaves inside a clone is ours, not theirs, and must not make
+    the clone look modified: that would stop `--update` from ever pulling it.
+    """
+    lines = []
+    for line in porcelain.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:].strip().strip('"')
+        if path == _EOSVC_STATE_DIR or path.startswith(f"{_EOSVC_STATE_DIR}/"):
+            continue
+        lines.append(line)
+    return lines
 
 
 def _clone_note(state: RepoState) -> str:
@@ -540,11 +588,22 @@ def _fetch_one(
             result.checkpoints = "present"
         else:
             say(f"{model_id}: downloading checkpoints")
-            downloaded = log.run([_eosvc(), "download", "--path", "."], cwd=model_dir)
-            if downloaded.returncode != 0:
-                raise BuildError(f"eosvc download failed: {_tail(downloaded)}")
+            downloaded = log.run(
+                [_eosvc(), "download", "--path", CHECKPOINTS_PATH], cwd=model_dir
+            )
+            if downloaded.returncode == 0:
+                result.checkpoints = "downloaded"
+            else:
+                problem = _eosvc_problem(
+                    (downloaded.stdout or "") + (downloaded.stderr or "")
+                )
+                if problem is not None:
+                    raise BuildError(f"eosvc download failed: {problem}")
+                result.checkpoints = "none in S3"
+                result.notes.append(
+                    f"nothing at {CHECKPOINTS_PATH} in S3; its data must be in git"
+                )
             state[model_id] = {**recorded, "checkpoints_commit": state_now.commit}
-            result.checkpoints = "downloaded"
     else:
         result.checkpoints = "none needed"
 

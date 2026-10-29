@@ -43,6 +43,7 @@ class FakeSystem:
         self.recipes = recipes  # model id -> (file name, text)
         self.access = set(access)  # ids whose clone carries an access.json
         self.behind, self.ahead, self.dirty = {}, {}, set()
+        self.porcelain = {}
         self.fail = {}  # a text in the command line -> the stderr it fails with
         self.installed, self.conda_installed, self.python = {}, {}, {}
         self.calls = []
@@ -82,7 +83,9 @@ class FakeSystem:
             "rev-list": lambda: _done(
                 f"{self.ahead.get(model, 0)}\t{self.behind.get(model, 0)}\n"
             ),
-            "status": lambda: _done(" M code.py\n" if model in self.dirty else ""),
+            "status": lambda: _done(
+                self.porcelain.get(model, " M code.py\n" if model in self.dirty else "")
+            ),
             "rev-parse": lambda: _done("abc1234\n"),
             "pull": lambda: self._pull(model),
         }[argv[3]]()
@@ -250,7 +253,8 @@ def test_a_first_fetch_clones_downloads_and_builds(system, plan):
         str(model_dir),
     ]
     [eosvc_call] = [c for c in system.calls if c[0][0] == "eosvc"]
-    assert eosvc_call[0] == ["eosvc", "download", "--path", "."]
+    # only the checkpoints: `fit` is training data and is never downloaded
+    assert eosvc_call[0] == ["eosvc", "download", "--path", "model/checkpoints"]
     assert (
         eosvc_call[1] == model_dir
     )  # eosvc reads the model id from this folder's name
@@ -357,6 +361,31 @@ def test_update_never_touches_a_clone_with_local_work(system, plan, trouble):
 
     assert not [c for c in system.commands("git") if "pull" in c]
     assert result.notes == ["not updated: local changes or local commits"]
+
+
+def test_what_eosvc_leaves_behind_does_not_make_a_clone_look_modified(system, plan):
+    system.access = {"eos1aaa"}
+    fetch_models(plan, say=_say([]))
+    # eosvc keeps its state inside the clone and model repositories do not ignore it
+    system.porcelain["eos1aaa"] = "?? .eosvc/\n"
+    system.behind["eos1aaa"] = 2
+
+    [result] = fetch_models(plan, update=True, say=_say([]))
+
+    assert result.clone == "updated"
+    assert [c for c in system.commands("git") if "pull" in c]
+    assert result.notes == []
+
+
+def test_the_users_own_changes_still_protect_a_clone(system, plan):
+    fetch_models(plan, say=_say([]))
+    system.porcelain["eos1aaa"] = "?? .eosvc/\n M model/framework/code/main.py\n"
+    system.behind["eos1aaa"] = 2
+
+    [result] = fetch_models(plan, update=True, say=_say([]))
+
+    assert result.clone == "2 behind, local changes"
+    assert not [c for c in system.commands("git") if "pull" in c]
 
 
 def test_a_folder_that_is_not_a_clone_is_not_overwritten(system, plan):
@@ -569,6 +598,40 @@ def test_a_failed_checkpoint_download_is_retried_next_time(system, plan):
     system.fail.clear()
     [again] = fetch_models(plan, say=_say([]))
     assert again.ok and again.checkpoints == "downloaded"
+
+
+def test_an_empty_checkpoints_path_in_s3_is_not_a_failure(system, plan):
+    system.access = {"eos1aaa"}
+    system.fail["eosvc"] = (
+        "\u2717 Nothing found at s3://eosvc-models-public/eos1aaa/model/checkpoints or \n"
+        "s3://eosvc-models-public/eos1aaa/model/checkpoints/\n"
+    )
+
+    [result] = fetch_models(plan, say=_say([]))
+
+    assert result.ok and result.env == "built"
+    assert result.checkpoints == "none in S3"
+    assert result.notes == [
+        "nothing at model/checkpoints in S3; its data must be in git"
+    ]
+
+
+def test_any_other_eosvc_error_still_fails(system, plan):
+    system.access = {"eos1aaa"}
+    system.fail["eosvc"] = "\u2717 Unable to locate credentials\n"
+
+    [result] = fetch_models(plan, say=_say([]))
+
+    assert not result.ok and "Unable to locate credentials" in result.error
+
+
+def test_an_eosvc_crash_without_a_marker_still_fails(system, plan):
+    system.access = {"eos1aaa"}
+    system.fail["eosvc"] = "Traceback (most recent call last):\n  ConnectionError\n"
+
+    [result] = fetch_models(plan, say=_say([]))
+
+    assert not result.ok and "ConnectionError" in result.error
 
 
 def test_conda_create_failures_show_conda_s_own_message(system, plan):
