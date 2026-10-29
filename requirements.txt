@@ -1,3 +1,0 @@
-ersilia
-rdkit
-pandas

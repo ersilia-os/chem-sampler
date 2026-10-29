@@ -1,0 +1,221 @@
+import csv
+
+import pytest
+
+from chemsampler.config import build_annotator, load_annotators, load_generators
+from chemsampler.models.annotator import QEDAnnotator
+from chemsampler.models.generator import HubGenerator
+from chemsampler.models.hub_annotator import HubAnnotator
+
+
+class FakeHubModel:
+    """Stands in for HubModel so constructing a HubGenerator/HubAnnotator is free."""
+
+    def __init__(self, model_id, backend="ersilia"):
+        self.model_id = model_id
+        self.backend = backend
+
+
+@pytest.fixture(autouse=True)
+def no_real_hub_calls(monkeypatch):
+    monkeypatch.setattr("chemsampler.models.generator.HubModel", FakeHubModel)
+    monkeypatch.setattr("chemsampler.models.hub_annotator.HubModel", FakeHubModel)
+
+
+def _write_csv(path, header, rows):
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def test_load_generators_default_backend_is_run_sh():
+    pool = load_generators()
+
+    assert all(g._hub_model.backend == "run_sh" for g in pool.generators)
+
+
+def test_load_generators_threads_backend_to_hub_generator(tmp_path):
+    path = tmp_path / "generators.csv"
+    _write_csv(path, ["generator_id"], [["eos9taz"]])
+
+    pool = load_generators(str(path), backend="run_sh")
+
+    assert pool.generators[0]._hub_model.backend == "run_sh"
+
+
+def test_load_generators_rejects_missing_column(tmp_path):
+    path = tmp_path / "generators.csv"
+    _write_csv(path, ["wrong_column"], [["eos9taz"]])
+
+    with pytest.raises(ValueError, match="generator_id"):
+        load_generators(str(path))
+
+
+def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path, ["annotator_id", "cutoff", "direction"], [["eos4zfy", "0.0", "higher"]]
+    )
+
+    specs = load_annotators(str(path), backend="run_sh")
+
+    assert specs[0].annotator._hub_model.backend == "run_sh"
+
+
+def test_load_generators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["eos9taz"]])
+
+    pool = load_generators()
+
+    assert [g.model_id for g in pool.generators] == ["eos9taz"]
+
+
+def test_load_generators_default_still_used_when_no_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    pool = load_generators()
+
+    assert len(pool.generators) == 6
+    assert all(isinstance(g, HubGenerator) for g in pool.generators)
+
+
+def test_load_annotators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_csv(
+        tmp_path / "annotators.csv",
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"]],
+    )
+
+    specs = load_annotators()
+
+    assert specs[0].annotator_id == "qed"
+
+
+def test_load_annotators_raises_when_nothing_available(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="annotators.csv"):
+        load_annotators()
+
+
+def test_build_annotator_dispatches_qed_and_hub_ids():
+    assert isinstance(build_annotator("qed"), QEDAnnotator)
+    assert isinstance(build_annotator("eos4zfy"), HubAnnotator)
+
+
+def test_load_annotators_builds_specs_from_csv(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert [spec.annotator_id for spec in specs] == ["qed", "eos4zfy"]
+    assert specs[0].cutoff == 0.3
+    assert specs[0].direction == "higher"
+    assert specs[1].cutoff == 50.0
+    assert specs[1].direction == "lower"
+
+
+def test_load_annotators_preserves_csv_row_order(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [
+            ["eos4zfy", "0", "higher"],
+            ["qed", "0.3", "higher"],
+            ["eos6ost", "1", "higher"],
+        ],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert [spec.annotator_id for spec in specs] == ["eos4zfy", "qed", "eos6ost"]
+
+
+def test_load_annotators_rejects_missing_cutoff(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(path, ["annotator_id", "cutoff", "direction"], [["qed", "", "higher"]])
+
+    with pytest.raises(ValueError, match="cutoff"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_rejects_invalid_cutoff_value(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "not-a-number", "higher"]],
+    )
+
+    with pytest.raises(ValueError, match="cutoff"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_rejects_unknown_direction(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path, ["annotator_id", "cutoff", "direction"], [["qed", "0.3", "sideways"]]
+    )
+
+    with pytest.raises(ValueError, match="direction"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_rejects_duplicate_annotator_id(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["qed", "0.5", "higher"]],
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        load_annotators(str(path))
+
+
+def test_load_annotators_weight_defaults_to_one_when_column_missing(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.3", "higher"], ["eos4zfy", "50", "lower"]],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert [spec.weight for spec in specs] == [1.0, 1.0]
+
+
+def test_load_annotators_parses_weight_column(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction", "weight"],
+        [["qed", "0.3", "higher", "2.5"], ["eos4zfy", "50", "lower", ""]],
+    )
+
+    specs = load_annotators(str(path))
+
+    assert specs[0].weight == 2.5
+    assert specs[1].weight == 1.0  # blank cell falls back to the default
+
+
+def test_load_annotators_rejects_negative_weight(tmp_path):
+    path = tmp_path / "annotators.csv"
+    _write_csv(
+        path,
+        ["annotator_id", "cutoff", "direction", "weight"],
+        [["qed", "0.3", "higher", "-1"]],
+    )
+
+    with pytest.raises(ValueError, match="weight"):
+        load_annotators(str(path))
