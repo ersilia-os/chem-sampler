@@ -1,7 +1,7 @@
 """The Hub labels chemsampler relies on, kept as a catalog file shipped with the package.
 
 Runs check every model against `catalog.csv`, which is instant and works offline.
-`chemsampler update-catalog` rebuilds that file from the Hub with `ersilia catalog`; nothing
+`chemsampler catalog --update` rebuilds that file from the Hub with `ersilia catalog`; nothing
 else queries the Hub.
 """
 
@@ -111,7 +111,7 @@ def read_catalog(path=None) -> Catalog:
         If the file is missing or is not a valid catalog.
     """
     path = Path(path or CATALOG_PATH)
-    rebuild = "run `chemsampler update-catalog` to build it"
+    rebuild = "run `chemsampler catalog --update` to build it"
     try:
         lines = path.read_text().splitlines()
     except FileNotFoundError:
@@ -171,7 +171,7 @@ def diff_catalogs(old: Catalog | None, new: Sequence[CatalogEntry]) -> CatalogDi
     )
 
 
-# --- the Hub (only `chemsampler update-catalog` uses this) ------------------------------------
+# --- the Hub (only `chemsampler catalog --update` uses this) ------------------------------------
 
 
 class _NoOutput(Exception):
@@ -358,7 +358,7 @@ def validate_models(
             return (
                 f"{model_id} ({role}): not in the catalog built on {catalog.built}; "
                 "it is misspelled, not Ready, or newer than the catalog. Run "
-                "`chemsampler update-catalog` to refresh the catalog from the Hub."
+                "`chemsampler catalog --update` to refresh the catalog from the Hub."
             )
         supported = entry.role != "similarity" or model_id in SIMILARITY_MODEL_IDS
         if entry.role == role:

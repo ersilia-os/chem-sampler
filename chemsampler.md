@@ -231,7 +231,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    (offline), so one that is not in it (not Ready, such as `eos2401` today, or
    newer than the catalog) or is labelled for another role is refused with a
    message; relay it and let the user decide. If the user says a model should be
-   there, suggest `chemsampler update-catalog`, which refreshes the catalog from the Hub.
+   there, suggest `chemsampler catalog --update`, which refreshes the catalog from the Hub.
    Similarity and generators are each optional, but at least one is needed.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
@@ -244,18 +244,20 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      be asked)
    - `--tolerance` (default 0.0)
    - `--backend` (default `run_sh`, which needs each model's clone and its
-     conda environment, i.e. `chemsampler fetch` in a workspace, or a folder of
-     models fetched by `ersilia fetch`; `ersilia` is the fallback and needs
-     neither). If a model is missing, `run` says to use `chemsampler fetch`:
-     relay that rather than switching backend on your own. If `run_sh` fails
+     conda environment, which `chemsampler fetch` puts in the machine's store
+     (`~/.chemsampler`, shared by every project; `chemsampler catalog` lists what
+     is there and whether each environment is ready), or a folder of models
+     fetched by `ersilia fetch`; `ersilia` is the fallback and needs neither). If a
+     model is missing, `run` says to use `chemsampler fetch`: relay that rather
+     than switching backend on your own. If `run_sh` fails
      because a model isn't available locally, tell the user and let them
      choose whether to fetch it or fall back to `ersilia`; never switch on
      its own.
 
-9. **Where the run lives.** Inside a workspace (`chemsampler setup`), write the
+9. **Where the run lives.** Inside a project (`chemsampler init`), write the
    three CSVs into its `input/` folder and let `run` pick its own dated folder
    under `rounds/`, which also stores an `inputs.json` of what was resolved — no
-   `--output-dir` to choose and nothing stale to inherit. Outside a workspace,
+   `--output-dir` to choose and nothing stale to inherit. Outside a project,
    propose a fresh, dedicated `--output-dir` per invocation (e.g. timestamped):
    `chemsampler run` never clears stale files in a reused directory, so reusing
    one can leave old `round4.csv`/`round5.csv` behind from an earlier, longer

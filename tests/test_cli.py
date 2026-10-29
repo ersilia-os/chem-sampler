@@ -10,7 +10,7 @@ from chemsampler import config
 from chemsampler.cli import cli
 from chemsampler.hub import catalog
 from chemsampler.hub.envs import write_marker
-from chemsampler.workspace import create_workspace
+from chemsampler.project import create_project
 
 
 class FakeHubModel:
@@ -162,7 +162,7 @@ def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path, monkeypatch):
     assert not (tmp_path / "out").exists()
 
 
-def test_run_sh_needs_the_repositories_folder(tmp_path):
+def test_run_sh_with_nothing_fetched_says_to_run_fetch(tmp_path):
     folder = _inputs(tmp_path)
 
     result = CliRunner().invoke(
@@ -181,7 +181,8 @@ def test_run_sh_needs_the_repositories_folder(tmp_path):
     )
 
     assert result.exit_code == 1
-    assert "path-to-model-repositories" in result.output
+    assert "no models fetched yet" in result.output
+    assert "chemsampler fetch" in result.output
 
 
 def test_run_handles_empty_summary_without_seed(tmp_path):
@@ -361,7 +362,7 @@ def test_annotate_rejects_inconsistent_options(tmp_path, monkeypatch, args, mess
     assert message in result.output
 
 
-# --- update-catalog --------------------------------------------------------------------------
+# --- catalog --update --------------------------------------------------------------------------
 
 GENERATOR = catalog.CatalogEntry(
     "generators", "eos9taz", "MoLeR", "Sampling", "Generation"
@@ -373,23 +374,23 @@ def _catalog(*entries, built="2026-10-01"):
     return catalog.Catalog(built, "0.1.62", tuple(entries))
 
 
-def _update_catalog(monkeypatch, outcome):
+def _catalog_update(monkeypatch, outcome):
     def update(*args, **kwargs):
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
     monkeypatch.setattr(catalog, "update_catalog", update)
-    return CliRunner().invoke(cli, ["update-catalog"])
+    return CliRunner().invoke(cli, ["catalog", "--update"])
 
 
-def test_update_catalog_reports_an_up_to_date_catalog(monkeypatch):
+def test_catalog_update_reports_an_up_to_date_catalog(monkeypatch):
     current = _catalog(GENERATOR, ANNOTATOR)
     outcome = catalog.CatalogUpdate(
         current, current, catalog.CatalogDiff((), ()), False
     )
 
-    result = _update_catalog(monkeypatch, outcome)
+    result = _catalog_update(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert (
@@ -400,13 +401,13 @@ def test_update_catalog_reports_an_up_to_date_catalog(monkeypatch):
     assert "Commit" not in result.output
 
 
-def test_update_catalog_reports_new_and_removed_models(monkeypatch):
+def test_catalog_update_reports_new_and_removed_models(monkeypatch):
     diff = catalog.CatalogDiff(added=(GENERATOR,), removed=(ANNOTATOR,))
     outcome = catalog.CatalogUpdate(
         _catalog(GENERATOR, built="2026-10-29"), _catalog(ANNOTATOR), diff, True
     )
 
-    result = _update_catalog(monkeypatch, outcome)
+    result = _catalog_update(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert "Catalog updated (was built 2026-10-01)" in result.output
@@ -415,18 +416,18 @@ def test_update_catalog_reports_new_and_removed_models(monkeypatch):
     assert "Commit" in result.output
 
 
-def test_update_catalog_creates_a_missing_catalog(monkeypatch):
+def test_catalog_update_creates_a_missing_catalog(monkeypatch):
     diff = catalog.CatalogDiff(added=(GENERATOR,), removed=())
     outcome = catalog.CatalogUpdate(_catalog(GENERATOR), None, diff, True)
 
-    result = _update_catalog(monkeypatch, outcome)
+    result = _catalog_update(monkeypatch, outcome)
 
     assert result.exit_code == 0, result.output
     assert "Catalog created" in result.output
 
 
-def test_update_catalog_fails_cleanly_when_the_hub_cannot_be_reached(monkeypatch):
-    result = _update_catalog(
+def test_catalog_update_fails_cleanly_when_the_hub_cannot_be_reached(monkeypatch):
+    result = _catalog_update(
         monkeypatch, RuntimeError("could not query the Ersilia Model Hub")
     )
 
@@ -434,8 +435,8 @@ def test_update_catalog_fails_cleanly_when_the_hub_cannot_be_reached(monkeypatch
     assert "existing catalog was left untouched" in result.output
 
 
-def test_update_catalog_fails_cleanly_when_the_catalog_cannot_be_written(monkeypatch):
-    result = _update_catalog(monkeypatch, PermissionError("read-only file system"))
+def test_catalog_update_fails_cleanly_when_the_catalog_cannot_be_written(monkeypatch):
+    result = _catalog_update(monkeypatch, PermissionError("read-only file system"))
 
     assert result.exit_code == 1
     assert (
@@ -443,7 +444,7 @@ def test_update_catalog_fails_cleanly_when_the_catalog_cannot_be_written(monkeyp
     )
 
 
-def test_update_catalog_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
+def test_catalog_update_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch):
     path = tmp_path / "catalog.csv"
     monkeypatch.setattr(catalog, "CATALOG_PATH", path)
 
@@ -456,8 +457,8 @@ def test_update_catalog_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch
 
     monkeypatch.setattr(catalog, "_run_ersilia", hub)
 
-    result = CliRunner().invoke(cli, ["update-catalog"])
-    again = CliRunner().invoke(cli, ["update-catalog"])
+    result = CliRunner().invoke(cli, ["catalog", "--update"])
+    again = CliRunner().invoke(cli, ["catalog", "--update"])
 
     assert result.exit_code == 0 and "Catalog created: 1 generators" in result.output
     assert [e.identifier for e in catalog.read_catalog(path).entries] == [
@@ -467,23 +468,31 @@ def test_update_catalog_writes_the_catalog_file_end_to_end(tmp_path, monkeypatch
     assert "up to date" in again.output
 
 
-# --- a run inside a workspace ---------------------------------------------------------
+# --- a run inside a project ---------------------------------------------------------
 
 
-def _workspace(tmp_path, built=("eos9taz", "eos8nyg")):
-    """A workspace whose models are cloned and whose environments are built."""
-    create_workspace(tmp_path)
-    _write_csv(tmp_path / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
+def _project(tmp_path, store_root, built=("eos9taz", "eos8nyg")):
+    """
+    A project, and the machine's store holding the models it uses.
+
+    The project owns the inputs and the results; the clones and the built
+    environments are in the store, which is where `fetch` puts them.
+    """
+    root = tmp_path / "proj"
+    create_project(root)
+    _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
     for model in built:
-        (tmp_path / "models" / model).mkdir(parents=True)
-        env = tmp_path / "envs" / model
+        (store_root / "models" / model).mkdir(parents=True)
+        env = store_root / "envs" / model
         env.mkdir(parents=True)
         write_marker(env, model=model)
-    return tmp_path
+    return root
 
 
-def test_a_run_in_a_workspace_writes_a_dated_round_folder(tmp_path, monkeypatch):
-    root = _workspace(tmp_path)
+def test_a_run_in_a_project_writes_a_dated_round_folder(
+    tmp_path, store_root, monkeypatch
+):
+    root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
 
     result = CliRunner().invoke(
@@ -497,8 +506,10 @@ def test_a_run_in_a_workspace_writes_a_dated_round_folder(tmp_path, monkeypatch)
     assert (rounds[0] / "summary.csv").exists() and (rounds[0] / "round1.csv").exists()
 
 
-def test_a_run_saves_what_it_resolved_next_to_its_results(tmp_path, monkeypatch):
-    root = _workspace(tmp_path)
+def test_a_run_saves_what_it_resolved_next_to_its_results(
+    tmp_path, store_root, monkeypatch
+):
+    root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
 
     result = CliRunner().invoke(
@@ -518,11 +529,13 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(tmp_path, monkeypatch)
             "weight": 1.0,
         }
     ]
-    assert saved["path_to_envs"] == str(root / "envs")
+    # which models ran is recorded too: they are the machine's, not the project's
+    assert saved["path_to_envs"] == str(store_root / "envs")
+    assert saved["path_to_model_repositories"] == str(store_root / "models")
 
 
-def test_two_runs_in_a_row_get_separate_folders(tmp_path, monkeypatch):
-    root = _workspace(tmp_path)
+def test_two_runs_in_a_row_get_separate_folders(tmp_path, store_root, monkeypatch):
+    root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
     command = ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
 
@@ -533,8 +546,10 @@ def test_two_runs_in_a_row_get_separate_folders(tmp_path, monkeypatch):
     assert len(list((root / "rounds").iterdir())) == 2
 
 
-def test_an_explicit_output_dir_still_wins_in_a_workspace(tmp_path, monkeypatch):
-    root = _workspace(tmp_path)
+def test_an_explicit_output_dir_still_wins_in_a_project(
+    tmp_path, store_root, monkeypatch
+):
+    root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
 
     result = CliRunner().invoke(
@@ -557,7 +572,7 @@ def test_an_explicit_output_dir_still_wins_in_a_workspace(tmp_path, monkeypatch)
     assert not list((root / "rounds").iterdir())
 
 
-def test_outside_a_workspace_the_output_dir_is_still_required(tmp_path, monkeypatch):
+def test_outside_a_project_the_output_dir_is_still_required(tmp_path, monkeypatch):
     folder = _inputs(tmp_path)
     monkeypatch.chdir(tmp_path)
 
@@ -566,11 +581,15 @@ def test_outside_a_workspace_the_output_dir_is_still_required(tmp_path, monkeypa
     )
 
     assert result.exit_code == 1
-    assert "--output-dir is required outside a workspace" in result.output
+    assert "--output-dir is required outside a project" in result.output
 
 
-def test_a_model_without_a_built_environment_says_to_run_fetch(tmp_path, monkeypatch):
-    root = _workspace(tmp_path, built=["eos9taz"])  # eos8nyg has neither clone nor env
+def test_a_model_without_a_built_environment_says_to_run_fetch(
+    tmp_path, store_root, monkeypatch
+):
+    root = _project(
+        tmp_path, store_root, built=["eos9taz"]
+    )  # eos8nyg: no clone, no env
     monkeypatch.chdir(root)
 
     result = CliRunner().invoke(
@@ -579,3 +598,90 @@ def test_a_model_without_a_built_environment_says_to_run_fetch(tmp_path, monkeyp
 
     assert result.exit_code == 1
     assert "chemsampler fetch" in result.output
+
+
+# --- fetch ----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fetched(monkeypatch):
+    """Replace what fetch would actually do, recording the plan it was given."""
+    from chemsampler.hub import fetch
+
+    seen = {}
+    monkeypatch.setattr(fetch, "check_prerequisites", lambda: None)
+
+    def fake_fetch_models(plan, *, update, rebuild, say):
+        seen.update(plan=plan, update=update, rebuild=rebuild)
+        return [
+            fetch.ModelResult(m, clone="cloned", checkpoints="none needed", env="built")
+            for m in plan.model_ids
+        ]
+
+    monkeypatch.setattr(fetch, "fetch_models", fake_fetch_models)
+    return seen
+
+
+def test_fetch_puts_models_in_the_store_and_says_where(
+    tmp_path, store_root, monkeypatch, fetched
+):
+    root = tmp_path / "proj"
+    create_project(root)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(cli, ["fetch"])
+
+    assert result.exit_code == 0, result.output
+    assert fetched["plan"].models_dir == store_root / "models"
+    assert fetched["plan"].envs_dir == store_root / "envs"
+    # ~/.chemsampler is hidden: the user has to be told where gigabytes went
+    assert f"clones:       {store_root / 'models'}" in result.output
+    assert f"environments: {store_root / 'envs'}" in result.output
+    assert f"logs:         {store_root / 'logs'}" in result.output
+    assert "All models are ready." in result.output
+
+
+def test_fetch_flags_can_name_a_different_place(tmp_path, monkeypatch, fetched):
+    folder = _inputs(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "fetch",
+            "--path-to-models",
+            str(folder),
+            "--path-to-model-repositories",
+            str(tmp_path / "shared" / "models"),
+            "--path-to-envs",
+            str(tmp_path / "shared" / "envs"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fetched["plan"].models_dir == tmp_path / "shared" / "models"
+    assert fetched["plan"].envs_dir == tmp_path / "shared" / "envs"
+
+
+def test_fetch_passes_update_and_rebuild_on(tmp_path, monkeypatch, fetched):
+    folder = _inputs(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    CliRunner().invoke(
+        cli, ["fetch", "--path-to-models", str(folder), "--update", "--rebuild"]
+    )
+
+    assert fetched["update"] is True and fetched["rebuild"] is True
+
+
+def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
+    tmp_path, store_root, monkeypatch, fetched
+):
+    monkeypatch.chdir(tmp_path)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    result = CliRunner().invoke(cli, ["fetch", "--path-to-models", str(empty)])
+
+    assert result.exit_code == 1
+    assert "plan" not in fetched and not store_root.exists()

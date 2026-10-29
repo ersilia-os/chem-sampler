@@ -109,7 +109,7 @@ from ..create_cli import chemsampler_cli
     default=None,
     type=click.Path(file_okay=False),
     help="Directory to write summary.csv and round<n>.csv into. Inside a "
-    "workspace it defaults to a new dated folder under rounds/.",
+    "project it defaults to a new dated folder under rounds/.",
 )
 @click.option(
     "--verbose",
@@ -167,8 +167,8 @@ def run_cmd(
             round_dir = inputs.new_round_dir()
             if round_dir is None:
                 click.secho(
-                    "--output-dir is required outside a workspace (see "
-                    "`chemsampler setup`).",
+                    "--output-dir is required outside a project (see "
+                    "`chemsampler init`).",
                     fg="red",
                 )
                 sys.exit(1)

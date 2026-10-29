@@ -14,7 +14,7 @@ from chemsampler.hub.envs import env_path, write_marker
 from chemsampler.models.annotator import MolecularWeightAnnotator, QEDAnnotator
 from chemsampler.models.hub_annotator import HubAnnotator
 from chemsampler.models.similarity import HubSimilarity
-from chemsampler.workspace import create_workspace
+from chemsampler.project import create_project
 
 ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
 ANNOTATOR_ROWS = [
@@ -378,11 +378,36 @@ def test_inline_annotator_errors_say_which_entry(tmp_path):
 # --- model repositories and the Hub -------------------------------------------------
 
 
-def test_run_sh_needs_the_repositories_folder(inputs_dir, hub):
-    with pytest.raises(ValueError, match="path-to-model-repositories"):
+def test_run_sh_with_nothing_fetched_says_to_run_fetch(inputs_dir, hub):
+    with pytest.raises(ValueError, match=r"no models fetched yet.*chemsampler fetch"):
         _load(inputs_dir, backend="run_sh")
 
     assert hub == []  # a cheap local check comes before the network one
+
+
+def test_run_sh_uses_the_store_when_no_folder_is_named(inputs_dir, store_root):
+    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
+        (store_root / "models" / model).mkdir(parents=True)
+        env = store_root / "envs" / model
+        env.mkdir(parents=True)
+        write_marker(env, model=model)
+
+    inputs = _load(inputs_dir, backend="run_sh")
+
+    assert inputs.models_dir == str(store_root / "models")
+    assert inputs.envs_dir == str(store_root / "envs")
+
+
+def test_a_folder_named_alone_is_models_without_environments(inputs_dir, tmp_path):
+    repos = tmp_path / "bundles"
+    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
+        (repos / model).mkdir(parents=True)
+
+    inputs = _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
+
+    # models fetched by `ersilia fetch` bring their own interpreter: the store's
+    # environments must not be required of them
+    assert inputs.models_dir == str(repos) and inputs.envs_dir is None
 
 
 def test_the_repositories_folder_must_exist(inputs_dir, tmp_path):
@@ -415,8 +440,11 @@ def test_run_sh_loads_when_every_folder_is_there(inputs_dir, tmp_path):
     assert inputs.generators.generators[0]._hub_model.models_dir == str(repos)
 
 
-def test_the_ersilia_backend_does_not_need_the_repositories_folder(inputs_dir):
-    assert _load(inputs_dir, backend="ersilia").models_dir is None
+def test_the_ersilia_backend_does_not_need_any_models_folder(inputs_dir, store_root):
+    inputs = _load(inputs_dir, backend="ersilia")
+
+    assert not store_root.exists()  # nothing fetched, and nothing asked for
+    assert inputs.similarity.model_id == "eos8nyg"
 
 
 def test_a_malformed_input_never_reaches_the_hub(inputs_dir, hub):
@@ -480,21 +508,44 @@ def test_build_annotator_rejects_unknown_names():
 # --- a workspace as the config ------------------------------------------------------
 
 
-def test_inside_a_workspace_its_marker_file_is_the_config(tmp_path, monkeypatch):
-    create_workspace(tmp_path)
-    monkeypatch.chdir(tmp_path / "rounds")  # any folder inside the workspace will do
+def test_inside_a_project_its_marker_file_is_the_config(
+    tmp_path, store_root, monkeypatch
+):
+    create_project(tmp_path / "proj")
+    monkeypatch.chdir(tmp_path / "proj" / "rounds")  # any folder inside will do
 
     inputs = load_inputs(backend="ersilia")
 
-    root = tmp_path.resolve()
     assert inputs.similarity.model_id == "eos8nyg"
-    assert inputs.models_dir == str(root / "models")
-    assert inputs.envs_dir == str(root / "envs")
-    assert inputs.rounds_dir == str(root / "rounds")
+    # results are the project's; the models are the machine's
+    assert inputs.rounds_dir == str((tmp_path / "proj" / "rounds").resolve())
+    assert inputs.models_dir == str(store_root / "models")
+    assert inputs.envs_dir == str(store_root / "envs")
 
 
-def test_a_flag_overrides_a_workspace_folder(tmp_path, monkeypatch):
-    create_workspace(tmp_path)
+def test_a_project_made_before_the_store_keeps_its_own_models(tmp_path, monkeypatch):
+    root = tmp_path / "old-project"
+    create_project(root)
+    (root / "chemsampler.json").write_text(
+        json.dumps(
+            {
+                "path_to_models": "input",
+                "path_to_model_repositories": "models",
+                "path_to_envs": "envs",
+                "path_to_rounds": "rounds",
+            }
+        )
+    )
+    monkeypatch.chdir(root)
+
+    inputs = load_inputs(backend="ersilia")
+
+    assert inputs.models_dir == str(root.resolve() / "models")
+    assert inputs.envs_dir == str(root.resolve() / "envs")
+
+
+def test_a_flag_overrides_a_project_folder(tmp_path, monkeypatch):
+    create_project(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     inputs = load_inputs(path_to_envs=str(tmp_path / "elsewhere"), backend="ersilia")
@@ -502,14 +553,15 @@ def test_a_flag_overrides_a_workspace_folder(tmp_path, monkeypatch):
     assert inputs.envs_dir == str(tmp_path / "elsewhere")
 
 
-def test_an_explicit_config_ignores_the_workspace(tmp_path, monkeypatch):
-    create_workspace(tmp_path)
+def test_an_explicit_config_ignores_the_project(tmp_path, store_root, monkeypatch):
+    create_project(tmp_path)
     monkeypatch.chdir(tmp_path)
     path = _write_config(tmp_path / "other.json", **INLINE)
 
     inputs = load_inputs(config=path, backend="ersilia")
 
-    assert inputs.envs_dir is None and inputs.rounds_dir is None
+    assert inputs.rounds_dir is None  # the project's results folder is not used
+    assert inputs.envs_dir == str(store_root / "envs")  # the machine's models still are
 
 
 # --- environments built by fetch ----------------------------------------------------
@@ -573,23 +625,23 @@ def test_a_missing_clone_with_environments_in_use_says_to_run_fetch(
 # --- what fetch needs ---------------------------------------------------------------
 
 
-def test_plan_fetch_lists_each_hub_model_once_with_the_workspace_folders(
-    tmp_path, monkeypatch, hub
+def test_plan_fetch_lists_each_hub_model_once_and_targets_the_store(
+    tmp_path, store_root, monkeypatch, hub
 ):
-    create_workspace(tmp_path)
-    monkeypatch.chdir(tmp_path)
+    create_project(tmp_path / "proj")
+    monkeypatch.chdir(tmp_path / "proj")
     _write_csv(
-        tmp_path / "input" / "generators.csv",
+        tmp_path / "proj" / "input" / "generators.csv",
         ["generators"],
         [["eos9taz"], ["eos8nyg"]],
     )
 
     plan = plan_fetch()
 
-    root = tmp_path.resolve()
     assert plan.model_ids == ("eos9taz", "eos8nyg", "eos4zfy")  # eos8nyg only once
-    assert plan.models_dir == root / "models" and plan.envs_dir == root / "envs"
-    assert plan.logs_dir == root / "logs" / "fetch"
+    assert plan.models_dir == store_root / "models"
+    assert plan.envs_dir == store_root / "envs"
+    assert plan.logs_dir == store_root / "logs"
     assert hub[0]["annotators"] == ["eos4zfy"]
 
 
@@ -603,10 +655,35 @@ def test_plan_fetch_needs_no_folder_to_exist(inputs_dir, tmp_path):
     assert plan.model_ids == ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy")
 
 
-def test_plan_fetch_outside_a_workspace_needs_the_two_folders(
-    inputs_dir, tmp_path, monkeypatch
+def test_plan_fetch_outside_a_project_still_has_somewhere_to_put_models(
+    inputs_dir, store_root, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(ValueError, match="chemsampler setup"):
-        plan_fetch(path_to_models=str(inputs_dir))
+    plan = plan_fetch(path_to_models=str(inputs_dir))
+
+    assert plan.models_dir == store_root / "models"
+    assert plan.envs_dir == store_root / "envs"
+
+
+def test_plan_fetch_follows_a_store_moved_by_the_machine_settings(inputs_dir, tmp_path):
+    from chemsampler import store
+
+    store.config_path().parent.mkdir(parents=True)
+    store.config_path().write_text(json.dumps({"store": str(tmp_path / "shared")}))
+
+    plan = plan_fetch(path_to_models=str(inputs_dir))
+
+    assert plan.models_dir == tmp_path / "shared" / "models"
+    assert plan.envs_dir == tmp_path / "shared" / "envs"
+    assert plan.logs_dir == tmp_path / "shared" / "logs"
+
+
+def test_plan_fetch_puts_logs_beside_clones_the_user_named(inputs_dir, tmp_path):
+    plan = plan_fetch(
+        path_to_models=str(inputs_dir),
+        path_to_model_repositories=str(tmp_path / "mine" / "clones"),
+        path_to_envs=str(tmp_path / "mine" / "envs"),
+    )
+
+    assert plan.logs_dir == tmp_path / "mine" / "logs"

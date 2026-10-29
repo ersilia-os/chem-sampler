@@ -58,8 +58,8 @@ def test_write_then_read_round_trips_and_sorts(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_a_missing_catalog_says_to_run_update_catalog(tmp_path):
-    with pytest.raises(ValueError, match="chemsampler update-catalog"):
+def test_a_missing_catalog_says_how_to_build_it(tmp_path):
+    with pytest.raises(ValueError, match="chemsampler catalog --update"):
         read_catalog(tmp_path / "nope.csv")
 
 
@@ -74,11 +74,11 @@ def test_a_missing_catalog_says_to_run_update_catalog(tmp_path):
         ),
     ],
 )
-def test_an_invalid_catalog_says_to_run_update_catalog(tmp_path, text):
+def test_an_invalid_catalog_says_how_to_rebuild_it(tmp_path, text):
     path = tmp_path / "catalog.csv"
     path.write_text(text)
 
-    with pytest.raises(ValueError, match="chemsampler update-catalog"):
+    with pytest.raises(ValueError, match="chemsampler catalog --update"):
         read_catalog(path)
 
 
@@ -98,7 +98,7 @@ def test_an_unknown_id_names_the_catalog_date_and_the_fix(catalog_file):
     message = str(error.value)
     assert "eosXXXX (generators): not in the catalog built on" in message
     assert read_catalog(catalog_file).built in message
-    assert "chemsampler update-catalog" in message
+    assert "chemsampler catalog --update" in message
 
 
 def test_rejects_models_in_the_wrong_role(catalog_file):

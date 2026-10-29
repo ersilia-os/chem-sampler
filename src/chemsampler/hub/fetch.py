@@ -19,15 +19,12 @@ from pathlib import Path
 
 import yaml
 
+from ..store import state_path
 from .envs import is_complete, write_marker
 
 #: Models are cloned from here; the clone folder must be named exactly like the
 #: model, because `eosvc` derives the S3 path from the folder name.
 ORG_URL = "https://github.com/ersilia-os"
-
-#: Remembers, next to the clones (not inside them, which would make them dirty),
-#: for which commit the checkpoints were downloaded.
-STATE_FILE = ".chemsampler-fetch.json"
 
 #: What a model needs to run: its checkpoints. `fit` (the training data eosvc also
 #: manages) is deliberately not downloaded.
@@ -531,13 +528,13 @@ def _clone_note(state: RepoState) -> str:
 
 def _load_state(models_dir: Path) -> dict:
     try:
-        return json.loads((models_dir / STATE_FILE).read_text())
+        return json.loads(state_path(models_dir).read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
 def _save_state(models_dir: Path, state: dict) -> None:
-    (models_dir / STATE_FILE).write_text(json.dumps(state, indent=2) + "\n")
+    state_path(models_dir).write_text(json.dumps(state, indent=2) + "\n")
 
 
 def _fetch_one(

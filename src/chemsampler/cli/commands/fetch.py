@@ -10,8 +10,8 @@ from ..create_cli import chemsampler_cli
     "--config",
     default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="JSON file with the paths and the model lists. Inside a workspace "
-    "(see `chemsampler setup`) its chemsampler.json is used by default.",
+    help="JSON file with the paths and the model lists. Inside a project "
+    "(see `chemsampler init`) its chemsampler.json is used by default.",
 )
 @click.option(
     "--path-to-models",
@@ -23,13 +23,15 @@ from ..create_cli import chemsampler_cli
     "--path-to-model-repositories",
     default=None,
     type=click.Path(file_okay=False),
-    help="Where the models are cloned, one folder per model.",
+    help="Where the models are cloned, one folder per model. Default: this "
+    "machine's store (~/.chemsampler/models, see `chemsampler catalog`).",
 )
 @click.option(
     "--path-to-envs",
     default=None,
     type=click.Path(file_okay=False),
-    help="Where the conda environments are built, one per model.",
+    help="Where the conda environments are built, one per model. Default: this "
+    "machine's store (~/.chemsampler/envs). Keep it on a local disk.",
 )
 @click.option(
     "--similarity",
@@ -97,6 +99,9 @@ def fetch_cmd(
         sys.exit(1)
 
     click.echo(f"Fetching {len(plan.model_ids)} model(s): {', '.join(plan.model_ids)}")
+    click.echo(f"  clones:       {plan.models_dir}")
+    click.echo(f"  environments: {plan.envs_dir}")
+    click.echo(f"  logs:         {plan.logs_dir}")
     results = fetch_models(plan, update=update, rebuild=rebuild, say=click.echo)
 
     click.echo()
