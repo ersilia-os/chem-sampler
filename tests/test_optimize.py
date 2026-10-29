@@ -3,8 +3,11 @@ import math
 import pandas as pd
 import pytest
 
+from chemsampler.models.generator import SeedRequiredError
+from chemsampler.models.similarity import HubSimilarity
 from chemsampler.models.spec import AnnotatorSpec
 from chemsampler.optimize import annotate, hill_climb, write_results
+from chemsampler.utils.logging import logger
 
 
 class StubGenerator:
@@ -1095,3 +1098,85 @@ def test_write_results_creates_output_dir_including_parents(tmp_path):
     write_results(pd.DataFrame(), {}, str(tmp_path / "a" / "b" / "c"))
 
     assert (tmp_path / "a" / "b" / "c" / "summary.csv").exists()
+
+
+# --- similarity -----------------------------------------------------------------
+
+
+class StubSimilarity:
+    """Returns one fixed set of neighbours per call; refuses to run without a seed."""
+
+    model_id = "stub_sim"
+
+    def __init__(self, neighbours):
+        self._neighbours = neighbours
+
+    def search_by_model(self, seed_smiles):
+        if seed_smiles is None:
+            raise SeedRequiredError(f"{self.model_id} requires a seed molecule")
+        return {self.model_id: list(self._neighbours)}
+
+
+def _score_only(scores):
+    return [
+        AnnotatorSpec(
+            "score", StubAnnotator(scores), cutoff=float("-inf"), direction="higher"
+        )
+    ]
+
+
+def test_similarity_candidates_join_the_generators_and_keep_provenance():
+    annotators = _score_only({"CCO": 1.0, "CCC": 2.0, "CCN": 3.0})
+
+    summary, candidates_by_round = hill_climb(
+        StubGenerator([["CCC"]]),
+        annotators,
+        mode="sequential",
+        similarity=StubSimilarity(["CCN", "CCC"]),
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    sources = candidates_by_round[1].set_index("smiles")["source"].to_dict()
+    assert sources == {"CCC": "stub|stub_sim", "CCN": "stub_sim"}
+    assert summary.iloc[-1]["smiles"] == "CCN"
+
+
+@pytest.fixture
+def verbose_logger():
+    """Quiet mode hides warnings raised while generating, and a CLI test can leave it on."""
+    previous = logger._quiet_mode
+    logger.set_quiet_mode(False)
+    yield
+    logger.set_quiet_mode(previous)
+
+
+def test_similarity_is_skipped_with_a_warning_when_there_is_no_seed(
+    caplog, verbose_logger
+):
+    annotators = _score_only({"CCC": 2.0, "CCN": 3.0})
+
+    with caplog.at_level("WARNING"):
+        _, candidates_by_round = hill_climb(
+            StubGenerator([["CCC"]]),
+            annotators,
+            mode="sequential",
+            similarity=StubSimilarity(["CCN"]),
+            n_rounds=1,
+        )
+
+    assert candidates_by_round[1]["smiles"].tolist() == ["CCC"]
+    assert any(
+        "stub_sim" in r.message and "requires a seed" in r.message
+        for r in caplog.records
+    )
+
+
+def test_similarity_model_is_rejected_as_generator():
+    with pytest.raises(TypeError, match="similarity="):
+        hill_climb(
+            HubSimilarity("eos8nyg"),
+            _score_only({"CCO": 1.0}),
+            mode="sequential",
+            seed_smiles="CCO",
+        )

@@ -31,3 +31,10 @@ def test_generate_by_model_wraps_generate(generator):
 
     assert list(by_model) == ["fake-model"]
     assert sorted(by_model["fake-model"]) == ["CCN", "CCO"]
+
+
+def test_rejects_similarity_model(monkeypatch):
+    monkeypatch.setattr("chemsampler.models.generator.HubModel", FakeHubModel)
+
+    with pytest.raises(ValueError, match="HubSimilarity"):
+        HubGenerator("eos8nyg")

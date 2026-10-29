@@ -4,7 +4,6 @@ import pytest
 
 from chemsampler.config import build_annotator, load_annotators, load_generators
 from chemsampler.models.annotator import QEDAnnotator
-from chemsampler.models.chembl import ChemblSampler
 from chemsampler.models.generator import HubGenerator
 from chemsampler.models.hub_annotator import HubAnnotator
 
@@ -30,13 +29,6 @@ def _write_csv(path, header, rows):
         writer.writerows(rows)
 
 
-def test_load_generators_default_excludes_chembl():
-    pool = load_generators()
-
-    assert all(not isinstance(g, ChemblSampler) for g in pool.generators)
-    assert all(isinstance(g, HubGenerator) for g in pool.generators)
-
-
 def test_load_generators_default_backend_is_run_sh():
     pool = load_generators()
 
@@ -50,18 +42,6 @@ def test_load_generators_threads_backend_to_hub_generator(tmp_path):
     pool = load_generators(str(path), backend="run_sh")
 
     assert pool.generators[0]._hub_model.backend == "run_sh"
-
-
-def test_load_generators_includes_chembl_when_explicitly_listed(tmp_path):
-    path = tmp_path / "generators.csv"
-    _write_csv(path, ["generator_id"], [["eos9taz"], ["chembl"]])
-
-    pool = load_generators(str(path))
-
-    assert {type(g).__name__ for g in pool.generators} == {
-        "HubGenerator",
-        "ChemblSampler",
-    }
 
 
 def test_load_generators_rejects_missing_column(tmp_path):
@@ -85,11 +65,11 @@ def test_load_annotators_threads_backend_to_hub_annotator(tmp_path):
 
 def test_load_generators_falls_back_to_cwd_csv(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["chembl"]])
+    _write_csv(tmp_path / "generators.csv", ["generator_id"], [["eos9taz"]])
 
     pool = load_generators()
 
-    assert any(isinstance(g, ChemblSampler) for g in pool.generators)
+    assert [g.model_id for g in pool.generators] == ["eos9taz"]
 
 
 def test_load_generators_default_still_used_when_no_cwd_csv(tmp_path, monkeypatch):
@@ -97,7 +77,7 @@ def test_load_generators_default_still_used_when_no_cwd_csv(tmp_path, monkeypatc
 
     pool = load_generators()
 
-    assert all(not isinstance(g, ChemblSampler) for g in pool.generators)
+    assert len(pool.generators) == 6
     assert all(isinstance(g, HubGenerator) for g in pool.generators)
 
 

@@ -135,11 +135,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    compound instead of pasting a SMILES, look it up from an authoritative
    source (PubChem) and confirm by **InChIKey** before using it — never
    write a SMILES from memory (see `CLAUDE.md`) — and show the user what it
-   resolved to so they can confirm it is the compound they meant. If no seed
-   is given, only
-   generators that don't require one will produce candidates in round 1,
-   and steps 5-6 below don't apply (no seed to be similar to, or to score a
-   baseline against).
+   resolved to so they can confirm it is the compound they meant. Every Hub
+   generator needs a seed to run, so without one no candidates are produced
+   in round 1, and steps 5-6 below don't apply (no seed to be similar to, or
+   to score a baseline against).
 
 5. **Tanimoto constraint (optional, only if a seed was given).** Ask
    whether to bound similarity to the seed at all, and if so

@@ -1,3 +1,5 @@
+import pytest
+
 from chemsampler.models.generator import GeneratorPool, SeedRequiredError
 
 
@@ -107,3 +109,8 @@ def test_pool_by_model_skips_generator_that_requires_a_seed(caplog):
         by_model = pool.generate_by_model(None)
 
     assert by_model == {"seed_required": [], "model_b": ["CCN"]}
+
+
+def test_pool_rejects_a_similarity_model():
+    with pytest.raises(TypeError, match="similarity"):
+        GeneratorPool([StubGenerator("eos8nyg", ["CCO"])])

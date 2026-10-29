@@ -2,6 +2,7 @@ import sys
 
 import click
 
+from ...hub.client import SIMILARITY_MODEL_IDS
 from ..create_cli import chemsampler_cli
 
 
@@ -21,6 +22,14 @@ from ..create_cli import chemsampler_cli
     type=click.Path(exists=True, dir_okay=False),
     help="CSV with a generator_id column. Falls back to ./generators.csv in "
     "the cwd, then the 6 default Hub generators.",
+)
+@click.option(
+    "--similarity",
+    "similarity_id",
+    default=None,
+    type=click.Choice(sorted(SIMILARITY_MODEL_IDS)),
+    help="Similarity-search model whose nearest neighbours of the current best "
+    "molecule join each round's candidates. Off by default.",
 )
 @click.option(
     "--mode",
@@ -81,6 +90,7 @@ from ..create_cli import chemsampler_cli
 def run_cmd(
     annotators_path: str | None,
     generators_path: str | None,
+    similarity_id: str | None,
     mode: str,
     seed_smiles: str | None,
     original_seed_smiles: str | None,
@@ -97,6 +107,7 @@ def run_cmd(
     import time
 
     from ...config import load_annotators, load_generators
+    from ...models.similarity import HubSimilarity
     from ...optimize import hill_climb, write_results
     from ...utils.logging import logger
 
@@ -107,10 +118,14 @@ def run_cmd(
     try:
         annotators = load_annotators(annotators_path, backend=backend)
         generator = load_generators(generators_path, backend=backend)
+        similarity = (
+            HubSimilarity(similarity_id, backend=backend) if similarity_id else None
+        )
         summary, candidates_by_round = hill_climb(
             generator,
             annotators,
             mode=mode,
+            similarity=similarity,
             seed_smiles=seed_smiles,
             original_seed_smiles=original_seed_smiles,
             n_rounds=n_rounds,

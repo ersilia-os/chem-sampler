@@ -3,15 +3,12 @@ from pathlib import Path
 
 from ..hub.client import Backend
 from ..models.annotator import MolecularWeightAnnotator, QEDAnnotator
-from ..models.chembl import ChemblSampler
 from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
 from ..models.spec import AnnotatorSpec
 
 #: Final fallback for `load_generators()`, used only when neither an explicit
-#: path nor a ./generators.csv in the cwd is available. Deliberately excludes
-#: "chembl": the ChemblSampler baseline must only ever be opted into by a
-#: user-supplied CSV.
+#: path nor a ./generators.csv in the cwd is available.
 _DEFAULT_GENERATORS_PATH = Path(__file__).parent / "generators.csv"
 
 
@@ -24,16 +21,13 @@ def load_generators(
     Parameters
     ----------
     path : str, optional
-        CSV with a `generator_id` column, one row per generator. Each id is
-        either an Ersilia Hub model id, or the literal "chembl" to opt into
-        `ChemblSampler`. Resolved in order: `path` if given; else
-        `./generators.csv` in the current working directory, if one exists;
-        else the generators validated in ersilia-os/ersilia#1919 (never
-        includes "chembl" - must be listed explicitly in a user-supplied CSV).
+        CSV with a `generator_id` column, one row per generator, each an
+        Ersilia Hub generative model id. Resolved in order: `path` if given;
+        else `./generators.csv` in the current working directory, if one
+        exists; else the generators validated in ersilia-os/ersilia#1919.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to every `HubGenerator` built from this CSV, by default
-        "run_sh". Has no effect on a "chembl" row (`ChemblSampler` has no
-        backend concept).
+        "run_sh".
 
     Returns
     -------
@@ -130,8 +124,6 @@ def load_annotators(
 
 def _build_generator(generator_id: str, backend: Backend = "run_sh"):
     """Resolve a generator id to a generator instance."""
-    if generator_id == "chembl":
-        return ChemblSampler()
     return HubGenerator(generator_id, backend=backend)
 
 

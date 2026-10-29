@@ -1,9 +1,8 @@
 import time
 
-from rdkit import Chem
-
-from ..hub.client import Backend, HubModel
+from ..hub.client import SIMILARITY_MODEL_IDS, Backend, HubModel
 from ..utils.logging import logger
+from ._smiles import candidates_from_output
 
 
 class SeedRequiredError(ValueError):
@@ -15,7 +14,8 @@ class HubGenerator:
     Molecule generator backed by a generative model from the Ersilia Model Hub.
 
     Works with any Hub generative model that takes one compound and returns
-    generated molecules in `smi_*` columns. How much of the input survives
+    generated molecules in `smi_*` columns. Similarity-search models are not
+    generators and are refused: use `HubSimilarity`. How much of the input survives
     generation is model-specific: scaffold-based models rebuild from the input's
     Murcko scaffold, fragment-growing ones keep only a small ring fragment, and
     whole-molecule ones edit the input directly. Across the six default
@@ -28,9 +28,19 @@ class HubGenerator:
         Ersilia identifier of the generative model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
+
+    Raises
+    ------
+    ValueError
+        If `model_id` is a similarity-search model.
     """
 
     def __init__(self, model_id: str, backend: Backend = "run_sh"):
+        if model_id in SIMILARITY_MODEL_IDS:
+            raise ValueError(
+                f"{model_id} is a similarity-search model, not a generator; "
+                "use HubSimilarity"
+            )
         self.model_id = model_id
         self._hub_model = HubModel(model_id, backend=backend)
 
@@ -59,19 +69,7 @@ class HubGenerator:
             raise SeedRequiredError(f"{self.model_id} requires a seed molecule")
 
         df = self._hub_model.run([seed_smiles])
-        smi_columns = [c for c in df.columns if c.startswith("smi_")]
-        raw_smiles = df.loc[0, smi_columns].dropna().tolist()
-
-        seed_canonical = Chem.MolToSmiles(Chem.MolFromSmiles(seed_smiles))
-        candidates = set()
-        for smi in raw_smiles:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
-                continue
-            canonical = Chem.MolToSmiles(mol)
-            if canonical != seed_canonical:
-                candidates.add(canonical)
-        return list(candidates)
+        return candidates_from_output(df, seed_smiles)
 
     def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
         """
@@ -104,9 +102,20 @@ class GeneratorPool:
     ----------
     generators : list[HubGenerator]
         Generators whose candidates are pooled.
+
+    Raises
+    ------
+    TypeError
+        If a member is a similarity-search model.
     """
 
     def __init__(self, generators: list[HubGenerator]):
+        for generator in generators:
+            if getattr(generator, "model_id", None) in SIMILARITY_MODEL_IDS:
+                raise TypeError(
+                    f"{generator.model_id} is a similarity-search model and cannot "
+                    "join a generator pool; pass it to hill_climb(similarity=...)"
+                )
         self.generators = generators
 
     def generate(self, seed_smiles: str | None) -> list[str]:

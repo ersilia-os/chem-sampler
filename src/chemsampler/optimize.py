@@ -5,6 +5,8 @@ from typing import Literal
 
 import pandas as pd
 
+from .models.generator import SeedRequiredError
+from .models.similarity import HubSimilarity
 from .models.spec import AnnotatorSpec, Direction
 from .utils.logging import logger
 from .utils.similarity import tanimoto_to_seed
@@ -24,6 +26,7 @@ def hill_climb(
     annotators: list[AnnotatorSpec],
     *,
     mode: Literal["joint", "sequential", "weighted", "incremental"],
+    similarity: HubSimilarity | None = None,
     seed_smiles: str | None = None,
     original_seed_smiles: str | None = None,
     n_rounds: int = 5,
@@ -87,8 +90,7 @@ def hill_climb(
     ----------
     generator : object
         Any object exposing `.generate_by_model(seed_smiles: str | None) ->
-        dict[str, list[str]]` (e.g. `HubGenerator`, `ChemblSampler`, or a
-        `GeneratorPool`).
+        dict[str, list[str]]` (e.g. `HubGenerator` or a `GeneratorPool`).
     annotators : list[AnnotatorSpec]
         At least one. In "sequential" and "incremental" modes, list order is
         the priority/cycling order.
@@ -97,6 +99,11 @@ def hill_climb(
         can still diverge sharply (sequential/weighted maximize or minimize it
         directly; joint only checks pass/fail against its cutoff and picks an
         eligible candidate arbitrarily), so the choice is never silently assumed.
+    similarity : HubSimilarity, optional
+        A similarity-search model whose nearest neighbours of the current best
+        molecule join each round's candidates next to the generator's. Kept
+        separate from `generator`, which only takes generative models. Skipped
+        with a warning when there is no seed to search from.
     seed_smiles : str, optional
         SMILES of the starting molecule. If `None`, the first round's winner is
         unconditionally the new best. Required if `mode="incremental"`.
@@ -156,7 +163,14 @@ def hill_climb(
         `seed_smiles` or a valid `n_steps` (>= 1), `n_steps` is given with any
         other mode, or (in "incremental" mode) any annotator has a non-finite
         cutoff or can't score the seed.
+    TypeError
+        If `generator` is a `HubSimilarity`: pass it as `similarity` instead.
     """
+    if isinstance(generator, HubSimilarity):
+        raise TypeError(
+            f"{generator.model_id} is a similarity-search model, not a generator; "
+            "pass it as hill_climb(similarity=...)"
+        )
     _validate_annotators(annotators)
     if mode not in ("joint", "sequential", "weighted", "incremental"):
         raise ValueError(
@@ -178,6 +192,9 @@ def hill_climb(
         )
     if tanimoto_cutoff is not None and seed_smiles is None:
         raise ValueError("tanimoto_cutoff requires seed_smiles")
+
+    if similarity is not None:
+        generator = _CandidateSources(generator, similarity)
 
     history = []
     candidates_by_round: dict[int, pd.DataFrame] = {}
@@ -389,6 +406,26 @@ def write_results_incremental(
         round_table.to_csv(
             os.path.join(output_dir, f"round{round_num}.csv"), index=False
         )
+
+
+class _CandidateSources:
+    """A generator and a similarity model behind `hill_climb`'s one-generator interface."""
+
+    def __init__(self, generator, similarity: HubSimilarity):
+        self._generator = generator
+        self._similarity = similarity
+        # The per-round log line reads `.generators`; a lone generator has none.
+        self.generators = [*getattr(generator, "generators", [generator]), similarity]
+
+    def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
+        by_model = dict(self._generator.generate_by_model(seed_smiles))
+        try:
+            by_model.update(self._similarity.search_by_model(seed_smiles))
+        except SeedRequiredError:
+            logger.warning(
+                f"{self._similarity.model_id}: requires a seed molecule, skipped"
+            )
+        return by_model
 
 
 def _validate_annotators(annotators: list[AnnotatorSpec]) -> None:

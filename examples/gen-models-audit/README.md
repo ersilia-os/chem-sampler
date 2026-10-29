@@ -4,7 +4,7 @@ Benchmarks Ersilia Model Hub generators on their own terms — output quality
 (Tanimoto to seed, validity, timing) — independent of any annotator or
 `hill_climb` run. Scripts run in numbered order; outputs land in `results/`,
 model checkpoints in `models/`, per-model conda envs in `envs_cpu/` (all
-gitignored). Script 03 and the map in script 07 need `pip install -e ".[audit]"` (PyYAML, stylia) first.
+gitignored). Scripts 02 and 03 and the map in script 07 need `pip install -e ".[audit]"` (eosvc, PyYAML, stylia) first.
 
 ## Scripts
 

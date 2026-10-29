@@ -9,6 +9,11 @@ from ..utils.logging import logger
 
 Backend = Literal["ersilia", "run_sh"]
 
+#: Hub models that look up a seed's nearest neighbours in a reference library
+#: instead of generating molecules. Only these can back a `HubSimilarity`, and
+#: `HubGenerator` and `HubAnnotator` refuse them.
+SIMILARITY_MODEL_IDS = frozenset({"eos8nyg"})
+
 
 class HubModel:
     """
@@ -48,6 +53,7 @@ class HubModel:
         """Lazily import and create ErsiliaModel only when needed."""
         if self._ersilia_model is None:
             from ersilia import ErsiliaModel
+
             self._ersilia_model = ErsiliaModel(model=self.model_id)
         return self._ersilia_model
 

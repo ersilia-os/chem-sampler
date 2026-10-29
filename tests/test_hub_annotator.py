@@ -62,3 +62,10 @@ def test_null_scores_are_dropped_and_warned(annotator, caplog):
 
     assert scores == {"ok": 2.0}
     assert any("1 of 2" in r.message for r in caplog.records)
+
+
+def test_rejects_similarity_model(monkeypatch):
+    monkeypatch.setattr("chemsampler.models.hub_annotator.HubModel", FakeHubModel)
+
+    with pytest.raises(ValueError, match="HubSimilarity"):
+        HubAnnotator("eos8nyg")

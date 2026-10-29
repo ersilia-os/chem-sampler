@@ -2,7 +2,7 @@ import time
 
 import pandas as pd
 
-from ..hub.client import Backend, HubModel
+from ..hub.client import SIMILARITY_MODEL_IDS, Backend, HubModel
 from ..utils.logging import logger
 
 #: A single oversized `run()` call degrades the served model and fails silently
@@ -32,11 +32,21 @@ class HubAnnotator:
         column; required when the model returns more than one.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
+
+    Raises
+    ------
+    ValueError
+        If `model_id` is a similarity-search model.
     """
 
     def __init__(
         self, model_id: str, column: str | None = None, backend: Backend = "run_sh"
     ):
+        if model_id in SIMILARITY_MODEL_IDS:
+            raise ValueError(
+                f"{model_id} is a similarity-search model, not an annotator; "
+                "use HubSimilarity"
+            )
         self.model_id = model_id
         self.column = column
         self._hub_model = HubModel(model_id, backend=backend)

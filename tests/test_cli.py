@@ -22,6 +22,7 @@ class FakeHubModel:
 def no_real_hub_calls(monkeypatch):
     monkeypatch.setattr("chemsampler.models.generator.HubModel", FakeHubModel)
     monkeypatch.setattr("chemsampler.models.hub_annotator.HubModel", FakeHubModel)
+    monkeypatch.setattr("chemsampler.models.similarity.HubModel", FakeHubModel)
 
 
 def _write_csv(path, header, rows):
@@ -274,3 +275,58 @@ def test_annotate_model_not_conflicted_by_cwd_annotators_csv(tmp_path, monkeypat
 
     assert result.exit_code == 0, result.output
     assert "cutoffs satisfied" not in result.output
+
+
+def test_run_with_similarity_adds_its_candidates(tmp_path):
+    annotators_csv = tmp_path / "annotators.csv"
+    _write_csv(
+        annotators_csv,
+        ["annotator_id", "cutoff", "direction"],
+        [["qed", "0.0", "higher"]],
+    )
+    generators_csv = tmp_path / "generators.csv"
+    _write_csv(generators_csv, ["generator_id"], [["eos9taz"]])
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "run",
+            "--annotators",
+            str(annotators_csv),
+            "--generators",
+            str(generators_csv),
+            "--similarity",
+            "eos8nyg",
+            "--mode",
+            "sequential",
+            "--seed-smiles",
+            "CCO",
+            "--n-rounds",
+            "1",
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    round1 = pd.read_csv(output_dir / "round1.csv")
+    assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
+
+
+def test_run_rejects_a_similarity_id_that_is_not_supported(tmp_path):
+    result = CliRunner().invoke(
+        cli,
+        [
+            "run",
+            "--similarity",
+            "eos9taz",
+            "--mode",
+            "sequential",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--similarity" in result.output

@@ -89,12 +89,10 @@ in round `n`, with its source generator, every annotator's value,
 `direction="higher"` (default) keeps candidates at least this similar to the
 seed; `"lower"` pushes toward novelty instead.
 `seed_smiles` is optional; without one, round 1 is unconditionally the new
-best, and only seed-agnostic generators (like `ChemblSampler`) can contribute
-to it.
+best, but every Hub generator needs a seed to run, so pass one in practice.
 
-`HubGenerator` accepts any Hub model that returns generated molecules. Several
-can be pooled behind the same interface, so a pool drops in wherever a single
-generator is expected:
+`HubGenerator` accepts any Hub generative model. Several can be pooled behind
+the same interface, so a pool drops in wherever a single generator is expected:
 
 ```python
 from chemsampler.models.generator import GeneratorPool
@@ -102,19 +100,22 @@ from chemsampler.models.generator import GeneratorPool
 pool = GeneratorPool([HubGenerator("eos9taz"), HubGenerator("eos6ost")])
 ```
 
-`ChemblSampler` is a null baseline: it draws molecules at random from a filtered
-ChEMBL set (single-component, 200-450 Da) and **ignores the seed**. It answers
-"does a generator beat a random draw from known chemistry?". It is opt-in only —
-never included by default:
+### Similarity models
+
+A similarity-search model returns the seed's nearest neighbours in a reference
+library: known compounds, not generated ones. It is kept apart from generators
+and annotators (`HubGenerator` and `HubAnnotator` refuse it), and only `eos8nyg`
+(Ersilia Reference Library Similarity) is supported for now. Pass it to
+`hill_climb` with `similarity=`; its neighbours of the current best molecule join
+each round's candidates, and the `source` column shows `eos8nyg`:
 
 ```python
-from chemsampler.models.chembl import ChemblSampler
+from chemsampler.models.similarity import HubSimilarity
 
-baseline = ChemblSampler(n=1000, random_state=42)
+hill_climb(..., similarity=HubSimilarity("eos8nyg"))
 ```
 
-The reference set is fetched with [`eosvc`](https://github.com/ersilia-os/eosvc) on
-first use, or rebuilt from scratch with `python -m chemsampler.data.chembl`.
+On the CLI, add `--similarity eos8nyg` to `chemsampler run`.
 
 ### Backends
 
@@ -154,10 +155,8 @@ given, then `./generators.csv`/`./annotators.csv` in the current working
 directory. `load_generators` has one further fallback beyond that — the 6
 default Hub generators — while `load_annotators` raises if nothing is
 found, since cutoffs and directions are always user-specific, unlike the
-generator list. `load_generators`' `generator_id` column takes either an
-Ersilia model id, or the literal `"chembl"` to opt into `ChemblSampler` — the
-shipped default never includes it, so it must be listed explicitly in your own
-CSV. `load_annotators`' CSV has columns `annotator_id, cutoff, direction,
+generator list. `load_generators`' `generator_id` column takes Ersilia
+generative model ids. `load_annotators`' CSV has columns `annotator_id, cutoff, direction,
 column, weight` (`cutoff` and `direction` are required for every row; row
 order is the priority order used by `mode="sequential"`; `column` is optional
 and picks an output column for a multi-output Hub model; `weight` is optional,
