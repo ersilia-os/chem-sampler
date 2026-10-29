@@ -64,3 +64,8 @@ class QEDAnnotator:
             if mol is not None:
                 scores[smi] = Descriptors.qed(mol)
         return scores
+
+
+#: In-house annotators computed with RDKit, by the `model` name used in the
+#: annotator inputs (`source: rdkit`).
+RDKIT_ANNOTATORS = {"mw": MolecularWeightAnnotator, "qed": QEDAnnotator}

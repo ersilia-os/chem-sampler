@@ -2,40 +2,61 @@ import sys
 
 import click
 
-from ...hub.client import SIMILARITY_MODEL_IDS
 from ..create_cli import chemsampler_cli
 
 
 @chemsampler_cli.command("run")
 @click.option(
-    "--annotators",
-    "annotators_path",
+    "--config",
     default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="CSV with columns annotator_id, cutoff, direction[, column]. Falls "
-    "back to ./annotators.csv in the cwd.",
+    help="JSON file with the paths and the similarity, generators and annotators "
+    "lists. See the README for its keys. Any input not given by a flag, the "
+    "config file or --path-to-models is looked for in the working directory.",
 )
 @click.option(
-    "--generators",
-    "generators_path",
+    "--path-to-models",
     default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="CSV with a generator_id column. Falls back to ./generators.csv in "
-    "the cwd, then the 6 default Hub generators.",
+    type=click.Path(file_okay=False),
+    help="Folder with similarity.csv, generators.csv and annotators.csv. "
+    "Overrides the config file.",
+)
+@click.option(
+    "--path-to-model-repositories",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Folder with one sub-folder per model. Required by the run_sh backend. "
+    "Overrides the config file.",
 )
 @click.option(
     "--similarity",
-    "similarity_id",
+    "similarity_file",
     default=None,
-    type=click.Choice(sorted(SIMILARITY_MODEL_IDS)),
-    help="Similarity-search model whose nearest neighbours of the current best "
-    "molecule join each round's candidates. Off by default.",
+    type=click.Path(exists=True, dir_okay=False),
+    help="CSV with a 'similarity' column (one model). Overrides the config file "
+    "and --path-to-models.",
+)
+@click.option(
+    "--generators",
+    "generators_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="CSV with a 'generators' column. Overrides the config file and "
+    "--path-to-models.",
+)
+@click.option(
+    "--annotators",
+    "annotators_file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="CSV with columns source, model, cutoff, direction, priority[, weight, "
+    "column]. Overrides the config file and --path-to-models.",
 )
 @click.option(
     "--mode",
     type=click.Choice(["joint", "sequential", "weighted", "incremental"]),
     required=True,
-    help="How annotators combine into a round's winner.",
+    help="How the primary annotators combine into a round's winner.",
 )
 @click.option("--seed-smiles", default=None, help="SMILES of the starting molecule.")
 @click.option(
@@ -88,9 +109,12 @@ from ..create_cli import chemsampler_cli
     help="Show detailed logs with timestamps and all model calls. Default: clean progress output.",
 )
 def run_cmd(
-    annotators_path: str | None,
-    generators_path: str | None,
-    similarity_id: str | None,
+    config: str | None,
+    path_to_models: str | None,
+    path_to_model_repositories: str | None,
+    similarity_file: str | None,
+    generators_file: str | None,
+    annotators_file: str | None,
     mode: str,
     seed_smiles: str | None,
     original_seed_smiles: str | None,
@@ -106,8 +130,7 @@ def run_cmd(
     """Generate and score candidate molecules across rounds, saving the result."""
     import time
 
-    from ...config import load_annotators, load_generators
-    from ...models.similarity import HubSimilarity
+    from ...config import load_inputs
     from ...optimize import hill_climb, write_results
     from ...utils.logging import logger
 
@@ -116,16 +139,20 @@ def run_cmd(
 
     start_time = time.time()
     try:
-        annotators = load_annotators(annotators_path, backend=backend)
-        generator = load_generators(generators_path, backend=backend)
-        similarity = (
-            HubSimilarity(similarity_id, backend=backend) if similarity_id else None
+        inputs = load_inputs(
+            config,
+            path_to_models,
+            path_to_model_repositories,
+            backend=backend,
+            similarity=similarity_file,
+            generators=generators_file,
+            annotators=annotators_file,
         )
         summary, candidates_by_round = hill_climb(
-            generator,
-            annotators,
+            inputs.generators,
+            inputs.annotators,
             mode=mode,
-            similarity=similarity,
+            similarity=inputs.similarity,
             seed_smiles=seed_smiles,
             original_seed_smiles=original_seed_smiles,
             n_rounds=n_rounds,

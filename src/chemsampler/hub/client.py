@@ -15,6 +15,15 @@ Backend = Literal["ersilia", "run_sh"]
 SIMILARITY_MODEL_IDS = frozenset({"eos8nyg"})
 
 
+def not_allowed_similarity_message(model_id: str) -> str:
+    """Error text for a similarity model chemsampler does not support."""
+    allowed = ", ".join(sorted(SIMILARITY_MODEL_IDS))
+    return (
+        f"{model_id} is not meant to be used in chemsampler as a similarity "
+        f"model. Choose from: {allowed}."
+    )
+
+
 class HubModel:
     """
     Thin wrapper for running an Ersilia Model Hub model on a list of SMILES.
@@ -22,8 +31,8 @@ class HubModel:
     Two backends are available:
 
     - **"run_sh" (default)**: Shells out directly to the model's bundled run.sh
-      script. Requires: model directory at CHEMSAMPLER_MODELS_DIR/model_id
-      (default: ~/eos/dest/model_id) with run.sh at model/framework/run.sh.
+      script. Requires: model directory at models_dir/model_id with run.sh at
+      model/framework/run.sh.
       No persistent server, no port/process contention, much faster startup.
       Avoids Ersilia initialization entirely. Use this unless the model isn't
       conda-packed or isn't fetched locally.
@@ -40,13 +49,32 @@ class HubModel:
         Ersilia identifier of the model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
         Which backend to use, by default "run_sh".
+    models_dir : str, optional
+        Folder holding one sub-folder per model (`models_dir/model_id`).
+        Required by the "run_sh" backend, unused by "ersilia".
+
+    Raises
+    ------
+    ValueError
+        If `backend` is unknown, or is "run_sh" and `models_dir` is not given.
     """
 
-    def __init__(self, model_id: str, backend: Backend = "run_sh"):
+    def __init__(
+        self,
+        model_id: str,
+        backend: Backend = "run_sh",
+        models_dir: str | None = None,
+    ):
         if backend not in ("ersilia", "run_sh"):
             raise ValueError(f"backend must be 'ersilia' or 'run_sh', got {backend!r}")
+        if backend == "run_sh" and not models_dir:
+            raise ValueError(
+                f"{model_id}: the run_sh backend needs the folder that holds the "
+                "model repositories (--path-to-model-repositories)"
+            )
         self.model_id = model_id
         self.backend = backend
+        self.models_dir = models_dir
         self._ersilia_model = None
 
     def _get_ersilia_model(self):
@@ -105,16 +133,12 @@ class HubModel:
         # No server, no port, no session: run.sh is a one-shot subprocess that
         # bakes its own interpreter path in at pack time, so nothing here needs
         # conda activation, a cwd override, or env changes. Avoids Ersilia entirely.
-        models_dir = os.path.expanduser(
-            os.getenv("CHEMSAMPLER_MODELS_DIR", "~/eos/dest")
-        )
-        bundle = os.path.join(models_dir, self.model_id)
+        bundle = os.path.join(os.path.expanduser(self.models_dir), self.model_id)
 
         if not os.path.isdir(bundle):
             raise RuntimeError(
                 f"{self.model_id}: not found at {bundle}. "
-                f"Set CHEMSAMPLER_MODELS_DIR or fetch it to ~/eos/dest, "
-                "or use backend='ersilia'."
+                "Check --path-to-model-repositories, or use backend='ersilia'."
             )
 
         framework_dir = os.path.join(bundle, "model", "framework")

@@ -28,6 +28,9 @@ class HubGenerator:
         Ersilia identifier of the generative model (e.g. "eos9taz").
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
+    models_dir : str, optional
+        Folder holding the model repositories, passed through to `HubModel`.
+        Required by the "run_sh" backend.
 
     Raises
     ------
@@ -35,14 +38,19 @@ class HubGenerator:
         If `model_id` is a similarity-search model.
     """
 
-    def __init__(self, model_id: str, backend: Backend = "run_sh"):
+    def __init__(
+        self,
+        model_id: str,
+        backend: Backend = "run_sh",
+        models_dir: str | None = None,
+    ):
         if model_id in SIMILARITY_MODEL_IDS:
             raise ValueError(
                 f"{model_id} is a similarity-search model, not a generator; "
                 "use HubSimilarity"
             )
         self.model_id = model_id
-        self._hub_model = HubModel(model_id, backend=backend)
+        self._hub_model = HubModel(model_id, backend=backend, models_dir=models_dir)
 
     def generate(self, seed_smiles: str | None) -> list[str]:
         """

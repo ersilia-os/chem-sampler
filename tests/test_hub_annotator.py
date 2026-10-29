@@ -7,7 +7,7 @@ from chemsampler.models.hub_annotator import HubAnnotator
 class FakeHubModel:
     """Stands in for HubModel, recording each run() call's chunk size."""
 
-    def __init__(self, model_id, backend="ersilia"):
+    def __init__(self, model_id, backend="ersilia", models_dir=None):
         self.model_id = model_id
         self.backend = backend
         self.calls = []

@@ -1,0 +1,173 @@
+# chemsampler catalog, built 2026-10-29, ersilia 0.1.62
+role,identifier,title,task,subtask
+generators,eos4q1a,CReM mutate-based structure generation,Sampling,Generation
+generators,eos4qda,FasmiFra molecule generator,Sampling,Generation
+generators,eos55vx,CoCoGraph Formula-Preserving Generation,Sampling,Generation
+generators,eos57bx,REINVENT 4 Mol2MolScaffold,Sampling,Generation
+generators,eos5j3l,Ensemble-Conditioned Molecular Design,Sampling,Generation
+generators,eos633t,Scaffold-based generation with MoLeR,Sampling,Generation
+generators,eos694w,REINVENT 4 Mol2MolMediumSimilarity,Sampling,Generation
+generators,eos69e6,Pharmacophore-guided molecular generation,Sampling,Generation
+generators,eos6a1h,CoCoGraph Small-Fragment Inpainting,Sampling,Generation
+generators,eos6ost,REINVENT 4 LibInvent,Sampling,Generation
+generators,eos80sj,ANNalog Scaffold Hopping,Sampling,Generation
+generators,eos84nf,GenMol Superstructure Generation,Sampling,Generation
+generators,eos8fma,STONED analogue generation by SELFIES mutation,Sampling,Generation
+generators,eos8vud,SQUID 3D shape generation,Sampling,Generation
+generators,eos8zvb,PyMolGen Drug-Like Molecule Generation,Sampling,Generation
+generators,eos92m1,TransPharmer Pharmacophore-Informed Molecule Generation,Sampling,Generation
+generators,eos935d,MetaTrans: human drug metabolites,Sampling,Generation
+generators,eos9p57,CReM Growth-Based Structure Generation,Sampling,Generation
+generators,eos9taz,MoLeR scaffold completion with fragment seeds,Sampling,Generation
+similarity,eos1bgt,COCONUT Library Similarity,Sampling,Similarity search
+similarity,eos1d7r,Small World Zinc search,Sampling,Similarity search
+similarity,eos1noy,ChEMBL Molecular Sampler,Sampling,Similarity search
+similarity,eos2a9n,Similarity search in ChEMBL,Sampling,Similarity search
+similarity,eos2hzy,PubChem Molecular Sampler,Sampling,Similarity search
+similarity,eos3e6s,ChEMBL decoy sampler,Sampling,Similarity search
+similarity,eos3kcw,Small World Wuxi search,Sampling,Similarity search
+similarity,eos4b8j,GDBChEMBL similarity search,Sampling,Similarity search
+similarity,eos6ru3,WHALES similarity search on 600k molecules from Q-Mug,Sampling,Similarity search
+similarity,eos7jlv,GDBMedChem similarity search,Sampling,Similarity search
+similarity,eos80al,Enamine Hit Locator Similarity,Sampling,Similarity search
+similarity,eos8nyg,Ersilia Reference Library Similarity,Sampling,Similarity search
+similarity,eos9c7k,"Similarity search in ChEMBL, DrugBank and UNPD",Sampling,Similarity search
+similarity,eos9ueu,Small World Enamine REAL search,Sampling,Similarity search
+annotators,eos11sm,Resemblance to a curated list of known antibiotics,Annotation,
+annotators,eos12x7,Spacial Score topological indicator of molecular complexity,Annotation,
+annotators,eos157v,Hydration free energy of small molecules in water,Annotation,
+annotators,eos18ie,Antibiotic activity prediction against Staphylococcus aureus,Annotation,
+annotators,eos19mt,Antibiotic classes prediction,Annotation,
+annotators,eos1af5,Coloring molecules for Caco-2 cell permeability,Annotation,
+annotators,eos1amr,Blood-brain barrier penetration,Annotation,
+annotators,eos1lb5,Mycobacterium cell wall penetration,Annotation,
+annotators,eos1n4b,Identifying HDAC3 inhibitors,Annotation,
+annotators,eos1pu1,Cardiotoxicity Classifier,Annotation,
+annotators,eos1soi,Antimicrobial activity against non-growing bacteria,Annotation,
+annotators,eos1vms,Multi-target prediction based on ChEMBL data,Annotation,
+annotators,eos21dr,Antimicrobial activity prediction against Acinetobacter baumannii from public ChEMBL data,Annotation,
+annotators,eos21q7,InterDILI: drug-induced injury prediction,Annotation,
+annotators,eos22io,Human Plasma Protein Binding (PPB) of Compounds,Annotation,
+annotators,eos238c,MeSH therapeutic use based on chemical structure,Annotation,
+annotators,eos24jm,QcrB Inhibition (M. tuberculosis),Annotation,
+annotators,eos2b6f,Microstate pKa values,Annotation,
+annotators,eos2e3s,Antimicrobial activity prediction against Pseudomonas aeruginosa from public ChEMBL data,Annotation,
+annotators,eos2egp,Chelator fragment identification,Annotation,
+annotators,eos2fy6,S2DV HepG2 toxicity,Annotation,
+annotators,eos2hbd,Passive permeability based on simulations,Annotation,
+annotators,eos2l0q,Anti-schistosomiasis activity,Annotation,
+annotators,eos2lqb,Human oral bioavailability prediction,Annotation,
+annotators,eos2mhp,BACE-1 inhibition,Annotation,
+annotators,eos2r5a,Retrosynthetic accessibility score,Annotation,
+annotators,eos2srx,Route-Based Synthesizability Score,Annotation,
+annotators,eos2ta5,Ligand-based prediction of hERG blockade,Annotation,
+annotators,eos2xeq,Antibiotic downselection criteria based on similarity to known antibiotics,Annotation,
+annotators,eos2zmb,Inhibition of HDAC1,Annotation,
+annotators,eos30f3,Prediction of hERG channel blockers with directed message passing neural networks,Annotation,
+annotators,eos30gr,Classification of hERG blockers and nonblockers,Annotation,
+annotators,eos31ve,Human Liver Microsomal Stability,Annotation,
+annotators,eos3804,Inhibition of Acinetobacter baumannii growth,Annotation,
+annotators,eos39dp,Pharmacokinetics Profiler (PhaKinPro),Annotation,
+annotators,eos3b5e,Molecular weight,Annotation,
+annotators,eos3dys,CoADD antimicrobial prediction,Annotation,
+annotators,eos3ev6,CYP3A4 metabolism,Annotation,
+annotators,eos3f8h,Antimicrobial activity prediction from EU OpenScreen data,Annotation,
+annotators,eos3le9,HepG2 Toxicity (MMV Data),Annotation,
+annotators,eos3lyd,Efflux pump avoidance in gram-negative bacteria,Annotation,
+annotators,eos3mk2,BBBP model tested on marine-derived kinase inhibitors,Annotation,
+annotators,eos3ujl,Mtb cell wall permeability,Annotation,
+annotators,eos3wzy,Predict micro-pKa of organic molecules,Annotation,
+annotators,eos3xhm,HADES Oral Drug-Likeness,Annotation,
+annotators,eos3xip,Electronic spectra and excited state energy,Annotation,
+annotators,eos42ez,Human cytotoxicity endpoints,Annotation,
+annotators,eos43at,Coloring molecules for hERG blockade,Annotation,
+annotators,eos43d6,Antimicrobial activity prediction against Mycobacterium tuberculosis from public ChEMBL and PubChem data,Annotation,
+annotators,eos46ev,Mycobacterium tuberculosis inhibitor prediction,Annotation,
+annotators,eos481p,ToxCast toxicity panel,Annotation,
+annotators,eos48ue,Surrogate ADME Multi-Task Predictor,Annotation,
+annotators,eos4an7,Antimicrobial activity prediction against Plasmodium falciparum from public ChEMBL and PubChem data,Annotation,
+annotators,eos4cxk,SARS-CoV-2 Anti viral screening,Annotation,
+annotators,eos4e40,Broad spectrum antibiotic activity,Annotation,
+annotators,eos4f95,Inhibition of Eumycetoma from MycetOS,Annotation,
+annotators,eos4n4d,Weighted Gram-Negative Accumulation Prediction,Annotation,
+annotators,eos4r1g,Penetration in gram-negative bacteria,Annotation,
+annotators,eos4tcc,BayeshERG: hERG channel blockade,Annotation,
+annotators,eos4xb1,Antihypertension prediction,Annotation,
+annotators,eos4zfy,MAIP: antimalarial activity prediction,Annotation,
+annotators,eos526j,Retrosynthesis planning,Annotation,
+annotators,eos531m,Human Liver Microsome Half-Life (PredHLM),Annotation,
+annotators,eos5505,Rat liver microsomal stability,Annotation,
+annotators,eos5bsw,Small molecule retention by Gram-negative bacteria based on a large-scale LC/MS screen,Annotation,
+annotators,eos5cl7,Growth Inhibitors of Neisseria gonorrhoeae,Annotation,
+annotators,eos5eya,Antimicrobial activity prediction against Escherichia coli from public ChEMBL and PubChem data,Annotation,
+annotators,eos5gge,Early prediction of Drug-Induced Liver Injury,Annotation,
+annotators,eos5jv3,MycoPermeNet mycobacterial membrane permeation,Annotation,
+annotators,eos5jz9,CYP2C9 metabolism,Annotation,
+annotators,eos5nqn,GNEProp Escherichia coli antibiotic activity,Annotation,
+annotators,eos5pt8,Drug-likeness scoring based on unsupervised learning,Annotation,
+annotators,eos5q52,Antimicrobial activity prediction against Streptococcus pneumoniae from public ChEMBL data,Annotation,
+annotators,eos5qya,Antimicrobial activity prediction against Neisseria gonorrhoeae from public ChEMBL data,Annotation,
+annotators,eos5smc,Predicts activity of compounds accross the Tox21 panel,Annotation,
+annotators,eos5xng,Burkholderia cenocepacia inhibition,Annotation,
+annotators,eos60mw,CidalsDB anti-Leishmania and anti-SARS-CoV/SARS-CoV-2 activity model,Annotation,
+annotators,eos65rt,Membrane permeability of fluorescent probes,Annotation,
+annotators,eos69jj,N.gonorrhoeae antimicrobial activity,Annotation,
+annotators,eos69p9,Toxicity prediction across the Tox21 panel with semi-supervised learning,Annotation,
+annotators,eos6ao8,Coloring molecules for plasma protein binding prediction,Annotation,
+annotators,eos6fza,Toxicity at clinical trial stage,Annotation,
+annotators,eos6hy3,ImageMol HIV growth inhibition,Annotation,
+annotators,eos6m2k,MolE antimicrobial potential,Annotation,
+annotators,eos6o0z,Atomization energy of small molecules,Annotation,
+annotators,eos6ojg,AntibioticDB similarity matches matches,Annotation,
+annotators,eos6oli,Aqueous solubility prediction,Annotation,
+annotators,eos6tpo,Neuro-Symbolic AI for Automated Chemical Classification in the ChEBI Ontology,Annotation,
+annotators,eos6wb7,Antimicrobial activity prediction against Klebsiella pneumoniae from public ChEMBL data,Annotation,
+annotators,eos74bo,Aqueous Kinetic Solubility,Annotation,
+annotators,eos74km,Antimicrobial class specificity prediction,Annotation,
+annotators,eos77w8,Adverse Drug Reactions,Annotation,
+annotators,eos7a45,Small molecule price prediction,Annotation,
+annotators,eos7dg4,NTD chemistry rules,Annotation,
+annotators,eos7eos,SynFrag Synthetic Accessibility,Annotation,
+annotators,eos7iak,Antimicrobial activity prediction against Campylobacter spp. from public ChEMBL data,Annotation,
+annotators,eos7ike,Entry-way rules (eNTRy) for gram-negative bacteria,Annotation,
+annotators,eos7kpb,H3D virtual screening cascade light,Annotation,
+annotators,eos7l5m,Efflux susceptibility in gram-negative bacteria,Annotation,
+annotators,eos7m30,ADMET properties prediction,Annotation,
+annotators,eos7nno,CYP2D6 metabolism,Annotation,
+annotators,eos7pw8,Bayesian prediction of synthetic accessibility,Annotation,
+annotators,eos7s53,MtbAIM Antitubercular Activity,Annotation,
+annotators,eos7ye0,ChemFH chemical frequent hitter detection,Annotation,
+annotators,eos7yti,Antimalarial activity from OSM,Annotation,
+annotators,eos80ch,Antimalarial activity for sexual stage and asexual blood stage (ABS),Annotation,
+annotators,eos81ew,Parallel Artificial Membrane Permeability Assay 5,Annotation,
+annotators,eos81zy,Antimicrobial activity prediction against Enterococcus faecium from public ChEMBL data,Annotation,
+annotators,eos8451,Water solubility,Annotation,
+annotators,eos85a3,Octanol/water distribution coefficient,Annotation,
+annotators,eos8a5g,MolBloom: molecule purchasability in ZINC20,Annotation,
+annotators,eos8c0o,ImageMol human beta-secretase-1 (BACE-1) inhibition,Annotation,
+annotators,eos8d8a,Membrane permeability in Mycobacterium tuberculosis,Annotation,
+annotators,eos8fth,SARS-CoV-2 antiviral prediction: REDIAL-2020,Annotation,
+annotators,eos8g50,FASTSOLV solubility prediction,Annotation,
+annotators,eos8ioa,Natural product score,Annotation,
+annotators,eos8jx6,Antimicrobial activity prediction against Candida albicans from public ChEMBL and PubChem data,Annotation,
+annotators,eos8lcw,Antimicrobial activity prediction against Staphylococcus aureus from public ChEMBL and PubChem data,Annotation,
+annotators,eos8lok,Inhibition of Hepatits B virus,Annotation,
+annotators,eos8v1a,Antimicrobial activity prediction against Schistosoma mansoni from public ChEMBL data,Annotation,
+annotators,eos92sw,Toxicity and synthetic accessibility prediction,Annotation,
+annotators,eos93h2,ImageMol GPCR ligand binding affinity,Annotation,
+annotators,eos96f4,Digitization of molecular complexity,Annotation,
+annotators,eos96ia,Coloring molecules for interaction with CYP3A4,Annotation,
+annotators,eos9bpi,Antimicrobial activity prediction against Enterobacter spp. from public ChEMBL data,Annotation,
+annotators,eos9cvt,Permeability and Efflux Prediction (GNN-MTL),Annotation,
+annotators,eos9ei3,Synthetic accessibility score,Annotation,
+annotators,eos9eyo,Antimicrobial activity prediction against Helicobacter pylori from public ChEMBL data,Annotation,
+annotators,eos9f6t,SARS-CoV inhibition,Annotation,
+annotators,eos9f7c,Permeation of compounds across the outer membrane of P. aeruginosa,Annotation,
+annotators,eos9ivc,Antituberculosis activity prediction,Annotation,
+annotators,eos9n1s,Hemozoin inhibitor prediction using simple physicochemical parameters,Annotation,
+annotators,eos9p4a,DeepDL drug-likeness scoring,Annotation,
+annotators,eos9tyg,Parallel Artificial Membrane Permeability Assay (PAMPA) 7,Annotation,
+annotators,eos9x3z,Gram-negative activity as a permeability proxy,Annotation,
+annotators,eos9ym3,MRlogP: neural network-based logP prediction for druglike small molecules,Annotation,
+annotators,eos9yui,Natural product likeness score,Annotation,
+annotators,eos9yy1,Human Liver Cytosolic Stability,Annotation,

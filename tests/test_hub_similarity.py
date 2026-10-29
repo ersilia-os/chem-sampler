@@ -8,7 +8,7 @@ from chemsampler.models.similarity import HubSimilarity
 class FakeHubModel:
     """Stands in for HubModel, returning ranked neighbours that include the seed."""
 
-    def __init__(self, model_id, backend="ersilia"):
+    def __init__(self, model_id, backend="ersilia", models_dir=None):
         self.model_id = model_id
         self.backend = backend
 
@@ -44,5 +44,5 @@ def test_search_by_model_is_keyed_by_model_id(similarity):
 
 
 def test_rejects_a_model_that_is_not_a_similarity_model():
-    with pytest.raises(ValueError, match="not a supported similarity model"):
+    with pytest.raises(ValueError, match="not meant to be used in chemsampler"):
         HubSimilarity("eos9taz")
