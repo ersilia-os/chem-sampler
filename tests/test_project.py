@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -120,26 +121,174 @@ def test_the_templates_are_valid_inputs_for_the_shipped_catalog(tmp_path):
     assert [a.annotator_id for a in inputs.annotators] == ["eos4zfy"]
 
 
-def test_the_init_command_reports_what_it_made_and_what_it_found(tmp_path):
-    target = tmp_path / "run"
-
-    first = CliRunner().invoke(cli, ["init", str(target)])
-    second = CliRunner().invoke(cli, ["init", str(target)])
-
-    assert first.exit_code == 0, first.output
-    assert "Project ready" in first.output and "input/" in first.output
-    assert "store" in first.output  # says where the models go
-    assert second.exit_code == 0, second.output
-    assert "already a project" in second.output
+# --- the init command ---------------------------------------------------------------
 
 
-def test_the_init_command_works_in_the_current_folder(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+@pytest.fixture
+def here(tmp_path, monkeypatch):
+    """An empty working directory, apart from the store the suite points at."""
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    return work
 
-    result = CliRunner().invoke(cli, ["init"])
+
+def init(*args):
+    return CliRunner().invoke(cli, ["init", *args])
+
+
+def snapshot(folder):
+    return {
+        p.relative_to(folder): p.read_bytes() if p.is_file() else None
+        for p in folder.rglob("*")
+    }
+
+
+def test_init_without_a_path_makes_a_dummy_project_and_nothing_else(here, store_root):
+    result = init()
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / PROJECT_FILE).is_file()
+    assert [p.name for p in here.iterdir()] == ["chemsampler-test"]
+    assert (here / "chemsampler-test" / PROJECT_FILE).is_file()
+    assert "Project ready" in result.output and "input/" in result.output
+    assert "dummy project" in result.output
+    assert "Next: cd chemsampler-test," in result.output
+    assert not store_root.exists()  # only fetch makes the store
+
+
+@pytest.mark.parametrize("flag", ["-p", "--path"])
+def test_init_makes_the_folder_it_is_given(here, flag):
+    result = init(flag, "a/b/run")
+
+    assert result.exit_code == 0, result.output
+    assert (here / "a" / "b" / "run" / PROJECT_FILE).is_file()
+    assert "dummy" not in result.output
+    assert "Next: cd a/b/run," in result.output
+
+
+@pytest.mark.parametrize(
+    "args, name",
+    [([], "chemsampler-test"), (["-p", "mine"], "mine"), (["--path", "."], ".")],
+)
+def test_init_never_writes_into_a_project_that_exists(here, args, name):
+    create_project(here / name)
+    (here / name / "input" / "annotators.csv").write_text("edited\n")
+    (here / name / "input" / "generators.csv").unlink()
+    before = snapshot(here)
+
+    result = init(*args)
+
+    assert result.exit_code == 1
+    assert "already exists" in result.stderr
+    assert snapshot(here) == before  # not even the missing template comes back
+
+
+@pytest.mark.parametrize(
+    "make",
+    [Path.mkdir, Path.touch, lambda path: path.symlink_to(path.parent / "nowhere")],
+    ids=["empty folder", "file", "dangling link"],
+)
+def test_any_path_that_exists_counts_as_taken(here, make):
+    make(here / "chemsampler-test")
+    before = snapshot(here)
+
+    default = init()
+    explicit = init("-p", "chemsampler-test")
+
+    for result in (default, explicit):
+        assert result.exit_code == 1
+        assert "already exists" in result.stderr
+    assert snapshot(here) == before
+    assert not (here / "nowhere").exists()  # a link is never followed
+
+
+def test_the_old_positional_form_is_refused(here):
+    result = init("run")
+
+    assert result.exit_code == 2
+    assert list(here.iterdir()) == []
+
+
+def test_a_failed_init_leaves_nothing_that_blocks_a_retry(here, monkeypatch):
+    from chemsampler import project
+
+    real = project.create_project
+    calls = []
+
+    def fails_once(root):
+        calls.append(root)
+        if len(calls) == 1:
+            (Path(root) / PROJECT_FILE).write_text("{}")
+            raise OSError("disk full")
+        return real(root)
+
+    monkeypatch.setattr(project, "create_project", fails_once)
+    (here / "kept").mkdir()
+
+    failed = init("-p", "kept/run")
+    retried = init("-p", "kept/run")
+
+    assert failed.exit_code == 1 and "disk full" in failed.stderr
+    assert retried.exit_code == 0, retried.output
+    assert len(calls) == 2  # the retry was not refused as "already exists"
+    assert (here / "kept" / "run" / "input").is_dir()
+
+
+def test_a_failed_init_removes_the_half_made_folder(here, monkeypatch):
+    from chemsampler import project
+
+    def half_done(root):
+        (Path(root) / PROJECT_FILE).write_text("{}")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project, "create_project", half_done)
+    (here / "kept").mkdir()
+
+    result = init("-p", "kept/run")
+
+    assert result.exit_code == 1
+    assert [p.name for p in here.iterdir()] == ["kept"]
+    assert list((here / "kept").iterdir()) == []  # a parent that was there stays
+
+
+def test_the_next_step_names_the_folder_to_cd_into(here, tmp_path):
+    outside = init("-p", str(tmp_path / "elsewhere"))
+    spaced = init("-p", "my run")
+
+    assert f"Next: cd {tmp_path / 'elsewhere'}," in outside.output
+    assert "Next: cd 'my run'," in spaced.output
+
+
+def test_init_says_where_the_models_go(here, store_root):
+    before = init("-p", "one")
+    store_root.mkdir()
+    after = init("-p", "two")
+
+    line = f"Models go to the store shared by every project: {store_root}"
+    assert f"{line} (`chemsampler fetch` creates it)\n" in before.output
+    assert f"{line}\n" in after.output
+
+
+def test_a_broken_store_setting_does_not_stop_init(here, store_root):
+    store_root.mkdir()
+    (store_root / "config.json").write_text("[1, 2]")
+
+    result = init("-p", "run")
+
+    assert result.exit_code == 0, result.output
+    assert "store settings are not valid" in result.output
+    assert (here / "run" / PROJECT_FILE).is_file()
+
+
+def test_init_notes_a_project_inside_another(here):
+    create_project(here / "outer")
+
+    inside = init("-p", "outer/rounds/inner")
+    alone = init("-p", "alone")
+
+    assert inside.exit_code == 0, inside.output
+    assert f"inside the project {(here / 'outer').resolve()}" in inside.output
+    assert "inside the project" not in alone.output
 
 
 def test_setup_is_gone(tmp_path):

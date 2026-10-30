@@ -29,11 +29,13 @@ uses are expensive to fetch, so they live in a **store** that every project on t
 machine shares.
 
 ```bash
-chemsampler init my-run && cd my-run   # a project: input/ and rounds/
-$EDITOR input/*.csv                    # which models to use (templates are written for you)
-chemsampler fetch                      # clone them, download checkpoints, build their conda envs
+chemsampler init -p my-run && cd my-run   # a project: input/ and rounds/
+$EDITOR input/*.csv                       # which models to use (templates are written for you)
+chemsampler fetch                         # clone them, download checkpoints, build their conda envs
 chemsampler run --mode sequential --seed-smiles "CCO"
 ```
+
+`init` only creates a new folder; without `-p` it makes a dummy `chemsampler-test`.
 
 ```
 my-run/                       ~/.chemsampler/        the store

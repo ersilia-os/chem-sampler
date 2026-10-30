@@ -717,5 +717,5 @@ def test_the_help_lists_commands_in_the_order_a_user_needs_them():
 def test_the_help_ends_with_a_typical_use():
     result = CliRunner().invoke(cli, ["--help"], terminal_width=80)
 
-    for step in ("chemsampler init", "chemsampler fetch", "chemsampler run"):
+    for step in ("chemsampler init -p", "chemsampler fetch", "chemsampler run"):
         assert step in result.output

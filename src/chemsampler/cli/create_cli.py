@@ -5,7 +5,7 @@ _COMMAND_ORDER = ("init", "fetch", "run", "annotate", "catalog", "suggest")
 
 _EPILOG = """\b
 Typical use:
-  chemsampler init my-run && cd my-run
+  chemsampler init -p my-run && cd my-run
   (edit input/*.csv)
   chemsampler fetch
   chemsampler run --mode sequential --seed-smiles SMILES"""
