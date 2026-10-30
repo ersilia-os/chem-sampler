@@ -6,6 +6,7 @@ every project; the marker file records the folders. Switching project is `cd`.
 """
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,7 +16,8 @@ from .utils.jsonfile import read_object
 #: parents, the way git looks for `.git`, and read it as their config file.
 PROJECT_FILE = "chemsampler.json"
 
-#: The folders a project owns, and the key that can move each one.
+#: The folders a project owns, and the key that can move each one. A marker that
+#: leaves a key out gets the folder of this name inside the project.
 FOLDER_KEYS = {"path_to_models": "input", "path_to_rounds": "rounds"}
 
 #: The folders of the models and their environments. `chemsampler init` always
@@ -103,8 +105,9 @@ def create_project(root, models=None, envs=None) -> list[str]:
     """
     Create a project in `root`, adding whatever is missing and changing nothing else.
 
-    Writes the marker file, the two folders it owns, a `.gitignore` for the
-    results and a template of each input CSV. Anything that already exists,
+    Writes the marker file, with every path absolute so it shows where everything
+    is; the two folders it owns, a `.gitignore` for the results and a template of
+    each input CSV. Anything that already exists,
     including inputs the user has edited, is left untouched, so running it again
     is safe.
 
@@ -129,7 +132,9 @@ def create_project(root, models=None, envs=None) -> list[str]:
             path.write_text(text)
             created.append(str(path.relative_to(root)))
 
-    marker = dict(FOLDER_KEYS)
+    # abspath, not resolve: the paths should read as the user named them
+    here = Path(os.path.abspath(root))
+    marker = {key: str(here / name) for key, name in FOLDER_KEYS.items()}
     for key, folder in zip(STORE_KEYS, (models, envs)):
         if folder is not None:
             marker[key] = str(folder)

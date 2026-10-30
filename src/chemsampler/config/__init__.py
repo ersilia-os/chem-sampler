@@ -504,15 +504,27 @@ def _locations(
         shared = store.resolve()
         repos = shared.models
         envs = envs if envs is not None else shared.envs
-    return _Locations(
-        data,
-        folder(path_to_models, "path_to_models"),
-        repos,
-        envs,
-        folder(None, "path_to_rounds"),
-        root,
-        from_store,
-    )
+    inputs = folder(path_to_models, "path_to_models")
+    rounds = folder(None, "path_to_rounds")
+    if root is not None:
+        _check_own_folders(root, (inputs, rounds))
+    return _Locations(data, inputs, repos, envs, rounds, root, from_store)
+
+
+def _check_own_folders(root: Path, folders) -> None:
+    """
+    A project's inputs and results must not be another project's.
+
+    The marker records absolute paths, so a copied project still names the
+    original's folders and would read its inputs and write into its rounds.
+    """
+    for path in folders:
+        owner = None if path is None else find_project(path)
+        if owner is not None and owner != root:
+            raise ValueError(
+                f"{root / PROJECT_FILE} points at the folders of another project "
+                f"({owner}): was it copied or moved? Fix the paths in it"
+            )
 
 
 # --- loading ----------------------------------------------------------------------

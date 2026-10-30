@@ -48,7 +48,8 @@ Every location is set once, by `init`, and written to the project's
 `chemsampler.json`; the other commands need only the project. They work anywhere
 inside it, or on any project with `-p PATH`. Each run writes a dated folder under
 `rounds/` with its `summary.csv`, one `round<n>.csv` per round and an `inputs.json`
-of what was resolved.
+of what was resolved. The paths are absolute: a copied project is refused until its
+`chemsampler.json` names its own `input/` and `rounds/`.
 
 **Where models live.** A second project reuses what the first one fetched, so
 `fetch` there is instant. `chemsampler catalog` shows what the store holds and the

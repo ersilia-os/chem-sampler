@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -25,9 +26,10 @@ def test_init_creates_only_what_a_project_owns(tmp_path):
         "input",
         "rounds",
     ]
+    # absolute, so the file shows where everything is
     assert json.loads((root / PROJECT_FILE).read_text()) == {
-        "path_to_models": "input",
-        "path_to_rounds": "rounds",
+        "path_to_models": str(root / "input"),
+        "path_to_rounds": str(root / "rounds"),
     }
     assert (root / ".gitignore").read_text().split() == ["rounds/"]
     for name in TEMPLATES:
@@ -264,8 +266,8 @@ def test_init_records_every_location_and_says_where_the_models_go(here, store_ro
 
     assert result.exit_code == 0, result.output
     assert json.loads((here / "run" / PROJECT_FILE).read_text()) == {
-        "path_to_models": "input",
-        "path_to_rounds": "rounds",
+        "path_to_models": str(here / "run" / "input"),
+        "path_to_rounds": str(here / "run" / "rounds"),
         "path_to_model_repositories": str(store_root / "models"),
         "path_to_envs": str(store_root / "envs"),
     }
@@ -332,3 +334,81 @@ def test_setup_is_gone(tmp_path):
     result = CliRunner().invoke(cli, ["setup", str(tmp_path / "run")])
 
     assert result.exit_code == 2 and "No such command" in result.output
+
+
+# --- a copied or moved project ------------------------------------------------------
+
+QED_ONLY = "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n"
+
+
+def annotate_in(project):
+    return CliRunner().invoke(
+        cli, ["annotate", "-p", str(project), "--smiles", "CCO", "--backend", "ersilia"]
+    )
+
+
+def test_a_copied_project_is_refused_until_its_paths_are_fixed(here):
+    init("-p", "original")
+    (here / "original" / "input" / "annotators.csv").write_text(QED_ONLY)
+    shutil.copytree(here / "original", here / "copy")
+
+    refused = annotate_in(here / "copy")
+    marker = here / "copy" / PROJECT_FILE
+    fixed = json.loads(marker.read_text())
+    fixed["path_to_models"] = str(here / "copy" / "input")
+    fixed["path_to_rounds"] = str(here / "copy" / "rounds")
+    marker.write_text(json.dumps(fixed))
+    accepted = annotate_in(here / "copy")
+
+    # the copy still names the original's folders: it would read its inputs and
+    # write its results into the original
+    assert refused.exit_code == 1
+    assert "points at the folders of another project" in refused.output
+    assert str((here / "original").resolve()) in refused.output
+    assert accepted.exit_code == 0, accepted.output
+
+
+def test_a_moved_project_says_its_folder_is_gone(here):
+    init("-p", "before")
+    (here / "before" / "input" / "annotators.csv").write_text(QED_ONLY)
+    (here / "before").rename(here / "after")
+
+    result = annotate_in(here / "after")
+
+    assert result.exit_code == 1
+    assert f"the input folder {here / 'before' / 'input'} does not exist" in (
+        result.output
+    )
+
+
+def test_inputs_kept_outside_any_project_are_allowed(here):
+    init("-p", "run")
+    shared = here / "shared-inputs"
+    shared.mkdir()
+    (shared / "annotators.csv").write_text(QED_ONLY)
+    marker = here / "run" / PROJECT_FILE
+    marker.write_text(
+        json.dumps({**json.loads(marker.read_text()), "path_to_models": str(shared)})
+    )
+
+    result = annotate_in(here / "run")
+
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("stale", ["path_to_models", "path_to_rounds"])
+def test_one_path_left_pointing_at_the_original_is_enough_to_refuse(here, stale):
+    init("-p", "original")
+    (here / "original" / "input" / "annotators.csv").write_text(QED_ONLY)
+    shutil.copytree(here / "original", here / "copy")
+    marker = here / "copy" / PROJECT_FILE
+    paths = json.loads(marker.read_text())
+    for key, name in (("path_to_models", "input"), ("path_to_rounds", "rounds")):
+        if key != stale:
+            paths[key] = str(here / "copy" / name)
+    marker.write_text(json.dumps(paths))
+
+    result = annotate_in(here / "copy")
+
+    assert result.exit_code == 1
+    assert "points at the folders of another project" in result.output
