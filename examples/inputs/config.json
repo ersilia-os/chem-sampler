@@ -1,8 +1,0 @@
-{
-  "path_to_model_repositories": "/path/to/model/repositories",
-  "similarity": ["eos8nyg"],
-  "generators": ["eos9taz"],
-  "annotators": [
-    {"source": "ersilia", "model": "eos4zfy", "cutoff": 0.0, "direction": "higher", "priority": "primary"}
-  ]
-}

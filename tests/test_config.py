@@ -85,21 +85,15 @@ def test_every_hub_model_is_checked_but_in_house_annotators_are_not(inputs_dir, 
     ]
 
 
-def test_annotators_are_required_and_the_error_lists_every_way(inputs_dir):
+def test_annotators_are_required_and_the_error_says_where(inputs_dir):
     (inputs_dir / "annotators.csv").unlink()
 
     with pytest.raises(ValueError) as error:
         _load(inputs_dir)
 
-    message = str(error.value)
-    assert "annotators is required" in message
-    for way in (
-        "--annotators FILE",
-        "config file",
-        "--path-to-models",
-        "working directory",
-    ):
-        assert way in message
+    # the folder is known (a project's input/ always is): name the file to write
+    expected = f"annotators is required: write {inputs_dir / 'annotators.csv'}"
+    assert str(error.value) == expected
 
 
 def test_similarity_and_generators_are_each_optional(inputs_dir, hub):
@@ -127,8 +121,32 @@ def test_at_least_one_of_similarity_and_generators_is_needed(inputs_dir):
 def test_without_any_source_the_error_lists_the_ways(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(ValueError, match="config file.*--path-to-models"):
+    # the library's own arguments, not the CLI's flags (which are gone)
+    with pytest.raises(ValueError, match="config file.*path_to_models=") as error:
         load_inputs(backend="ersilia")
+    assert "--" not in str(error.value)
+
+
+def test_a_project_marker_given_as_the_config_gets_the_project_folders(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "proj"
+    create_project(root)
+    (root / "chemsampler.json").write_text("{}")  # names no folder at all
+    _write_csv(
+        root / "input" / "annotators.csv",
+        ["source", "model", "cutoff"] + ["direction", "priority"],
+        [["rdkit", "qed", "0", "higher", "primary"]],
+    )
+    (root / "input" / "similarity.csv").unlink()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # as with `-p`: the cwd is not in the project
+
+    inputs = load_inputs(config=str(root / "chemsampler.json"), backend="ersilia")
+
+    assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
+    assert inputs.rounds_dir == str(root.resolve() / "rounds")
 
 
 # --- flags and the working directory ------------------------------------------------
@@ -187,7 +205,7 @@ def test_a_named_folder_never_falls_back_to_the_working_directory(
 
 
 def test_path_to_models_must_be_a_folder(tmp_path):
-    with pytest.raises(ValueError, match="is not a folder"):
+    with pytest.raises(ValueError, match="the input folder .*nowhere does not exist"):
         load_inputs(path_to_models=str(tmp_path / "nowhere"), backend="ersilia")
 
 

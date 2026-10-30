@@ -27,7 +27,7 @@ from .schema import (
     parse_annotator,
 )
 
-#: The three model lists. Each comes from its flag (a CSV file), a key of the config
+#: The three model lists. Each comes from its argument (a CSV file), a key of the config
 #: file, or a CSV of the same name in the `path_to_models` folder (or, failing
 #: all of those, in the working directory). The CSVs' single column has the same
 #: name; annotators.csv has the columns of `schema.REQUIRED_FIELDS`.
@@ -217,6 +217,7 @@ def load_annotator(
     backend: Backend = "run_sh",
     *,
     path_to_envs: str | None = None,
+    config: str | None = None,
 ):
     """
     Build and check one annotator, to score a molecule against a single model.
@@ -233,9 +234,12 @@ def load_annotator(
         An Ersilia Hub model id, or an in-house name ("mw", "qed").
     path_to_model_repositories, path_to_envs : str, optional
         Folders with the model repositories and their environments. They
-        default to the machine's store.
+        default to the config's, or else the machine's store.
     backend : {"ersilia", "run_sh"}, optional
         By default "run_sh".
+    config : str, optional
+        A config file (such as a project's `chemsampler.json`) naming those
+        folders. Without one, the project the working directory is in, if any.
 
     Returns
     -------
@@ -244,10 +248,10 @@ def load_annotator(
     """
     models_dir = envs_dir = None
     if source == "ersilia":
-        loc = _locations(None, None, path_to_model_repositories, path_to_envs)
+        loc = _locations(config, None, path_to_model_repositories, path_to_envs)
         envs_dir = _as_text(loc.envs)
         if backend == "run_sh":
-            models_dir = _check_repositories(loc.repos, loc.from_store)
+            models_dir = _check_repositories(loc.repos)
         else:
             models_dir = _as_text(loc.repos)
         validate_models(annotators=[model])
@@ -409,10 +413,11 @@ def _find_source(name, flag, data, models_path, read_csv, read_inline, required)
             return read_csv(in_cwd)
     if not required:
         return None
-    where = f" (looked in {models_path})" if models_path is not None else ""
+    if models_path is not None:
+        raise ValueError(f"{name} is required: write {csv_path}")
     raise ValueError(
-        f"{name} is required: pass --{name} FILE, add the key '{name}' to the "
-        f"config file, put {name}.csv in --path-to-models{where}, or have "
+        f"{name} is required: pass {name}= a CSV file, add the key '{name}' to the "
+        f"config file, name a folder with {name}.csv in path_to_models=, or have "
         f"{name}.csv in the working directory"
     )
 
@@ -457,8 +462,9 @@ def _locations(
     Read the config and settle the folders.
 
     With no config given, the marker file of the project the working directory is
-    in (if any) is the config, and the folders it does not name get their
-    defaults. Relative paths in a config resolve against the config file.
+    in (if any) is the config. A project's marker, found or given, gets the
+    project's defaults for the folders it does not name. Relative paths in a
+    config resolve against the config file.
 
     The model repositories and the environments come from the first of: a flag,
     the config, or the machine's store. The store is a pair: its environments are
@@ -468,10 +474,13 @@ def _locations(
     """
     root = project = None
     if config is None:
-        root = find_project()
-        if root is not None:
-            config = root / PROJECT_FILE
-            project = Project.load(root)
+        found = find_project()
+        if found is not None:
+            config = found / PROJECT_FILE
+    # a project's marker, found or given, gets the project's default folders
+    if config is not None and Path(config).name == PROJECT_FILE:
+        root = Path(config).resolve().parent
+        project = Project.load(root)
     data, base = {}, Path.cwd()
     if config is not None:
         config_path = Path(config)
@@ -512,7 +521,7 @@ def _locations(
 def _read_inputs(names, loc: _Locations, files):
     """Read the named inputs and check them without looking at the Hub or the disk."""
     if loc.models is not None and not loc.models.is_dir():
-        raise ValueError(f"--path-to-models {loc.models} is not a folder")
+        raise ValueError(f"the input folder {loc.models} does not exist")
 
     def ids(name):
         return _find_source(
@@ -536,11 +545,16 @@ def _read_inputs(names, loc: _Locations, files):
                 f"got {len(similarity)}"
             )
     if "generators" in names and generators is None and similarity is None:
+        if loc.models is not None:
+            raise ValueError(
+                "give at least one of similarity and generators: write "
+                f"{loc.models / 'similarity.csv'} or {loc.models / 'generators.csv'}"
+            )
         raise ValueError(
-            "give at least one of similarity and generators: pass --similarity or "
-            "--generators FILE, add the key to the config file, put similarity.csv "
-            "or generators.csv in --path-to-models, or have one in the working "
-            "directory"
+            "give at least one of similarity and generators: pass similarity= or "
+            "generators= a CSV file, add the key to the config file, name a folder "
+            "with similarity.csv or generators.csv in path_to_models=, or have one "
+            "in the working directory"
         )
     rows = _find_source(
         "annotators",
@@ -577,11 +591,7 @@ def _load(
     hub_ids = [*(generators or []), *(similarity or []), *ersilia_annotators]
 
     run_sh = backend == "run_sh" and bool(hub_ids)
-    models_dir = (
-        _check_repositories(loc.repos, loc.from_store)
-        if run_sh
-        else _as_text(loc.repos)
-    )
+    models_dir = _check_repositories(loc.repos) if run_sh else _as_text(loc.repos)
     envs_dir = _as_text(loc.envs)
 
     validate_models(
@@ -704,14 +714,13 @@ def _as_text(path: Path | None) -> str | None:
     return None if path is None else str(path)
 
 
-def _check_repositories(repos: Path, from_store: bool) -> str:
+def _check_repositories(repos: Path) -> str:
     """The folder with the model repositories, which must exist."""
+    # a project names its folders, the store's included: the hint holds for both
     if not repos.is_dir():
-        if from_store:
-            raise ValueError(
-                f"no models fetched yet (looked in {repos}); run `chemsampler fetch`"
-            )
-        raise ValueError(f"the model repositories folder {repos} does not exist")
+        raise ValueError(
+            f"no models fetched yet: {repos} does not exist; run `chemsampler fetch`"
+        )
     return str(repos)
 
 

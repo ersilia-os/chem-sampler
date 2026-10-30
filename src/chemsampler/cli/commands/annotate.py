@@ -3,38 +3,18 @@ import sys
 import click
 
 from ..create_cli import chemsampler_cli
+from ..options import project_option
 
 
 @chemsampler_cli.command(
     "annotate", short_help="Score one molecule against the annotators (no generation)."
 )
-@click.option(
-    "--config",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="JSON file with the annotators. Only its annotators and "
-    "path_to_model_repositories are used. Not with --source/--model. With "
-    "nothing given, ./annotators.csv in the working directory is used.",
-)
-@click.option(
-    "--path-to-models",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with annotators.csv. Not with --source/--model.",
-)
-@click.option(
-    "--annotators",
-    "annotators_file",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="CSV with the annotators. Overrides the config file and "
-    "--path-to-models. Not with --source/--model.",
-)
+@project_option
 @click.option(
     "--source",
     type=click.Choice(["ersilia", "rdkit"]),
     default=None,
-    help="With --model: score against one annotator only, no cutoff.",
+    help="With --model: score against one annotator only, no cutoff. Needs no project.",
 )
 @click.option(
     "--model",
@@ -42,21 +22,6 @@ from ..create_cli import chemsampler_cli
     default=None,
     help="With --source: an Ersilia Hub model id, or an in-house name (mw, qed). "
     "Prints its raw value only.",
-)
-@click.option(
-    "--path-to-model-repositories",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with one sub-folder per model. Default: this machine's store "
-    "(see `chemsampler catalog`).",
-)
-@click.option(
-    "--path-to-envs",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with one conda environment per model, as built by "
-    "`chemsampler fetch`. Default: this machine's store. Overrides the config "
-    "file.",
 )
 @click.option("--smiles", required=True, help="SMILES of the molecule to score.")
 @click.option(
@@ -66,54 +31,40 @@ from ..create_cli import chemsampler_cli
     show_default=True,
 )
 def annotate_cmd(
-    config: str | None,
-    path_to_models: str | None,
-    annotators_file: str | None,
+    path: str | None,
     source: str | None,
     model_id: str | None,
-    path_to_model_repositories: str | None,
-    path_to_envs: str | None,
     smiles: str,
     backend: str,
 ) -> None:
-    """Score a single molecule against a set of annotators, or a single model."""
+    """Score a single molecule against the project's annotators, or a single model.
+
+    With --source/--model no project is needed: the model is looked for in the
+    project's folders when there is one, otherwise in this machine's store.
+    """
     single = source is not None or model_id is not None
-    a_set = (
-        config is not None or path_to_models is not None or annotators_file is not None
-    )
-    if single and a_set:
-        click.secho(
-            "Use either --source/--model or --annotators/--config/--path-to-models, "
-            "not both.",
-            fg="red",
-        )
-        sys.exit(1)
     if single and (source is None or model_id is None):
         click.secho("--source and --model go together.", fg="red")
         sys.exit(1)
 
     from ...config import load_annotator, load_annotators
     from ...optimize import annotate
+    from ...project import PROJECT_FILE, locate_project
 
     try:
         if single:
+            # without --path, load_annotator looks for a project from here itself
+            marker = None if path is None else locate_project(path) / PROJECT_FILE
             annotator = load_annotator(
                 source,
                 model_id,
-                path_to_model_repositories,
                 backend=backend,
-                path_to_envs=path_to_envs,
+                config=None if marker is None else str(marker),
             )
             value = annotator.score([smiles]).get(smiles, float("nan"))
         else:
-            annotators = load_annotators(
-                config,
-                path_to_models,
-                path_to_model_repositories,
-                backend=backend,
-                annotators=annotators_file,
-                path_to_envs=path_to_envs,
-            )
+            marker = locate_project(path) / PROJECT_FILE
+            annotators = load_annotators(str(marker), backend=backend)
             result = annotate(smiles, annotators)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")

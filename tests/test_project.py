@@ -215,12 +215,12 @@ def test_a_failed_init_leaves_nothing_that_blocks_a_retry(here, monkeypatch):
     real = project.create_project
     calls = []
 
-    def fails_once(root):
+    def fails_once(root, *folders):
         calls.append(root)
         if len(calls) == 1:
             (Path(root) / PROJECT_FILE).write_text("{}")
             raise OSError("disk full")
-        return real(root)
+        return real(root, *folders)
 
     monkeypatch.setattr(project, "create_project", fails_once)
     (here / "kept").mkdir()
@@ -237,7 +237,7 @@ def test_a_failed_init_leaves_nothing_that_blocks_a_retry(here, monkeypatch):
 def test_a_failed_init_removes_the_half_made_folder(here, monkeypatch):
     from chemsampler import project
 
-    def half_done(root):
+    def half_done(root, *folders):
         (Path(root) / PROJECT_FILE).write_text("{}")
         raise OSError("disk full")
 
@@ -259,24 +259,61 @@ def test_the_next_step_names_the_folder_to_cd_into(here, tmp_path):
     assert "Next: cd 'my run'," in spaced.output
 
 
-def test_init_says_where_the_models_go(here, store_root):
-    before = init("-p", "one")
-    store_root.mkdir()
-    after = init("-p", "two")
+def test_init_records_every_location_and_says_where_the_models_go(here, store_root):
+    result = init("-p", "run")
 
-    line = f"Models go to the store shared by every project: {store_root}"
-    assert f"{line} (`chemsampler fetch` creates it)\n" in before.output
-    assert f"{line}\n" in after.output
+    assert result.exit_code == 0, result.output
+    assert json.loads((here / "run" / PROJECT_FILE).read_text()) == {
+        "path_to_models": "input",
+        "path_to_rounds": "rounds",
+        "path_to_model_repositories": str(store_root / "models"),
+        "path_to_envs": str(store_root / "envs"),
+    }
+    assert f"Models go to:       {store_root / 'models'}" in result.output
+    assert f"Environments go to: {store_root / 'envs'}" in result.output
+    assert not store_root.exists()  # recorded, not created: fetch does that
 
 
-def test_a_broken_store_setting_does_not_stop_init(here, store_root):
+def test_init_records_the_folders_it_is_given_as_absolute_paths(here, store_root):
+    result = init("-p", "run", "--models", "shared/models", "--envs", "~/envs")
+
+    assert result.exit_code == 0, result.output
+    marker = json.loads((here / "run" / PROJECT_FILE).read_text())
+    # relative to where init ran, not to the project: the paths must not move
+    assert marker["path_to_model_repositories"] == str(here / "shared" / "models")
+    assert marker["path_to_envs"] == str(Path("~/envs").expanduser())
+    assert not (here / "shared").exists()
+
+
+def test_models_given_alone_keep_the_store_environments(here, store_root):
+    result = init("-p", "run", "--models", "mine")
+
+    marker = json.loads((here / "run" / PROJECT_FILE).read_text())
+    assert result.exit_code == 0, result.output
+    assert marker["path_to_model_repositories"] == str(here / "mine")
+    assert marker["path_to_envs"] == str(store_root / "envs")
+
+
+def test_a_broken_store_setting_stops_init_before_anything_is_made(here, store_root):
     store_root.mkdir()
     (store_root / "config.json").write_text("[1, 2]")
 
     result = init("-p", "run")
 
+    assert result.exit_code == 1
+    assert "could not create the project" in result.stderr
+    assert list(here.iterdir()) == []
+
+
+def test_with_both_folders_given_a_broken_store_setting_does_not_matter(
+    here, store_root
+):
+    store_root.mkdir()
+    (store_root / "config.json").write_text("[1, 2]")
+
+    result = init("-p", "run", "--models", "m", "--envs", "e")
+
     assert result.exit_code == 0, result.output
-    assert "store settings are not valid" in result.output
     assert (here / "run" / PROJECT_FILE).is_file()
 
 

@@ -1,8 +1,8 @@
-"""A project: one analysis's inputs and results.
+"""A project: one analysis's inputs and results, and where its models are.
 
-The models themselves are not here. They are expensive to fetch and build, so
-they live in the machine's store (see `chemsampler.store`) and every project
-reads from it. Switching project is `cd`.
+The models themselves are not here. They are expensive to fetch and build, so by
+default they live in the machine's store (see `chemsampler.store`), shared by
+every project; the marker file records the folders. Switching project is `cd`.
 """
 
 import json
@@ -18,8 +18,8 @@ PROJECT_FILE = "chemsampler.json"
 #: The folders a project owns, and the key that can move each one.
 FOLDER_KEYS = {"path_to_models": "input", "path_to_rounds": "rounds"}
 
-#: Folders a project may name, but which otherwise come from the store. A project
-#: that sets one keeps its own copy of the models instead of sharing the store's.
+#: The folders of the models and their environments. `chemsampler init` always
+#: writes them (the store's, unless told otherwise); without them, the store's.
 STORE_KEYS = ("path_to_model_repositories", "path_to_envs")
 
 _GITIGNORE = "rounds/\n"
@@ -76,7 +76,30 @@ def find_project(start=None) -> Path | None:
     return None
 
 
-def create_project(root) -> list[str]:
+def locate_project(path=None) -> Path:
+    """
+    The project that `path` (default: the working directory) is in.
+
+    Raises
+    ------
+    ValueError
+        If there is no `chemsampler.json` there or in any parent folder.
+    """
+    root = find_project(path)
+    if root is not None:
+        return root
+    if path is None:
+        raise ValueError(
+            f"not inside a project (no {PROJECT_FILE} here or above); create one "
+            "with `chemsampler init`, or give --path"
+        )
+    raise ValueError(
+        f"{path} is not in a project (no {PROJECT_FILE} there or above); create "
+        "one with `chemsampler init`"
+    )
+
+
+def create_project(root, models=None, envs=None) -> list[str]:
     """
     Create a project in `root`, adding whatever is missing and changing nothing else.
 
@@ -84,6 +107,14 @@ def create_project(root) -> list[str]:
     results and a template of each input CSV. Anything that already exists,
     including inputs the user has edited, is left untouched, so running it again
     is safe.
+
+    Parameters
+    ----------
+    root : str or Path
+        The project folder.
+    models, envs : str or Path, optional
+        The folders of the model clones and their environments, recorded in a new
+        marker file. Not given, the marker leaves them out and the store's are used.
 
     Returns
     -------
@@ -98,8 +129,12 @@ def create_project(root) -> list[str]:
             path.write_text(text)
             created.append(str(path.relative_to(root)))
 
+    marker = dict(FOLDER_KEYS)
+    for key, folder in zip(STORE_KEYS, (models, envs)):
+        if folder is not None:
+            marker[key] = str(folder)
     root.mkdir(parents=True, exist_ok=True)
-    write_if_absent(root / PROJECT_FILE, json.dumps(FOLDER_KEYS, indent=2) + "\n")
+    write_if_absent(root / PROJECT_FILE, json.dumps(marker, indent=2) + "\n")
     project = Project.load(root)
     for folder in (project.input, project.rounds):
         if not folder.exists():

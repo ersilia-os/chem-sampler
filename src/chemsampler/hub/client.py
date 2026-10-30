@@ -78,7 +78,7 @@ class HubModel:
         if backend == "run_sh" and not models_dir:
             raise ValueError(
                 f"{model_id}: the run_sh backend needs the folder that holds the "
-                "model repositories (--path-to-model-repositories)"
+                "model repositories (models_dir)"
             )
         self.model_id = model_id
         self.backend = backend
@@ -177,7 +177,7 @@ class HubModel:
         if not os.path.isdir(bundle):
             raise RuntimeError(
                 f"{self.model_id}: not found at {bundle}. "
-                "Check --path-to-model-repositories, or use backend='ersilia'."
+                "Run `chemsampler fetch`, or use backend='ersilia'."
             )
 
         framework_dir = os.path.join(bundle, "model", "framework")

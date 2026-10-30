@@ -1,22 +1,14 @@
 # Inputs
 
 Annotators are required, and so is at least one of similarity and generators.
-Each input comes from the first of these that has it:
+They are three CSV files in the project's `input/` folder; `chemsampler init`
+writes a template of each (the same as [`examples/inputs/csv/`](../examples/inputs/csv/)).
 
-1. its own flag, a CSV file (`--similarity`, `--generators`, `--annotators`);
-2. the config file's key of that name, or a CSV of that name in the folder given by
-   `--path-to-models` (both is an error);
-3. a CSV of that name in the working directory, which is only looked at when no
-   folder is named.
-
-Inside a project, its `chemsampler.json` is the config file and `input/` is the
-folder. See [`examples/inputs/`](../examples/inputs/) for one model of each kind.
-
-| Input | Flag (a CSV file) | CSV in `input/` | Config key |
-|---|---|---|---|
-| similarity | `--similarity` | `similarity.csv`, header `similarity`, one model (`eos8nyg` for now) | `"similarity": ["eos8nyg"]` |
-| generators | `--generators` | `generators.csv`, header `generators` | `"generators": ["eos9taz", ...]` |
-| annotators | `--annotators` | `annotators.csv`, header `source,model,cutoff,direction,priority` (+ `weight,column`) | `"annotators": [{...}]` |
+| Input | CSV in `input/` |
+|---|---|
+| similarity | `similarity.csv`, header `similarity`, one model (`eos8nyg` for now) |
+| generators | `generators.csv`, header `generators` |
+| annotators | `annotators.csv`, header `source,model,cutoff,direction,priority` (+ `weight,column`) |
 
 ## Annotators
 
@@ -27,24 +19,25 @@ single number, and only a secondary can be a range). `priority` is `primary`
 guard-rail, no weight). `weight` (primary, default 1) and `column` (a multi-output
 Hub model) are optional.
 
-## A config file
+## The project file
+
+`chemsampler init` writes every location into the project's `chemsampler.json`:
 
 ```json
 {
-  "similarity": ["eos8nyg"],
-  "generators": ["eos9taz", "eos8vud"],
-  "annotators": [
-    {"source": "ersilia", "model": "eos4zfy", "cutoff": 0.0, "direction": "higher", "priority": "primary"},
-    {"source": "rdkit", "model": "mw", "cutoff": "250-450", "direction": "range", "priority": "secondary"}
-  ]
+  "path_to_models": "input",
+  "path_to_rounds": "rounds",
+  "path_to_model_repositories": "/home/you/.chemsampler/models",
+  "path_to_envs": "/home/you/.chemsampler/envs"
 }
 ```
 
-Besides the three lists it may name `path_to_models`, `path_to_rounds`,
-`path_to_model_repositories` and `path_to_envs`. Paths in it are relative to the
-file; the flags override it. A project that names its own
-`path_to_model_repositories` and `path_to_envs` keeps its models apart from the
-store.
+`path_to_models` is the folder with the three CSVs, `path_to_rounds` where runs
+write their results, and the last two where `fetch` puts the model clones and
+their conda environments: this machine's store unless `init --models DIR
+--envs DIR` named others. Relative paths are relative to the project folder. To
+change a location later, edit the file; never move model or environment folders
+after `fetch`.
 
 ## The catalog
 

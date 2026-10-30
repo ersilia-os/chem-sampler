@@ -39,7 +39,7 @@ def test_run_sh_backend_is_default():
 
 
 def test_run_sh_requires_the_models_dir():
-    with pytest.raises(ValueError, match="path-to-model-repositories"):
+    with pytest.raises(ValueError, match=r"needs the folder .*\(models_dir\)"):
         HubModel("fake-model")
 
 

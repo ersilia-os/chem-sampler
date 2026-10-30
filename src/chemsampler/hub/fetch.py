@@ -682,7 +682,7 @@ def summarize(results: list[ModelResult]) -> list[str]:
     if differing:
         rows.append(
             f"{len(differing)} environment(s) differ from their recipe ({', '.join(differing)}); "
-            "run `chemsampler fetch --rebuild` to rebuild them."
+            "run `chemsampler fetch --update` to rebuild them."
         )
     unchecked = sum(r.unchecked for r in results if r.env in ("ok", "differs"))
     if unchecked:

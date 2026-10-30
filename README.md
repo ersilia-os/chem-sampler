@@ -24,9 +24,9 @@ To also run the test suite, install with the `dev` extra: `pip install -e ".[dev
 
 ## Getting started
 
-An analysis is a **project**: a folder with its inputs and results. The models it
-uses are expensive to fetch, so they live in a **store** that every project on the
-machine shares.
+An analysis is a **project**: a folder with its inputs, its results and a note of
+where its models are. The models are expensive to fetch, so by default they live in
+a **store** that every project on the machine shares.
 
 ```bash
 chemsampler init -p my-run && cd my-run   # a project: input/ and rounds/
@@ -44,26 +44,28 @@ my-run/                       ~/.chemsampler/        the store
   rounds/                       logs/                what fetch ran, per model
 ```
 
-Commands work anywhere inside a project and take their folders from its
-`chemsampler.json`, so `run` needs no paths and no `--output-dir`: each run writes
-a dated folder under `rounds/` with its `summary.csv`, one `round<n>.csv` per round
-and an `inputs.json` of what was resolved. Switching project is `cd`.
+Every location is set once, by `init`, and written to the project's
+`chemsampler.json`; the other commands need only the project. They work anywhere
+inside it, or on any project with `-p PATH`. Each run writes a dated folder under
+`rounds/` with its `summary.csv`, one `round<n>.csv` per round and an `inputs.json`
+of what was resolved.
 
 **Where models live.** A second project reuses what the first one fetched, so
 `fetch` there is instant. `chemsampler catalog` shows what the store holds and the
-state of each environment. To keep the store somewhere else (on a cluster, a
-shared filesystem), write `~/.chemsampler/config.json`:
+state of each environment. To put a project's models elsewhere (on a cluster, a
+shared filesystem), give the folders to `init`:
 
-```json
-{"store": "/shared/chemsampler"}
+```bash
+chemsampler init -p my-run --models /shared/chemsampler/models --envs /local/envs
 ```
 
-or move just one folder with `path_to_model_repositories` / `path_to_envs`, or name
-them with `--path-to-model-repositories` / `--path-to-envs`, or in a project's
-`chemsampler.json` (which then keeps its models apart). Two cautions: **never
-move or rename a store** after `fetch`, because conda environments record their own
-path; and prefer a local disk, since model start-up was several times slower on a
-shared filesystem in our tests.
+To change the default for every new project, write `~/.chemsampler/config.json`
+(`{"store": "/shared/chemsampler"}`, or `path_to_model_repositories` /
+`path_to_envs` for one folder). To change a project later, edit its
+`chemsampler.json`. Two cautions: **never move or rename these folders** after
+`fetch`, because conda environments record their own path; and prefer a local disk
+for environments, since model start-up was several times slower on a shared
+filesystem in our tests.
 
 `fetch` is safe to repeat. It clones only what is missing and reports the rest:
 
@@ -72,8 +74,8 @@ shared filesystem in our tests.
   touches a clone with local changes or local commits.
 - An existing environment is compared with its model's recipe (`install.yml`, or
   the Dockerfile for older models) and differences are reported, for example
-  `torch: installed 2.8.0, recipe 2.9.1`. `fetch --rebuild` rebuilds only the
-  environments that differ. Recipe lines that pin nothing (an unpinned package, a
+  `torch: installed 2.8.0, recipe 2.9.1`. `fetch --update` also rebuilds the
+  environments that differ, after pulling, so against the new recipe. Recipe lines that pin nothing (an unpinned package, a
   GitHub install, a shell line) cannot be compared, and `fetch` says how many it
   skipped.
 - An environment left half-built by an interrupted run is removed and rebuilt.
@@ -90,8 +92,8 @@ Annotators are required, and so is at least one of similarity and generators.
 
 A **primary** annotator is optimized; a **secondary** one is a guard-rail that every
 candidate must satisfy. Every model is checked against a bundled catalog of what
-the Hub currently labels for each role, which works offline. Flags, a config file,
-the exact columns and the catalog are in [docs/inputs.md](docs/inputs.md); the four
+the Hub currently labels for each role, which works offline. The exact columns, the
+project file and the catalog are in [docs/inputs.md](docs/inputs.md); the four
 ways to combine primaries (`sequential`, `joint`, `weighted`, `incremental`) and the
 Python API are in [docs/modes.md](docs/modes.md).
 
@@ -113,18 +115,16 @@ but it works with any Ersilia model and needs no store.
 | `chemsampler catalog` | List the models on this machine; `--hub` lists what the Hub offers, `--update` refreshes the bundled catalog. |
 
 ```bash
-chemsampler fetch --update --rebuild   # pull clones that are behind, rebuild envs that differ
+chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ
+chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
 chemsampler annotate --smiles "CCO"
-chemsampler annotate --source rdkit --model mw --smiles "CCO"
-chemsampler catalog                    # * marks what the current project needs
+chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed
+chemsampler catalog                              # * marks what the current project needs
 chemsampler catalog --hub --role generators
-
-# outside a project, say where everything is
-chemsampler run --config config.json --mode joint --seed-smiles "CCO" --output-dir results/
 ```
 
-(The audit scripts in `examples/gen-models-audit/` use `--path-to-models` for their
-own folder of model clones, which is a different folder.) Run
+(The audit scripts in `examples/gen-models-audit/` have their own `--path-to-models`
+flag for their own folder of model clones, unrelated to these commands.) Run
 `chemsampler <command> --help` for the full option lists.
 
 ## About the Ersilia Open Source Initiative

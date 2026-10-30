@@ -10,7 +10,7 @@
 ## Purpose
 
 Help a chemist run `chemsampler run` without needing to hand-write the
-input files (similarity, generators and annotators CSVs, or a config.json) or remember the CLI flags. The skill's job is to
+input files (similarity, generators and annotators CSVs) or remember the CLI flags. The skill's job is to
 ask a small number of questions, build the input CSVs, invoke the CLI, and
 report the result — not to reimplement any optimization logic itself.
 
@@ -158,7 +158,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    generators or running anything substantial, offer to get the seed's
    current score against each annotator, and do it once the user agrees (it
    is a run against the Hub, so step 10's rule applies):
-   `chemsampler annotate --path-to-models <dir> --smiles <seed>` (it needs
+   `chemsampler annotate -p <project> --smiles <seed>` (it needs
    only the annotators, and generates nothing) prints the seed's value for
    each annotator and whether its cutoffs and guard-rails are met. Compare it
    to each primary's cutoff and use the gap to inform a generator
@@ -254,15 +254,13 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      choose whether to fetch it or fall back to `ersilia`; never switch on
      its own.
 
-9. **Where the run lives.** Inside a project (`chemsampler init`), write the
-   three CSVs into its `input/` folder and let `run` pick its own dated folder
-   under `rounds/`, which also stores an `inputs.json` of what was resolved — no
-   `--output-dir` to choose and nothing stale to inherit. Outside a project,
-   propose a fresh, dedicated `--output-dir` per invocation (e.g. timestamped):
-   `chemsampler run` never clears stale files in a reused directory, so reusing
-   one can leave old `round4.csv`/`round5.csv` behind from an earlier, longer
-   run. If the user wants to reuse a directory, explain that risk and let them
-   decide.
+9. **Where the run lives.** Every run needs a project: if there is none,
+   propose `chemsampler init -p <name>` (one per analysis; it refuses a folder
+   that exists, and records where the models go). Write the three CSVs into its
+   `input/` folder and let `run` pick its own dated folder under `rounds/`,
+   which also stores an `inputs.json` of what was resolved — no output folder
+   to choose and nothing stale to inherit. Give `-p <project>` to every command
+   unless the working directory is inside the project.
 
 10. **Confirm before running.** Show the exact `chemsampler run` command,
     with every value that will be used (defaults included), before executing

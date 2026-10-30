@@ -173,19 +173,15 @@ def test_the_role_filter_applies_to_the_local_listing(store_root):
     assert "eos9taz" not in result.output and "eos4zfy" not in result.output
 
 
-def test_folders_can_be_named_on_the_command_line(tmp_path):
+def test_a_project_is_listed_from_the_folders_it_names(tmp_path):
     clones = tmp_path / "shared" / "models"
     (clones / "eos9taz").mkdir(parents=True)
     env = tmp_path / "shared" / "envs" / "eos9taz"
     env.mkdir(parents=True)
     write_marker(env, model="eos9taz")
+    create_project(tmp_path / "proj", models=clones, envs=tmp_path / "shared" / "envs")
 
-    result = _catalog(
-        "--path-to-model-repositories",
-        str(clones),
-        "--path-to-envs",
-        str(tmp_path / "shared" / "envs"),
-    )
+    result = _catalog("-p", str(tmp_path / "proj"))
 
     assert f"Models in {clones}" in result.output
     assert any(
@@ -196,8 +192,9 @@ def test_folders_can_be_named_on_the_command_line(tmp_path):
 def test_a_folder_named_alone_has_no_environments_to_report(tmp_path):
     clones = tmp_path / "bundles"
     (clones / "eos9taz").mkdir(parents=True)
+    create_project(tmp_path / "proj", models=clones)
 
-    result = _catalog("--path-to-model-repositories", str(clones))
+    result = _catalog("-p", str(tmp_path / "proj"))
 
     assert "environments in" not in result.output
     assert any("eos9taz" in line for line in result.output.splitlines())

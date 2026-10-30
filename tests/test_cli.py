@@ -43,25 +43,29 @@ QED = ["rdkit", "qed", "0.0", "higher", "primary"]
 
 
 def _inputs(tmp_path, annotators=(QED,)):
-    folder = tmp_path / "inputs"
-    folder.mkdir()
+    """A project with these inputs (rdkit annotators need nothing fetched)."""
+    root = tmp_path / "proj"
+    create_project(root)
+    folder = root / "input"
     _write_csv(folder / "similarity.csv", ["similarity"], [["eos8nyg"]])
     _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"]])
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, list(annotators))
+    return root
+
+
+def _round_dir(root):
+    """The one dated folder a run wrote under the project's rounds/."""
+    [folder] = list((root / "rounds").iterdir())
     return folder
 
 
-def _run_without_output(*args):
-    return CliRunner().invoke(
-        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", *args]
-    )
-
-
-def _run(tmp_path, *args):
+def _run(root, *args):
     return CliRunner().invoke(
         cli,
         [
             "run",
+            "-p",
+            str(root),
             "--mode",
             "sequential",
             "--seed-smiles",
@@ -70,8 +74,6 @@ def _run(tmp_path, *args):
             "1",
             "--backend",
             "ersilia",
-            "--output-dir",
-            str(tmp_path / "out"),
             *args,
         ],
     )
@@ -81,103 +83,53 @@ def _run(tmp_path, *args):
 
 
 def test_run_writes_results_and_merges_generator_and_similarity_candidates(tmp_path):
-    folder = _inputs(tmp_path)
+    root = _inputs(tmp_path)
 
-    result = _run(tmp_path, "--path-to-models", str(folder))
+    result = _run(root)
 
     assert result.exit_code == 0, result.output
     assert "Best candidate" in result.output
-    assert (tmp_path / "out" / "summary.csv").exists()
-    round1 = pd.read_csv(tmp_path / "out" / "round1.csv")
+    assert (_round_dir(root) / "summary.csv").exists()
+    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
 
 
-def test_run_accepts_everything_in_a_config_file(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(
-        json.dumps(
-            {
-                "similarity": ["eos8nyg"],
-                "generators": ["eos9taz"],
-                "annotators": [
-                    {
-                        "source": "rdkit",
-                        "model": "qed",
-                        "cutoff": 0.0,
-                        "direction": "higher",
-                        "priority": "primary",
-                    }
-                ],
-            }
-        )
-    )
-
-    result = _run(tmp_path, "--config", str(path))
-
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / "out" / "round1.csv").exists()
-
-
-def test_run_flags_override_the_config_file(tmp_path):
-    folder = _inputs(tmp_path)
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({"path_to_models": str(tmp_path / "nowhere")}))
-
-    result = _run(tmp_path, "--config", str(path), "--path-to-models", str(folder))
-
-    assert result.exit_code == 0, result.output
-
-
 def test_a_secondary_annotator_acts_as_a_guard_rail_through_the_cli(tmp_path):
-    folder = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-10", "range", "secondary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-10", "range", "secondary"]])
 
-    result = _run(tmp_path, "--path-to-models", str(folder))
+    result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(tmp_path / "out" / "round1.csv")
+    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
     assert round1["guardrails_satisfied"].tolist() == [False]  # CCN weighs about 45 Da
 
 
 def test_run_requires_mode(tmp_path):
-    folder = _inputs(tmp_path)
+    root = _inputs(tmp_path)
 
-    result = CliRunner().invoke(
-        cli,
-        ["run", "--path-to-models", str(folder), "--output-dir", str(tmp_path / "o")],
-    )
+    result = CliRunner().invoke(cli, ["run", "-p", str(root)])
 
     assert result.exit_code != 0
     assert "--mode" in result.output
 
 
-def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    empty = tmp_path / "empty"
-    empty.mkdir()
+def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
+    root = _inputs(tmp_path)
+    (root / "input" / "similarity.csv").unlink()
+    (root / "input" / "generators.csv").unlink()
 
-    result = _run(tmp_path, "--path-to-models", str(empty))
+    result = _run(root)
 
     assert result.exit_code == 1
     assert "give at least one of similarity and generators" in result.output
-    assert not (tmp_path / "out").exists()
+    assert not list((root / "rounds").iterdir())
 
 
 def test_run_sh_with_nothing_fetched_says_to_run_fetch(tmp_path):
-    folder = _inputs(tmp_path)
+    root = _inputs(tmp_path)
 
     result = CliRunner().invoke(
-        cli,
-        [
-            "run",
-            "--mode",
-            "sequential",
-            "--seed-smiles",
-            "CCO",
-            "--path-to-models",
-            str(folder),
-            "--output-dir",
-            str(tmp_path / "out"),
-        ],
+        cli, ["run", "-p", str(root), "--mode", "sequential", "--seed-smiles", "CCO"]
     )
 
     assert result.exit_code == 1
@@ -186,75 +138,36 @@ def test_run_sh_with_nothing_fetched_says_to_run_fetch(tmp_path):
 
 
 def test_run_handles_empty_summary_without_seed(tmp_path):
-    folder = _inputs(tmp_path)
+    root = _inputs(tmp_path)
 
     result = CliRunner().invoke(
-        cli,
-        [
-            "run",
-            "--mode",
-            "joint",
-            "--path-to-models",
-            str(folder),
-            "--backend",
-            "ersilia",
-            "--output-dir",
-            str(tmp_path / "out"),
-        ],
+        cli, ["run", "-p", str(root), "--mode", "joint", "--backend", "ersilia"]
     )
 
     assert result.exit_code == 0, result.output
     assert "No candidates were generated" in result.output
 
 
-def test_run_takes_each_input_as_its_own_csv_flag(tmp_path):
-    folder = _inputs(tmp_path)
-
-    result = _run(
-        tmp_path,
-        "--similarity",
-        str(folder / "similarity.csv"),
-        "--generators",
-        str(folder / "generators.csv"),
-        "--annotators",
-        str(folder / "annotators.csv"),
-    )
-
-    assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(tmp_path / "out" / "round1.csv")
-    assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
-
-
 def test_run_can_use_a_similarity_model_without_generators(tmp_path):
-    folder = _inputs(tmp_path)
-    (folder / "generators.csv").unlink()
+    root = _inputs(tmp_path)
+    (root / "input" / "generators.csv").unlink()
 
-    result = _run(tmp_path, "--path-to-models", str(folder))
+    result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(tmp_path / "out" / "round1.csv")
+    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos8nyg"]
 
 
 def test_run_can_use_generators_without_a_similarity_model(tmp_path):
-    folder = _inputs(tmp_path)
-    (folder / "similarity.csv").unlink()
+    root = _inputs(tmp_path)
+    (root / "input" / "similarity.csv").unlink()
 
-    result = _run(tmp_path, "--path-to-models", str(folder))
+    result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(tmp_path / "out" / "round1.csv")
+    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz"]
-
-
-def test_run_finds_its_inputs_in_the_working_directory(tmp_path, monkeypatch):
-    folder = _inputs(tmp_path)
-    monkeypatch.chdir(folder)
-
-    result = _run(tmp_path)
-
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / "out" / "round1.csv").exists()
 
 
 # --- annotate -----------------------------------------------------------------------
@@ -265,9 +178,9 @@ def _annotate(*args):
 
 
 def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
-    folder = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "secondary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "secondary"]])
 
-    result = _annotate("--path-to-models", str(folder), "--smiles", "CCO")
+    result = _annotate("-p", str(root), "--smiles", "CCO")
 
     assert result.exit_code == 0, result.output
     assert "qed [primary] (>= 0)" in result.output
@@ -277,24 +190,26 @@ def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
 
 
 def test_annotate_reports_a_broken_guard_rail(tmp_path):
-    folder = _inputs(tmp_path, [QED, ["rdkit", "mw", "250-450", "range", "secondary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "250-450", "range", "secondary"]])
 
-    result = _annotate("--path-to-models", str(folder), "--smiles", "CCO")
+    result = _annotate("-p", str(root), "--smiles", "CCO")
 
     assert "guard-rails NOT all satisfied" in result.output
 
 
 def test_annotate_needs_only_the_annotators(tmp_path):
-    folder = tmp_path / "only"
-    folder.mkdir()
-    _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, [QED])
+    root = _inputs(tmp_path)
+    (root / "input" / "similarity.csv").unlink()
+    (root / "input" / "generators.csv").unlink()
 
-    result = _annotate("--path-to-models", str(folder), "--smiles", "CCO")
+    result = _annotate("-p", str(root), "--smiles", "CCO")
 
     assert result.exit_code == 0, result.output
 
 
-def test_annotate_a_single_in_house_model_prints_the_raw_value():
+def test_annotate_a_single_in_house_model_needs_no_project(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     result = _annotate("--source", "rdkit", "--model", "mw", "--smiles", "CCO")
 
     assert result.exit_code == 0, result.output
@@ -302,44 +217,41 @@ def test_annotate_a_single_in_house_model_prints_the_raw_value():
     assert "cutoff" not in result.output
 
 
-def test_annotate_takes_the_annotators_as_a_csv_flag(tmp_path):
-    folder = _inputs(tmp_path)
+def test_annotate_a_single_model_looks_in_the_project_given(tmp_path, monkeypatch):
+    root = tmp_path / "proj"
+    create_project(root, models=tmp_path / "mine", envs=tmp_path / "mine-envs")
+    monkeypatch.chdir(tmp_path)
 
-    result = _annotate(
-        "--annotators", str(folder / "annotators.csv"), "--smiles", "CCO"
+    result = CliRunner().invoke(
+        cli,
+        ["annotate", "-p", str(root), "--source", "ersilia", "--model", "eos4zfy"]
+        + ["--smiles", "CCO"],
     )
 
-    assert result.exit_code == 0, result.output
-    assert "qed [primary]" in result.output
-
-
-def test_annotate_finds_annotators_in_the_working_directory(tmp_path, monkeypatch):
-    folder = _inputs(tmp_path)
-    monkeypatch.chdir(folder)
-
-    result = _annotate("--smiles", "CCO")
-
-    assert result.exit_code == 0, result.output
-    assert "qed [primary]" in result.output
+    # the project's folder, not the store: nothing is fetched there yet
+    assert result.exit_code == 1
+    assert f"{tmp_path / 'mine'} does not exist" in result.output
 
 
 def test_annotate_requires_smiles(tmp_path):
-    folder = _inputs(tmp_path)
+    root = _inputs(tmp_path)
 
-    result = _annotate("--path-to-models", str(folder))
+    result = _annotate("-p", str(root))
 
     assert result.exit_code != 0
     assert "--smiles" in result.output
 
 
 def test_annotate_reports_errors_in_red_and_exits_nonzero(tmp_path):
-    empty = tmp_path / "empty"
-    empty.mkdir()
+    root = _inputs(tmp_path)
+    (root / "input" / "annotators.csv").unlink()
 
-    result = _annotate("--path-to-models", str(empty), "--smiles", "CCO")
+    result = _annotate("-p", str(root), "--smiles", "CCO")
 
     assert result.exit_code == 1
-    assert "annotators is required" in result.output
+    assert f"annotators is required: write {root / 'input' / 'annotators.csv'}" in (
+        result.output
+    )
 
 
 @pytest.mark.parametrize(
@@ -347,14 +259,11 @@ def test_annotate_reports_errors_in_red_and_exits_nonzero(tmp_path):
     [
         (["--source", "rdkit"], "go together"),
         (["--model", "mw"], "go together"),
-        (["--source", "rdkit", "--model", "mw", "--config", "c.json"], "not both"),
-        (["--source", "rdkit", "--model", "mw", "--annotators", "c.json"], "not both"),
-        ([], "annotators is required"),
+        ([], "not inside a project"),
     ],
 )
 def test_annotate_rejects_inconsistent_options(tmp_path, monkeypatch, args, message):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "c.json").write_text("{}")
 
     result = _annotate("--smiles", "CCO", *args)
 
@@ -546,44 +455,6 @@ def test_two_runs_in_a_row_get_separate_folders(tmp_path, store_root, monkeypatc
     assert len(list((root / "rounds").iterdir())) == 2
 
 
-def test_an_explicit_output_dir_still_wins_in_a_project(
-    tmp_path, store_root, monkeypatch
-):
-    root = _project(tmp_path, store_root)
-    monkeypatch.chdir(root)
-
-    result = CliRunner().invoke(
-        cli,
-        [
-            "run",
-            "--mode",
-            "sequential",
-            "--seed-smiles",
-            "CCO",
-            "--n-rounds",
-            "1",
-            "--output-dir",
-            str(tmp_path / "elsewhere"),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / "elsewhere" / "summary.csv").exists()
-    assert not list((root / "rounds").iterdir())
-
-
-def test_outside_a_project_the_output_dir_is_still_required(tmp_path, monkeypatch):
-    folder = _inputs(tmp_path)
-    monkeypatch.chdir(tmp_path)
-
-    result = _run_without_output(
-        "--path-to-models", str(folder), "--backend", "ersilia"
-    )
-
-    assert result.exit_code == 1
-    assert "--output-dir is required outside a project" in result.output
-
-
 def test_a_model_without_a_built_environment_says_to_run_fetch(
     tmp_path, store_root, monkeypatch
 ):
@@ -641,50 +512,121 @@ def test_fetch_puts_models_in_the_store_and_says_where(
     assert "All models are ready." in result.output
 
 
-def test_fetch_flags_can_name_a_different_place(tmp_path, monkeypatch, fetched):
-    folder = _inputs(tmp_path)
-    monkeypatch.chdir(tmp_path)
-
-    result = CliRunner().invoke(
-        cli,
-        [
-            "fetch",
-            "--path-to-models",
-            str(folder),
-            "--path-to-model-repositories",
-            str(tmp_path / "shared" / "models"),
-            "--path-to-envs",
-            str(tmp_path / "shared" / "envs"),
-        ],
+def test_fetch_uses_the_folders_the_project_names(tmp_path, monkeypatch, fetched):
+    root = tmp_path / "proj"
+    create_project(
+        root, models=tmp_path / "shared" / "models", envs=tmp_path / "shared" / "envs"
     )
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(cli, ["fetch"])
 
     assert result.exit_code == 0, result.output
     assert fetched["plan"].models_dir == tmp_path / "shared" / "models"
     assert fetched["plan"].envs_dir == tmp_path / "shared" / "envs"
 
 
-def test_fetch_passes_update_and_rebuild_on(tmp_path, monkeypatch, fetched):
-    folder = _inputs(tmp_path)
-    monkeypatch.chdir(tmp_path)
+@pytest.mark.parametrize("update", [True, False])
+def test_fetch_update_pulls_and_rebuilds_together(tmp_path, fetched, update):
+    root = _inputs(tmp_path)
 
-    CliRunner().invoke(
-        cli, ["fetch", "--path-to-models", str(folder), "--update", "--rebuild"]
-    )
+    CliRunner().invoke(cli, ["fetch", "-p", str(root), *(["--update"] * update)])
 
-    assert fetched["update"] is True and fetched["rebuild"] is True
+    assert fetched["update"] is update and fetched["rebuild"] is update
 
 
 def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
-    tmp_path, store_root, monkeypatch, fetched
+    tmp_path, store_root, fetched
 ):
-    monkeypatch.chdir(tmp_path)
-    empty = tmp_path / "empty"
-    empty.mkdir()
+    root = _inputs(tmp_path)
+    (root / "input" / "similarity.csv").unlink()
+    (root / "input" / "generators.csv").unlink()
 
-    result = CliRunner().invoke(cli, ["fetch", "--path-to-models", str(empty)])
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
 
     assert result.exit_code == 1
     assert "plan" not in fetched and not store_root.exists()
+
+
+# --- the project a command works on -------------------------------------------------
+
+#: What each command needs besides the project to succeed here (fakes, rdkit).
+NEEDS_A_PROJECT = {
+    "fetch": [],
+    "run": ["--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
+    + ["--backend", "ersilia"],
+    "annotate": ["--smiles", "CCO", "--backend", "ersilia"],
+}
+
+
+@pytest.mark.parametrize("command", NEEDS_A_PROJECT)
+def test_outside_a_project_a_command_says_to_create_one(
+    tmp_path, monkeypatch, fetched, command
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, [command, *NEEDS_A_PROJECT[command]])
+
+    assert result.exit_code == 1
+    assert "not inside a project" in result.output
+    assert "chemsampler init" in result.output
+    assert "plan" not in fetched
+
+
+@pytest.mark.parametrize("inside", ["", "input"], ids=["root", "subfolder"])
+@pytest.mark.parametrize("command", NEEDS_A_PROJECT)
+def test_path_names_the_project_from_anywhere(
+    tmp_path, monkeypatch, fetched, command, inside
+):
+    root = _inputs(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    result = CliRunner().invoke(
+        cli, [command, "-p", str(root / inside), *NEEDS_A_PROJECT[command]]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list(elsewhere.iterdir()) == []  # results go to the project, not here
+    if command == "run":
+        assert (_round_dir(root) / "summary.csv").exists()
+
+
+@pytest.mark.parametrize("command", [*NEEDS_A_PROJECT, "catalog"])
+def test_a_path_in_no_project_is_refused(tmp_path, command):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    result = CliRunner().invoke(
+        cli, [command, "-p", str(plain), *NEEDS_A_PROJECT.get(command, [])]
+    )
+
+    assert result.exit_code == 1
+    assert f"{plain} is not in a project" in result.output
+
+
+#: Where things are is set once, by `init`; these flags are gone.
+REMOVED = {
+    "fetch": ["--config", "--path-to-models", "--path-to-model-repositories"]
+    + ["--path-to-envs", "--similarity", "--generators", "--annotators", "--rebuild"],
+    "run": ["--config", "--path-to-models", "--path-to-model-repositories"]
+    + ["--path-to-envs", "--similarity", "--generators", "--annotators"]
+    + ["--output-dir"],
+    "annotate": ["--config", "--path-to-models", "--path-to-model-repositories"]
+    + ["--path-to-envs", "--annotators"],
+    "catalog": ["--config", "--path-to-model-repositories", "--path-to-envs"],
+}
+
+
+@pytest.mark.parametrize(
+    "command, flag", [(c, f) for c, flags in REMOVED.items() for f in flags]
+)
+def test_the_location_flags_are_gone(tmp_path, command, flag):
+    result = CliRunner().invoke(cli, [command, flag, str(tmp_path)])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output
 
 
 # --- the top-level help ---------------------------------------------------------------

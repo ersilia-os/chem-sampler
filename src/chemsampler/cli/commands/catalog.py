@@ -5,6 +5,7 @@ import sys
 import click
 
 from ..create_cli import chemsampler_cli
+from ..options import project_option
 
 _ROLES = ["generators", "similarity", "annotators"]
 
@@ -12,6 +13,7 @@ _ROLES = ["generators", "similarity", "annotators"]
 @chemsampler_cli.command(
     "catalog", short_help="List models on this machine or the Hub; refresh the catalog."
 )
+@project_option
 @click.option(
     "--hub",
     is_flag=True,
@@ -32,34 +34,12 @@ _ROLES = ["generators", "similarity", "annotators"]
     help="Rebuild the bundled catalog from the Hub (about 20 s, needs a network) "
     "and report which models are new or gone.",
 )
-@click.option(
-    "--config",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="JSON file with the paths. Inside a project its chemsampler.json is "
-    "used by default.",
-)
-@click.option(
-    "--path-to-model-repositories",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="The folder with the clones. Default: this machine's store.",
-)
-@click.option(
-    "--path-to-envs",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="The folder with the environments. Default: this machine's store.",
-)
-def catalog_cmd(
-    hub: bool,
-    role: str | None,
-    update: bool,
-    config: str | None,
-    path_to_model_repositories: str | None,
-    path_to_envs: str | None,
-) -> None:
-    """List the models on this machine, or those the Hub offers, or refresh the catalog."""
+def catalog_cmd(path: str | None, hub: bool, role: str | None, update: bool) -> None:
+    """List the models on this machine, or those the Hub offers, or refresh the catalog.
+
+    In a project, the listing is of the project's folders and marks what it needs;
+    elsewhere, of this machine's store.
+    """
     if update:
         if hub or role:
             click.secho("--update cannot be combined with --hub or --role.", fg="red")
@@ -68,11 +48,12 @@ def catalog_cmd(
         return
 
     from ...config import locate_models
+    from ...project import PROJECT_FILE, find_project, locate_project
 
     try:
-        models_dir, envs_dir = locate_models(
-            config, path_to_model_repositories, path_to_envs
-        )
+        root = find_project() if path is None else locate_project(path)
+        config = None if root is None else str(root / PROJECT_FILE)
+        models_dir, envs_dir = locate_models(config)
     except ValueError as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
@@ -80,9 +61,7 @@ def catalog_cmd(
     if hub:
         _show_hub(models_dir, role)
     else:
-        _show_local(
-            models_dir, envs_dir, role, config, path_to_model_repositories, path_to_envs
-        )
+        _show_local(models_dir, envs_dir, role, config)
 
 
 @contextlib.contextmanager
@@ -109,19 +88,16 @@ def _read_catalog():
         return None
 
 
-def _show_local(models_dir, envs_dir, role, config, repos_flag, envs_flag) -> None:
+def _show_local(models_dir, envs_dir, role, config) -> None:
     from ...config import plan_fetch
     from ...hub.listing import list_local
-    from ...project import find_project
 
     needed = ()
-    try:
-        with _quiet():
-            needed = plan_fetch(config, None, repos_flag, envs_flag).model_ids
-    except ValueError as e:
-        # outside a project there are no inputs to read, which is fine; inside
-        # one, the user should know why nothing is marked
-        if config is not None or find_project() is not None:
+    if config is not None:  # outside a project there are no inputs to mark
+        try:
+            with _quiet():
+                needed = plan_fetch(config).model_ids
+        except ValueError as e:
             click.secho(f"(this project's inputs could not be read: {e})", fg="yellow")
 
     models = list_local(

@@ -4,65 +4,13 @@ import sys
 import click
 
 from ..create_cli import chemsampler_cli
+from ..options import project_option
 
 
 @chemsampler_cli.command(
     "run", short_help="Generate and score candidates around a seed, over rounds."
 )
-@click.option(
-    "--config",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="JSON file with the paths and the similarity, generators and annotators "
-    "lists. See the README for its keys. Any input not given by a flag, the "
-    "config file or --path-to-models is looked for in the working directory.",
-)
-@click.option(
-    "--path-to-models",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with similarity.csv, generators.csv and annotators.csv. "
-    "Overrides the config file.",
-)
-@click.option(
-    "--path-to-model-repositories",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with one sub-folder per model. Default: this machine's store "
-    "(see `chemsampler catalog`). Overrides the config file.",
-)
-@click.option(
-    "--path-to-envs",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Folder with one conda environment per model, as built by "
-    "`chemsampler fetch`. Default: this machine's store. Overrides the config "
-    "file.",
-)
-@click.option(
-    "--similarity",
-    "similarity_file",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="CSV with a 'similarity' column (one model). Overrides the config file "
-    "and --path-to-models.",
-)
-@click.option(
-    "--generators",
-    "generators_file",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="CSV with a 'generators' column. Overrides the config file and "
-    "--path-to-models.",
-)
-@click.option(
-    "--annotators",
-    "annotators_file",
-    default=None,
-    type=click.Path(exists=True, dir_okay=False),
-    help="CSV with columns source, model, cutoff, direction, priority[, weight, "
-    "column]. Overrides the config file and --path-to-models.",
-)
+@project_option
 @click.option(
     "--mode",
     type=click.Choice(["joint", "sequential", "weighted", "incremental"]),
@@ -108,26 +56,13 @@ from ..create_cli import chemsampler_cli
     show_default=True,
 )
 @click.option(
-    "--output-dir",
-    default=None,
-    type=click.Path(file_okay=False),
-    help="Directory to write summary.csv and round<n>.csv into. Inside a "
-    "project it defaults to a new dated folder under rounds/.",
-)
-@click.option(
     "--verbose",
     is_flag=True,
     default=False,
     help="Show detailed logs with timestamps and all model calls. Default: clean progress output.",
 )
 def run_cmd(
-    config: str | None,
-    path_to_models: str | None,
-    path_to_model_repositories: str | None,
-    path_to_envs: str | None,
-    similarity_file: str | None,
-    generators_file: str | None,
-    annotators_file: str | None,
+    path: str | None,
     mode: str,
     seed_smiles: str | None,
     original_seed_smiles: str | None,
@@ -137,10 +72,13 @@ def run_cmd(
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
     backend: str,
-    output_dir: str | None,
     verbose: bool,
 ) -> None:
-    """Generate and score candidate molecules across rounds, saving the result."""
+    """Generate and score candidate molecules across rounds, saving the result.
+
+    The models and folders are the project's; each run writes a new dated folder
+    under its rounds/.
+    """
     import json
     import time
 
@@ -148,6 +86,7 @@ def run_cmd(
 
     from ...config import load_inputs
     from ...optimize import hill_climb, write_results
+    from ...project import PROJECT_FILE, locate_project
     from ...utils.logging import logger
 
     if not verbose:
@@ -155,27 +94,11 @@ def run_cmd(
 
     start_time = time.time()
     summary, candidates_by_round = pd.DataFrame(), {}
+    output_dir = None
     try:
-        inputs = load_inputs(
-            config,
-            path_to_models,
-            path_to_model_repositories,
-            backend=backend,
-            similarity=similarity_file,
-            generators=generators_file,
-            annotators=annotators_file,
-            path_to_envs=path_to_envs,
-        )
-        if output_dir is None:
-            round_dir = inputs.new_round_dir()
-            if round_dir is None:
-                click.secho(
-                    "--output-dir is required outside a project (see "
-                    "`chemsampler init`).",
-                    fg="red",
-                )
-                sys.exit(1)
-            output_dir = str(round_dir)
+        root = locate_project(path)
+        inputs = load_inputs(str(root / PROJECT_FILE), backend=backend)
+        output_dir = str(inputs.new_round_dir())
         summary, candidates_by_round = hill_climb(
             inputs.generators,
             inputs.annotators,
@@ -194,6 +117,9 @@ def run_cmd(
         click.secho(str(e), fg="red")
         sys.exit(1)
     except KeyboardInterrupt:
+        if output_dir is None:
+            click.secho("\nInterrupted before the first round.", fg="yellow")
+            sys.exit(0)
         click.secho("\nInterrupted! Saving partial results...", fg="yellow")
         write_results(summary, candidates_by_round, output_dir)
         click.secho(f"Partial results written to {output_dir}", fg="yellow")
