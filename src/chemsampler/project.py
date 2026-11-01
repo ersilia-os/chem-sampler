@@ -24,8 +24,6 @@ FOLDER_KEYS = {"path_to_models": "input", "path_to_rounds": "rounds"}
 #: writes them (the store's, unless told otherwise); without them, the store's.
 STORE_KEYS = ("path_to_model_repositories", "path_to_envs")
 
-_GITIGNORE = "rounds/\n"
-
 #: A first set of inputs, one model of each kind (same as `examples/inputs/csv`).
 TEMPLATES = {
     "similarity.csv": "similarity\neos8nyg\n",
@@ -106,10 +104,9 @@ def create_project(root, models=None, envs=None) -> list[str]:
     Create a project in `root`, adding whatever is missing and changing nothing else.
 
     Writes the marker file, with every path absolute so it shows where everything
-    is; the two folders it owns, a `.gitignore` for the results and a template of
-    each input CSV. Anything that already exists,
-    including inputs the user has edited, is left untouched, so running it again
-    is safe.
+    is; the two folders it owns and a template of each input CSV. Anything that
+    already exists, including inputs the user has edited, is left untouched, so
+    running it again is safe.
 
     Parameters
     ----------
@@ -145,7 +142,6 @@ def create_project(root, models=None, envs=None) -> list[str]:
         if not folder.exists():
             folder.mkdir(parents=True)
             created.append(f"{folder.relative_to(root)}/")
-    write_if_absent(root / ".gitignore", _GITIGNORE)
     for name, text in TEMPLATES.items():
         write_if_absent(project.input / name, text)
     return created

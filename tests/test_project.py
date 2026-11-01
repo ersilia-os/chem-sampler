@@ -20,18 +20,13 @@ def test_init_creates_only_what_a_project_owns(tmp_path):
     created = create_project(tmp_path / "run")
 
     root = tmp_path / "run"
-    assert sorted(p.name for p in root.iterdir()) == [
-        ".gitignore",
-        PROJECT_FILE,
-        "input",
-        "rounds",
-    ]
+    # no .gitignore: a project is not a git repository, what to version is the user's
+    assert sorted(p.name for p in root.iterdir()) == [PROJECT_FILE, "input", "rounds"]
     # absolute, so the file shows where everything is
     assert json.loads((root / PROJECT_FILE).read_text()) == {
         "path_to_models": str(root / "input"),
         "path_to_rounds": str(root / "rounds"),
     }
-    assert (root / ".gitignore").read_text().split() == ["rounds/"]
     for name in TEMPLATES:
         assert (root / "input" / name).is_file()
     assert PROJECT_FILE in created and "input/" in created and "rounds/" in created
