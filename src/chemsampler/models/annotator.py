@@ -1,5 +1,14 @@
+import time
+
 from rdkit import Chem
 from rdkit.Chem import Descriptors
+
+from ..utils.logging import logger
+
+
+def _report(name: str, count: int, start: float) -> None:
+    """Log how many molecules an annotator scored and how long it took."""
+    logger.info(f"{name}: scored {count} molecules ({time.monotonic() - start:.1f}s)")
 
 
 class MolecularWeightAnnotator:
@@ -28,11 +37,13 @@ class MolecularWeightAnnotator:
         dict[str, float]
             Mapping from input SMILES to its molecular weight in Da.
         """
+        start = time.monotonic()
         scores = {}
         for smi in smiles_list:
             mol = Chem.MolFromSmiles(smi)
             if mol is not None:
                 scores[smi] = Descriptors.MolWt(mol)
+        _report("mw", len(smiles_list), start)
         return scores
 
 
@@ -58,11 +69,13 @@ class QEDAnnotator:
         dict[str, float]
             Mapping from input SMILES to its QED score.
         """
+        start = time.monotonic()
         scores = {}
         for smi in smiles_list:
             mol = Chem.MolFromSmiles(smi)
             if mol is not None:
                 scores[smi] = Descriptors.qed(mol)
+        _report("qed", len(smiles_list), start)
         return scores
 
 
