@@ -1176,7 +1176,7 @@ def test_similarity_is_skipped_with_a_warning_when_there_is_no_seed(
 def test_similarity_model_is_rejected_as_generator():
     with pytest.raises(TypeError, match="similarity="):
         hill_climb(
-            HubSimilarity("eos8nyg", backend="ersilia"),
+            HubSimilarity("eos8nyg", models_dir="models"),
             _score_only({"CCO": 1.0}),
             mode="sequential",
             seed_smiles="CCO",

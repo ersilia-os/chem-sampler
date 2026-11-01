@@ -34,15 +34,6 @@ def hub_catalog(tmp_path, monkeypatch):
     return path
 
 
-def _fetched(store_root, *model_ids, complete=True):
-    for model_id in model_ids:
-        (store_root / "models" / model_id).mkdir(parents=True)
-        env = store_root / "envs" / model_id
-        env.mkdir(parents=True)
-        if complete:
-            write_marker(env, model=model_id)
-
-
 def _catalog(*args):
     return CliRunner().invoke(cli, ["catalog", *args])
 
@@ -50,8 +41,10 @@ def _catalog(*args):
 # --- what this machine has -------------------------------------------------------------
 
 
-def test_the_local_listing_says_where_it_looked_and_what_it_found(tmp_path, store_root):
-    _fetched(store_root, "eos9p57", "eos8nyg", "eos4zfy")
+def test_the_local_listing_says_where_it_looked_and_what_it_found(
+    tmp_path, store_root, fake_fetch
+):
+    fake_fetch("eos9p57", "eos8nyg", "eos4zfy")
 
     result = _catalog()
 
@@ -72,8 +65,8 @@ def test_the_local_listing_says_where_it_looked_and_what_it_found(tmp_path, stor
     )
 
 
-def test_an_unfinished_environment_is_visible(store_root):
-    _fetched(store_root, "eos9taz", complete=False)
+def test_an_unfinished_environment_is_visible(store_root, fake_fetch):
+    fake_fetch("eos9taz", complete=False)
 
     result = _catalog()
 
@@ -92,10 +85,12 @@ def test_an_empty_store_says_how_to_fill_it(store_root):
     assert not store_root.exists()  # looking never creates the store
 
 
-def test_a_project_marks_the_models_it_needs(tmp_path, store_root, monkeypatch):
+def test_a_project_marks_the_models_it_needs(
+    tmp_path, store_root, monkeypatch, fake_fetch
+):
     create_project(tmp_path / "proj")
     # the project's template wants eos9taz, eos8nyg and eos4zfy; eos9p57 is spare
-    _fetched(store_root, "eos9taz", "eos9p57", "eos8nyg", "eos4zfy")
+    fake_fetch("eos9taz", "eos9p57", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
 
     result = _catalog()
@@ -108,10 +103,10 @@ def test_a_project_marks_the_models_it_needs(tmp_path, store_root, monkeypatch):
 
 
 def test_models_a_project_needs_but_has_not_fetched_are_called_out(
-    tmp_path, store_root, monkeypatch
+    tmp_path, store_root, monkeypatch, fake_fetch
 ):
     create_project(tmp_path / "proj")
-    _fetched(store_root, "eos9taz")  # eos8nyg and eos4zfy are missing
+    fake_fetch("eos9taz")  # eos8nyg and eos4zfy are missing
     monkeypatch.chdir(tmp_path / "proj")
 
     result = _catalog()
@@ -125,11 +120,11 @@ def test_models_a_project_needs_but_has_not_fetched_are_called_out(
 
 
 def test_a_cloned_model_whose_environment_failed_counts_as_not_ready(
-    tmp_path, store_root, monkeypatch
+    tmp_path, store_root, monkeypatch, fake_fetch
 ):
     create_project(tmp_path / "proj")
-    _fetched(store_root, "eos9taz", "eos8nyg")
-    _fetched(store_root, "eos4zfy", complete=False)
+    fake_fetch("eos9taz", "eos8nyg")
+    fake_fetch("eos4zfy", complete=False)
     monkeypatch.chdir(tmp_path / "proj")
 
     result = _catalog()
@@ -138,12 +133,12 @@ def test_a_cloned_model_whose_environment_failed_counts_as_not_ready(
 
 
 def test_unreadable_project_inputs_are_explained_not_fatal(
-    tmp_path, store_root, monkeypatch
+    tmp_path, store_root, monkeypatch, fake_fetch
 ):
     root = tmp_path / "proj"
     create_project(root)
     (root / "input" / "annotators.csv").unlink()
-    _fetched(store_root, "eos9taz")
+    fake_fetch("eos9taz")
     monkeypatch.chdir(root)
 
     result = _catalog()
@@ -154,9 +149,9 @@ def test_unreadable_project_inputs_are_explained_not_fatal(
 
 
 def test_outside_a_project_there_is_nothing_to_warn_about(
-    tmp_path, store_root, monkeypatch
+    tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    _fetched(store_root, "eos9taz")
+    fake_fetch("eos9taz")
     monkeypatch.chdir(tmp_path)
 
     result = _catalog()
@@ -164,8 +159,8 @@ def test_outside_a_project_there_is_nothing_to_warn_about(
     assert "could not be read" not in result.output and "needed" not in result.output
 
 
-def test_the_role_filter_applies_to_the_local_listing(store_root):
-    _fetched(store_root, "eos9taz", "eos8nyg", "eos4zfy")
+def test_the_role_filter_applies_to_the_local_listing(store_root, fake_fetch):
+    fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
 
     result = _catalog("--role", "similarity")
 
@@ -200,8 +195,10 @@ def test_a_folder_named_alone_has_no_environments_to_report(tmp_path):
     assert any("eos9taz" in line for line in result.output.splitlines())
 
 
-def test_a_broken_catalog_does_not_stop_the_local_listing(store_root, hub_catalog):
-    _fetched(store_root, "eos9taz")
+def test_a_broken_catalog_does_not_stop_the_local_listing(
+    store_root, hub_catalog, fake_fetch
+):
+    fake_fetch("eos9taz")
     hub_catalog.write_text("garbage")
 
     result = _catalog()
@@ -216,8 +213,10 @@ def test_a_broken_catalog_does_not_stop_the_local_listing(store_root, hub_catalo
 # --- what the Hub offers ---------------------------------------------------------------
 
 
-def test_the_hub_view_counts_each_kind_and_what_is_on_this_machine(store_root):
-    _fetched(store_root, "eos9taz", "eos8nyg")
+def test_the_hub_view_counts_each_kind_and_what_is_on_this_machine(
+    store_root, fake_fetch
+):
+    fake_fetch("eos9taz", "eos8nyg")
 
     result = _catalog("--hub")
 
@@ -235,8 +234,8 @@ def test_the_hub_view_counts_each_kind_and_what_is_on_this_machine(store_root):
     assert "--role" in result.output  # how to see the list
 
 
-def test_the_hub_view_lists_one_kind_and_marks_it(store_root):
-    _fetched(store_root, "eos8nyg")
+def test_the_hub_view_lists_one_kind_and_marks_it(store_root, fake_fetch):
+    fake_fetch("eos8nyg")
 
     result = _catalog("--hub", "--role", "similarity")
 
@@ -291,7 +290,7 @@ def test_update_never_reads_the_store(store_root, monkeypatch):
 
 
 def test_a_marker_file_that_names_its_own_models_is_listed_from_there(
-    tmp_path, store_root, monkeypatch
+    tmp_path, store_root, monkeypatch, fake_fetch
 ):
     # a project made before the store existed keeps its models beside it
     root = tmp_path / "old"
@@ -300,7 +299,7 @@ def test_a_marker_file_that_names_its_own_models_is_listed_from_there(
         json.dumps({"path_to_model_repositories": "models", "path_to_envs": "envs"})
     )
     (root / "models" / "eos9taz").mkdir(parents=True)
-    _fetched(store_root, "eos4zfy")  # in the store, but not this project's
+    fake_fetch("eos4zfy")  # in the store, but not this project's
     monkeypatch.chdir(root)
 
     result = _catalog()
@@ -314,11 +313,13 @@ def test_a_marker_file_that_names_its_own_models_is_listed_from_there(
     assert not any("eos4zfy" in line and " ok " in line for line in lines)
 
 
-def test_a_listing_prints_only_the_listing(tmp_path, store_root, monkeypatch, caplog):
+def test_a_listing_prints_only_the_listing(
+    tmp_path, store_root, monkeypatch, caplog, fake_fetch
+):
     # the real model check, which is what logs "Checking models against the catalog"
     monkeypatch.setattr(config, "validate_models", catalog.validate_models)
     create_project(tmp_path / "proj")
-    _fetched(store_root, "eos9taz", "eos8nyg", "eos4zfy")
+    fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
 
     with caplog.at_level("INFO"):

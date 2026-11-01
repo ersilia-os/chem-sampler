@@ -2,7 +2,7 @@ import time
 
 import pandas as pd
 
-from ..hub.client import SIMILARITY_MODEL_IDS, Backend, HubModel
+from ..hub.client import SIMILARITY_MODEL_IDS, HubModel
 from ..utils.logging import logger
 
 #: A single oversized `run()` call degrades the served model and fails silently
@@ -30,11 +30,8 @@ class HubAnnotator:
     column : str, optional
         Output column to score on. Defaults to the model's single numeric output
         column; required when the model returns more than one.
-    backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubModel`, by default "run_sh".
-    models_dir : str, optional
+    models_dir : str
         Folder holding the model repositories, passed through to `HubModel`.
-        Required by the "run_sh" backend.
     envs_dir : str, optional
         Folder holding the models' conda environments, passed through to
         `HubModel`.
@@ -49,7 +46,6 @@ class HubAnnotator:
         self,
         model_id: str,
         column: str | None = None,
-        backend: Backend = "run_sh",
         models_dir: str | None = None,
         envs_dir: str | None = None,
     ):
@@ -60,9 +56,7 @@ class HubAnnotator:
             )
         self.model_id = model_id
         self.column = column
-        self._hub_model = HubModel(
-            model_id, backend=backend, models_dir=models_dir, envs_dir=envs_dir
-        )
+        self._hub_model = HubModel(model_id, models_dir=models_dir, envs_dir=envs_dir)
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """

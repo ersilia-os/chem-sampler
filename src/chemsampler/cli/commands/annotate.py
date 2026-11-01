@@ -24,18 +24,11 @@ from ..options import project_option
     "Prints its raw value only.",
 )
 @click.option("--smiles", required=True, help="SMILES of the molecule to score.")
-@click.option(
-    "--backend",
-    type=click.Choice(["ersilia", "run_sh"]),
-    default="run_sh",
-    show_default=True,
-)
 def annotate_cmd(
     path: str | None,
     source: str | None,
     model_id: str | None,
     smiles: str,
-    backend: str,
 ) -> None:
     """Score a single molecule against the project's annotators, or a single model.
 
@@ -58,13 +51,12 @@ def annotate_cmd(
             annotator = load_annotator(
                 source,
                 model_id,
-                backend=backend,
                 config=None if marker is None else str(marker),
             )
             value = annotator.score([smiles]).get(smiles, float("nan"))
         else:
             marker = locate_project(path) / PROJECT_FILE
-            annotators = load_annotators(str(marker), backend=backend)
+            annotators = load_annotators(str(marker))
             result = annotate(smiles, annotators)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")

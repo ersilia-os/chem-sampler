@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .. import store
 from ..hub.catalog import validate_models
-from ..hub.client import Backend
 from ..hub.envs import env_path, is_complete
 from ..hub.fetch import FetchPlan
 from ..models.annotator import RDKIT_ANNOTATORS
@@ -95,7 +94,6 @@ def load_inputs(
     config: str | None = None,
     path_to_models: str | None = None,
     path_to_model_repositories: str | None = None,
-    backend: Backend = "run_sh",
     *,
     similarity: str | None = None,
     generators: str | None = None,
@@ -124,8 +122,6 @@ def load_inputs(
         Folder with one sub-folder per model. Defaults to the machine's store;
         overrides the config file's key. Named on its own, it is taken to hold
         models that bring their own interpreter, as `ersilia fetch` leaves them.
-    backend : {"ersilia", "run_sh"}, optional
-        Passed to every Hub model, by default "run_sh".
     similarity, generators, annotators : str, optional
         CSV files with that input, each with its own header (see the README).
     path_to_envs : str, optional
@@ -163,7 +159,6 @@ def load_inputs(
         config,
         path_to_models,
         path_to_model_repositories,
-        backend,
         files,
         path_to_envs,
     )
@@ -181,7 +176,6 @@ def load_annotators(
     config: str | None = None,
     path_to_models: str | None = None,
     path_to_model_repositories: str | None = None,
-    backend: Backend = "run_sh",
     *,
     annotators: str | None = None,
     path_to_envs: str | None = None,
@@ -203,7 +197,6 @@ def load_annotators(
         config,
         path_to_models,
         path_to_model_repositories,
-        backend,
         {"annotators": annotators},
         path_to_envs,
     )
@@ -214,7 +207,6 @@ def load_annotator(
     source: str,
     model: str,
     path_to_model_repositories: str | None = None,
-    backend: Backend = "run_sh",
     *,
     path_to_envs: str | None = None,
     config: str | None = None,
@@ -223,8 +215,8 @@ def load_annotator(
     Build and check one annotator, to score a molecule against a single model.
 
     An Ersilia model gets the same checks as in `load_annotators` (repositories
-    folder for "run_sh", catalog label, model folder and environment); an rdkit
-    one needs none.
+    folder, catalog label, model folder and environment); an rdkit one needs
+    none.
 
     Parameters
     ----------
@@ -235,8 +227,6 @@ def load_annotator(
     path_to_model_repositories, path_to_envs : str, optional
         Folders with the model repositories and their environments. They
         default to the config's, or else the machine's store.
-    backend : {"ersilia", "run_sh"}, optional
-        By default "run_sh".
     config : str, optional
         A config file (such as a project's `chemsampler.json`) naming those
         folders. Without one, the project the working directory is in, if any.
@@ -250,21 +240,16 @@ def load_annotator(
     if source == "ersilia":
         loc = _locations(config, None, path_to_model_repositories, path_to_envs)
         envs_dir = _as_text(loc.envs)
-        if backend == "run_sh":
-            models_dir = _check_repositories(loc.repos)
-        else:
-            models_dir = _as_text(loc.repos)
+        models_dir = _check_repositories(loc.repos)
         validate_models(annotators=[model])
-        if backend == "run_sh":
-            _check_model_folders(models_dir, envs_dir, [model])
-    return build_annotator(source, model, None, backend, models_dir, envs_dir)
+        _check_model_folders(models_dir, envs_dir, [model])
+    return build_annotator(source, model, None, models_dir, envs_dir)
 
 
 def build_annotator(
     source: str,
     model: str,
     column: str | None = None,
-    backend: Backend = "run_sh",
     models_dir: str | None = None,
     envs_dir: str | None = None,
 ):
@@ -281,8 +266,6 @@ def build_annotator(
     column : str, optional
         Output column to score on, for Ersilia models with several numeric
         outputs. Not used by rdkit annotators.
-    backend : {"ersilia", "run_sh"}, optional
-        Passed to `HubAnnotator`, by default "run_sh". Not used by rdkit.
     models_dir : str, optional
         Folder with the model repositories, passed to `HubAnnotator`.
     envs_dir : str, optional
@@ -309,7 +292,6 @@ def build_annotator(
         return HubAnnotator(
             model,
             column=column,
-            backend=backend,
             models_dir=models_dir,
             envs_dir=envs_dir,
         )
@@ -586,7 +568,6 @@ def _load(
     config,
     path_to_models,
     path_to_model_repositories,
-    backend,
     files,
     path_to_envs=None,
 ) -> dict:
@@ -602,8 +583,7 @@ def _load(
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
     hub_ids = [*(generators or []), *(similarity or []), *ersilia_annotators]
 
-    run_sh = backend == "run_sh" and bool(hub_ids)
-    models_dir = _check_repositories(loc.repos) if run_sh else _as_text(loc.repos)
+    models_dir = _check_repositories(loc.repos) if hub_ids else _as_text(loc.repos)
     envs_dir = _as_text(loc.envs)
 
     validate_models(
@@ -611,29 +591,27 @@ def _load(
         similarity=similarity or [],
         annotators=ersilia_annotators,
     )
-    if run_sh:
+    if hub_ids:
         _check_model_folders(models_dir, envs_dir, hub_ids)
 
     loaded = {
         "models_dir": models_dir,
         "envs_dir": envs_dir,
         "rounds_dir": _as_text(loc.rounds),
-        "annotators": [_to_spec(row, backend, models_dir, envs_dir) for row in rows],
+        "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,
         "similarity": None,
     }
     if generators is not None:
         loaded["generators"] = GeneratorPool(
             [
-                HubGenerator(
-                    i, backend=backend, models_dir=models_dir, envs_dir=envs_dir
-                )
+                HubGenerator(i, models_dir=models_dir, envs_dir=envs_dir)
                 for i in generators
             ]
         )
     if similarity is not None:
         loaded["similarity"] = HubSimilarity(
-            similarity[0], backend=backend, models_dir=models_dir, envs_dir=envs_dir
+            similarity[0], models_dir=models_dir, envs_dir=envs_dir
         )
     return loaded
 
@@ -745,7 +723,7 @@ def _check_model_folders(
         hint = (
             "run `chemsampler fetch` to clone them"
             if envs_dir
-            else "the run_sh backend needs one folder per model there"
+            else "each model needs its own folder there"
         )
         raise ValueError(f"no folder for {missing} in {models_dir}; {hint}")
     if envs_dir:
@@ -757,13 +735,11 @@ def _check_model_folders(
             )
 
 
-def _to_spec(
-    row: AnnotatorRow, backend: Backend, models_dir: str | None, envs_dir: str | None
-):
+def _to_spec(row: AnnotatorRow, models_dir: str | None, envs_dir: str | None):
     return AnnotatorSpec(
         annotator_id=row.model,
         annotator=build_annotator(
-            row.source, row.model, row.column, backend, models_dir, envs_dir
+            row.source, row.model, row.column, models_dir, envs_dir
         ),
         cutoff=row.cutoff,
         direction=row.direction,

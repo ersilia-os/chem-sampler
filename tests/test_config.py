@@ -32,6 +32,23 @@ def hub(monkeypatch):
     return calls
 
 
+@pytest.fixture(autouse=True)
+def models_fetched(request, monkeypatch):
+    """
+    Take every Hub model as fetched, wherever it is looked for, so the tests of
+    the inputs need no clones. The tests of that check ask for `real_fetch_check`.
+    """
+    if "real_fetch_check" in request.fixturenames:
+        return
+    monkeypatch.setattr(config, "_check_repositories", str)
+    monkeypatch.setattr(config, "_check_model_folders", lambda *args: None)
+
+
+@pytest.fixture
+def real_fetch_check():
+    """Keep the real check that every Hub model was fetched (see `models_fetched`)."""
+
+
 def _write_csv(path, header, rows):
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -50,7 +67,6 @@ def inputs_dir(tmp_path):
 
 
 def _load(inputs_dir, **kwargs):
-    kwargs.setdefault("backend", "ersilia")
     return load_inputs(path_to_models=str(inputs_dir), **kwargs)
 
 
@@ -123,7 +139,7 @@ def test_without_any_source_the_error_lists_the_ways(tmp_path, monkeypatch):
 
     # the library's own arguments, not the CLI's flags (which are gone)
     with pytest.raises(ValueError, match="config file.*path_to_models=") as error:
-        load_inputs(backend="ersilia")
+        load_inputs()
     assert "--" not in str(error.value)
 
 
@@ -143,7 +159,7 @@ def test_a_project_marker_given_as_the_config_gets_the_project_folders(
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)  # as with `-p`: the cwd is not in the project
 
-    inputs = load_inputs(config=str(root / "chemsampler.json"), backend="ersilia")
+    inputs = load_inputs(config=str(root / "chemsampler.json"))
 
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
     assert inputs.rounds_dir == str(root.resolve() / "rounds")
@@ -167,7 +183,7 @@ def test_a_flag_overrides_an_inline_config_value(tmp_path):
     _write_csv(other, ANNOTATOR_HEADER, ANNOTATOR_ROWS[:1])
     path = _write_config(tmp_path / "config.json", **INLINE)
 
-    inputs = load_inputs(config=path, annotators=str(other), backend="ersilia")
+    inputs = load_inputs(config=path, annotators=str(other))
 
     assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy"]
 
@@ -183,7 +199,7 @@ def test_a_flag_file_needs_the_right_header(inputs_dir, tmp_path):
 def test_inputs_are_found_in_the_working_directory(inputs_dir, monkeypatch):
     monkeypatch.chdir(inputs_dir)
 
-    inputs = load_inputs(backend="ersilia")
+    inputs = load_inputs()
 
     assert inputs.similarity.model_id == "eos8nyg"
     assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw", "qed"]
@@ -206,7 +222,7 @@ def test_a_named_folder_never_falls_back_to_the_working_directory(
 
 def test_path_to_models_must_be_a_folder(tmp_path):
     with pytest.raises(ValueError, match="the input folder .*nowhere does not exist"):
-        load_inputs(path_to_models=str(tmp_path / "nowhere"), backend="ersilia")
+        load_inputs(path_to_models=str(tmp_path / "nowhere"))
 
 
 def test_csv_headers_must_be_the_input_names(inputs_dir):
@@ -311,7 +327,7 @@ def _write_config(path, **keys):
 def test_everything_can_be_given_inline_in_the_config(tmp_path):
     path = _write_config(tmp_path / "config.json", **INLINE)
 
-    inputs = load_inputs(config=path, backend="ersilia")
+    inputs = load_inputs(config=path)
 
     assert inputs.similarity.model_id == "eos8nyg"
     assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw"]
@@ -333,7 +349,7 @@ def test_config_paths_are_relative_to_the_config_file_not_the_cwd(
     )
     monkeypatch.chdir(tmp_path)
 
-    inputs = load_inputs(config=path, backend="ersilia")
+    inputs = load_inputs(config=path)
 
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
 
@@ -341,7 +357,7 @@ def test_config_paths_are_relative_to_the_config_file_not_the_cwd(
 def test_flags_override_the_config_paths(tmp_path, inputs_dir):
     path = _write_config(tmp_path / "config.json", path_to_models="nowhere")
 
-    inputs = load_inputs(config=path, path_to_models=str(inputs_dir), backend="ersilia")
+    inputs = load_inputs(config=path, path_to_models=str(inputs_dir))
 
     assert inputs.similarity.model_id == "eos8nyg"
 
@@ -352,7 +368,7 @@ def test_an_input_in_both_the_config_and_a_csv_is_rejected(tmp_path, inputs_dir)
     )
 
     with pytest.raises(ValueError, match="generators is given twice"):
-        load_inputs(config=path, backend="ersilia")
+        load_inputs(config=path)
 
 
 @pytest.mark.parametrize(
@@ -368,18 +384,18 @@ def test_malformed_configs_are_explained(tmp_path, keys, message):
     path = _write_config(tmp_path / "config.json", **keys)
 
     with pytest.raises(ValueError, match=message):
-        load_inputs(config=path, backend="ersilia")
+        load_inputs(config=path)
 
 
 def test_config_must_be_a_json_object(tmp_path):
     path = tmp_path / "config.json"
     path.write_text("[1, 2]")
     with pytest.raises(ValueError, match="expected a JSON object"):
-        load_inputs(config=str(path), backend="ersilia")
+        load_inputs(config=str(path))
 
     path.write_text("{oops")
     with pytest.raises(ValueError, match="not valid JSON"):
-        load_inputs(config=str(path), backend="ersilia")
+        load_inputs(config=str(path))
 
 
 def test_inline_annotator_errors_say_which_entry(tmp_path):
@@ -390,79 +406,71 @@ def test_inline_annotator_errors_say_which_entry(tmp_path):
     )
 
     with pytest.raises(ValueError, match=r"annotators\[1\] \(mw\)"):
-        load_inputs(config=path, backend="ersilia")
+        load_inputs(config=path)
 
 
 # --- model repositories and the Hub -------------------------------------------------
 
 
-def test_run_sh_with_nothing_fetched_says_to_run_fetch(inputs_dir, hub):
+def test_nothing_fetched_says_to_run_fetch(inputs_dir, hub, real_fetch_check):
     with pytest.raises(ValueError, match=r"no models fetched yet.*chemsampler fetch"):
-        _load(inputs_dir, backend="run_sh")
+        _load(inputs_dir)
 
     assert hub == []  # a cheap local check comes before the network one
 
 
-def test_run_sh_uses_the_store_when_no_folder_is_named(inputs_dir, store_root):
-    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
-        (store_root / "models" / model).mkdir(parents=True)
-        env = store_root / "envs" / model
-        env.mkdir(parents=True)
-        write_marker(env, model=model)
+def test_models_are_looked_for_in_the_store_when_no_folder_is_named(
+    inputs_dir, store_root, fake_fetch, real_fetch_check
+):
+    fake_fetch("eos9taz", "eos80sj", "eos8nyg", "eos4zfy")
 
-    inputs = _load(inputs_dir, backend="run_sh")
+    inputs = _load(inputs_dir)
 
     assert inputs.models_dir == str(store_root / "models")
     assert inputs.envs_dir == str(store_root / "envs")
 
 
-def test_a_folder_named_alone_is_models_without_environments(inputs_dir, tmp_path):
+def test_a_folder_named_alone_is_models_without_environments(
+    inputs_dir, tmp_path, real_fetch_check
+):
     repos = tmp_path / "bundles"
     for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
         (repos / model).mkdir(parents=True)
 
-    inputs = _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
+    inputs = _load(inputs_dir, path_to_model_repositories=str(repos))
 
     # models fetched by `ersilia fetch` bring their own interpreter: the store's
     # environments must not be required of them
     assert inputs.models_dir == str(repos) and inputs.envs_dir is None
 
 
-def test_the_repositories_folder_must_exist(inputs_dir, tmp_path):
+def test_the_repositories_folder_must_exist(inputs_dir, tmp_path, real_fetch_check):
     with pytest.raises(ValueError, match="does not exist"):
         _load(
             inputs_dir,
-            backend="run_sh",
             path_to_model_repositories=str(tmp_path / "nowhere"),
         )
 
 
-def test_every_missing_model_folder_is_listed(inputs_dir, tmp_path):
+def test_every_missing_model_folder_is_listed(inputs_dir, tmp_path, real_fetch_check):
     repos = tmp_path / "repos"
     (repos / "eos9taz").mkdir(parents=True)
 
     with pytest.raises(ValueError) as error:
-        _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
+        _load(inputs_dir, path_to_model_repositories=str(repos))
 
     assert "['eos80sj', 'eos8nyg', 'eos4zfy']" in str(error.value)
 
 
-def test_run_sh_loads_when_every_folder_is_there(inputs_dir, tmp_path):
+def test_loads_when_every_model_folder_is_there(inputs_dir, tmp_path, real_fetch_check):
     repos = tmp_path / "repos"
     for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
         (repos / model).mkdir(parents=True)
 
-    inputs = _load(inputs_dir, backend="run_sh", path_to_model_repositories=str(repos))
+    inputs = _load(inputs_dir, path_to_model_repositories=str(repos))
 
     assert inputs.models_dir == str(repos)
     assert inputs.generators.generators[0]._hub_model.models_dir == str(repos)
-
-
-def test_the_ersilia_backend_does_not_need_any_models_folder(inputs_dir, store_root):
-    inputs = _load(inputs_dir, backend="ersilia")
-
-    assert not store_root.exists()  # nothing fetched, and nothing asked for
-    assert inputs.similarity.model_id == "eos8nyg"
 
 
 def test_a_malformed_input_never_reaches_the_hub(inputs_dir, hub):
@@ -491,17 +499,17 @@ def test_load_annotators_reads_nothing_else(inputs_dir, hub):
     (inputs_dir / "similarity.csv").unlink()
     (inputs_dir / "generators.csv").unlink()
 
-    specs = load_annotators(path_to_models=str(inputs_dir), backend="ersilia")
+    specs = load_annotators(path_to_models=str(inputs_dir))
 
     assert [s.annotator_id for s in specs] == ["eos4zfy", "mw", "qed"]
     assert hub == [{"generators": [], "similarity": [], "annotators": ["eos4zfy"]}]
 
 
-def test_in_house_annotators_need_no_repositories_even_with_run_sh(inputs_dir):
+def test_in_house_annotators_need_no_repositories(inputs_dir, real_fetch_check):
     rows = [["rdkit", "mw", "250", "higher", "primary", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
 
-    specs = load_annotators(path_to_models=str(inputs_dir), backend="run_sh")
+    specs = load_annotators(path_to_models=str(inputs_dir))
 
     assert [s.annotator_id for s in specs] == ["mw"]
 
@@ -512,7 +520,7 @@ def test_in_house_annotators_need_no_repositories_even_with_run_sh(inputs_dir):
 def test_build_annotator_dispatches_on_source():
     assert isinstance(build_annotator("rdkit", "mw"), MolecularWeightAnnotator)
     assert isinstance(build_annotator("rdkit", "qed"), QEDAnnotator)
-    hub_annotator = build_annotator("ersilia", "eos4zfy", "score", backend="ersilia")
+    hub_annotator = build_annotator("ersilia", "eos4zfy", "score", models_dir="models")
     assert isinstance(hub_annotator, HubAnnotator) and hub_annotator.column == "score"
 
 
@@ -532,7 +540,7 @@ def test_inside_a_project_its_marker_file_is_the_config(
     create_project(tmp_path / "proj")
     monkeypatch.chdir(tmp_path / "proj" / "rounds")  # any folder inside will do
 
-    inputs = load_inputs(backend="ersilia")
+    inputs = load_inputs()
 
     assert inputs.similarity.model_id == "eos8nyg"
     # results are the project's; the models are the machine's
@@ -556,7 +564,7 @@ def test_a_project_made_before_the_store_keeps_its_own_models(tmp_path, monkeypa
     )
     monkeypatch.chdir(root)
 
-    inputs = load_inputs(backend="ersilia")
+    inputs = load_inputs()
 
     assert inputs.models_dir == str(root.resolve() / "models")
     assert inputs.envs_dir == str(root.resolve() / "envs")
@@ -566,7 +574,7 @@ def test_a_flag_overrides_a_project_folder(tmp_path, monkeypatch):
     create_project(tmp_path)
     monkeypatch.chdir(tmp_path)
 
-    inputs = load_inputs(path_to_envs=str(tmp_path / "elsewhere"), backend="ersilia")
+    inputs = load_inputs(path_to_envs=str(tmp_path / "elsewhere"))
 
     assert inputs.envs_dir == str(tmp_path / "elsewhere")
 
@@ -576,7 +584,7 @@ def test_an_explicit_config_ignores_the_project(tmp_path, store_root, monkeypatc
     monkeypatch.chdir(tmp_path)
     path = _write_config(tmp_path / "other.json", **INLINE)
 
-    inputs = load_inputs(config=path, backend="ersilia")
+    inputs = load_inputs(config=path)
 
     assert inputs.rounds_dir is None  # the project's results folder is not used
     assert inputs.envs_dir == str(store_root / "envs")  # the machine's models still are
@@ -595,27 +603,27 @@ def _repositories(tmp_path, built):
     return repos, envs
 
 
-def test_a_missing_or_unfinished_environment_says_to_run_fetch(inputs_dir, tmp_path):
+def test_a_missing_or_unfinished_environment_says_to_run_fetch(
+    inputs_dir, tmp_path, real_fetch_check
+):
     repos, envs = _repositories(tmp_path, built=["eos9taz", "eos80sj", "eos8nyg"])
     env_path(envs, "eos4zfy").mkdir()  # started, never marked complete
 
     with pytest.raises(ValueError, match=r"no complete environment for \['eos4zfy'\]"):
         _load(
             inputs_dir,
-            backend="run_sh",
             path_to_model_repositories=str(repos),
             path_to_envs=str(envs),
         )
 
 
-def test_complete_environments_pass_the_check(inputs_dir, tmp_path):
+def test_complete_environments_pass_the_check(inputs_dir, tmp_path, real_fetch_check):
     repos, envs = _repositories(
         tmp_path, built=["eos9taz", "eos80sj", "eos8nyg", "eos4zfy"]
     )
 
     inputs = _load(
         inputs_dir,
-        backend="run_sh",
         path_to_model_repositories=str(repos),
         path_to_envs=str(envs),
     )
@@ -624,7 +632,7 @@ def test_complete_environments_pass_the_check(inputs_dir, tmp_path):
 
 
 def test_a_missing_clone_with_environments_in_use_says_to_run_fetch(
-    inputs_dir, tmp_path
+    inputs_dir, tmp_path, real_fetch_check
 ):
     repos, envs = _repositories(tmp_path, built=[])
     (repos / "eos80sj").rmdir()
@@ -634,7 +642,6 @@ def test_a_missing_clone_with_environments_in_use_says_to_run_fetch(
     ):
         _load(
             inputs_dir,
-            backend="run_sh",
             path_to_model_repositories=str(repos),
             path_to_envs=str(envs),
         )

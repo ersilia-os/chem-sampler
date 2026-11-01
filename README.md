@@ -98,13 +98,6 @@ project file and the catalog are in [docs/inputs.md](docs/inputs.md); the four
 ways to combine primaries (`sequential`, `joint`, `weighted`, `incremental`) and the
 Python API are in [docs/modes.md](docs/modes.md).
 
-## Backends
-
-`run_sh` (default) runs a model's `run.sh` directly: fast, no server, but it needs
-the model fetched locally (what `chemsampler fetch` does, or `ersilia fetch`).
-`ersilia` (`--backend ersilia`) goes through `ersilia serve`/`run`: slower to start,
-but it works with any Ersilia model and needs no store.
-
 ## CLI
 
 | Command | Description |

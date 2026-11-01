@@ -7,59 +7,9 @@ from chemsampler.hub.client import HubModel
 from chemsampler.hub.envs import env_path, write_marker
 
 
-class FakeErsiliaModel:
-    """Stands in for ersilia.ErsiliaModel, matching its real construction shape."""
-
-    def __init__(self, model):
-        self.model_id = model
-        self.paths = {"repository": None}
-        self.closed = False
-        self.serve_error = None
-
-    def serve(self):
-        if self.serve_error is not None:
-            raise self.serve_error
-
-    def run(self, input, output):
-        pd.DataFrame({"smiles": ["C"], "score": [1.0]}).to_csv(output, index=False)
-
-    def close(self):
-        self.closed = True
-
-
-@pytest.fixture(autouse=True)
-def fake_ersilia_model(monkeypatch):
-    monkeypatch.setattr("ersilia.ErsiliaModel", FakeErsiliaModel)
-
-
-def test_run_sh_backend_is_default():
-    model = HubModel("fake-model", models_dir="/models")
-
-    assert model.backend == "run_sh"
-
-
-def test_run_sh_requires_the_models_dir():
+def test_the_models_dir_is_required():
     with pytest.raises(ValueError, match=r"needs the folder .*\(models_dir\)"):
-        HubModel("fake-model")
-
-
-def test_ersilia_backend_does_not_need_the_models_dir():
-    assert HubModel("fake-model", backend="ersilia").models_dir is None
-
-
-def test_rejects_unknown_backend():
-    with pytest.raises(ValueError, match="backend"):
-        HubModel("fake-model", backend="bogus")
-
-
-def test_ersilia_backend_closes_even_if_serve_fails():
-    model = HubModel("fake-model", backend="ersilia")
-    model.model.serve_error = RuntimeError("port in use")
-
-    with pytest.raises(RuntimeError, match="port in use"):
-        model.run(["C"])
-
-    assert model.model.closed is True
+        HubModel("fake-model", models_dir=None)
 
 
 def test_run_sh_happy_path(tmp_path, monkeypatch):
@@ -78,7 +28,7 @@ def test_run_sh_happy_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
 
-    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
+    model = HubModel("fake-model", models_dir=str(models_dir))
     df = model.run(["C"])
 
     assert len(calls) == 1
@@ -95,14 +45,14 @@ def test_run_sh_raises_when_run_sh_missing(tmp_path):
     bundle = models_dir / "fake-model"
     (bundle / "model" / "framework").mkdir(parents=True)
 
-    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
+    model = HubModel("fake-model", models_dir=str(models_dir))
 
     with pytest.raises(RuntimeError, match="run.sh not found"):
         model.run(["C"])
 
 
 def test_run_sh_raises_when_bundle_missing():
-    model = HubModel("fake-model", backend="run_sh", models_dir="/nonexistent")
+    model = HubModel("fake-model", models_dir="/nonexistent")
 
     with pytest.raises(RuntimeError, match="not found at"):
         model.run(["C"])
@@ -119,7 +69,7 @@ def test_run_sh_wraps_subprocess_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr("chemsampler.hub.client.subprocess.run", fake_run)
 
-    model = HubModel("fake-model", backend="run_sh", models_dir=str(models_dir))
+    model = HubModel("fake-model", models_dir=str(models_dir))
 
     with pytest.raises(RuntimeError, match="boom"):
         model.run(["C"])
@@ -159,9 +109,7 @@ def test_a_clone_runs_inside_its_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("LD_LIBRARY_PATH", "/system/lib")
     seen = _capture_run(monkeypatch)
 
-    HubModel(
-        "fake-model", backend="run_sh", models_dir=models_dir, envs_dir=envs_dir
-    ).run(["C"])
+    HubModel("fake-model", models_dir=models_dir, envs_dir=envs_dir).run(["C"])
 
     process_env = seen["env"]
     assert process_env["PATH"].startswith(f"{env}/bin:")
@@ -176,7 +124,7 @@ def test_a_fetched_bundle_without_environments_inherits_our_environment(
     models_dir, _, _ = _clone_with_env(tmp_path)
     seen = _capture_run(monkeypatch)
 
-    HubModel("fake-model", backend="run_sh", models_dir=models_dir).run(["C"])
+    HubModel("fake-model", models_dir=models_dir).run(["C"])
 
     assert seen["env"] is None
 
@@ -185,9 +133,7 @@ def test_an_unfinished_environment_is_refused_with_the_fix(tmp_path, monkeypatch
     models_dir, envs_dir, _ = _clone_with_env(tmp_path, complete=False)
     _capture_run(monkeypatch)
 
-    model = HubModel(
-        "fake-model", backend="run_sh", models_dir=models_dir, envs_dir=envs_dir
-    )
+    model = HubModel("fake-model", models_dir=models_dir, envs_dir=envs_dir)
 
     with pytest.raises(RuntimeError, match="chemsampler fetch"):
         model.run(["C"])

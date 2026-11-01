@@ -17,9 +17,8 @@ from chemsampler.project import create_project
 class FakeHubModel:
     """Stands in for HubModel so fake Hub models need no real Ersilia calls."""
 
-    def __init__(self, model_id, backend="ersilia", models_dir=None, envs_dir=None):
+    def __init__(self, model_id, models_dir=None, envs_dir=None):
         self.model_id = model_id
-        self.backend = backend
 
     def run(self, smiles_list):
         return pd.DataFrame({"smi_0": ["CCN"]})
@@ -43,14 +42,28 @@ ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority"]
 QED = ["rdkit", "qed", "0.0", "higher", "primary"]
 
 
-def _inputs(tmp_path, annotators=(QED,)):
-    """A project with these inputs (rdkit annotators need nothing fetched)."""
+def _fetch(models_dir, envs_dir, *model_ids):
+    """Make models look fetched: a clone folder and a finished environment each."""
+    for model in model_ids:
+        (models_dir / model).mkdir(parents=True)
+        env = envs_dir / model
+        env.mkdir(parents=True)
+        write_marker(env, model=model)
+
+
+def _inputs(tmp_path, annotators=(QED,), fetched=True):
+    """
+    A project with these inputs and, unless `fetched` is False, its two Hub
+    models fetched into its own folders (rdkit annotators need nothing).
+    """
     root = tmp_path / "proj"
-    create_project(root)
+    create_project(root, tmp_path / "models", tmp_path / "envs")
     folder = root / "input"
     _write_csv(folder / "similarity.csv", ["similarity"], [["eos8nyg"]])
     _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"]])
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, list(annotators))
+    if fetched:
+        _fetch(tmp_path / "models", tmp_path / "envs", "eos8nyg", "eos9taz")
     return root
 
 
@@ -73,8 +86,6 @@ def _run(root, *args):
             "CCO",
             "--n-rounds",
             "1",
-            "--backend",
-            "ersilia",
             *args,
         ],
     )
@@ -126,8 +137,8 @@ def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
     assert not list((root / "rounds").iterdir())
 
 
-def test_run_sh_with_nothing_fetched_says_to_run_fetch(tmp_path):
-    root = _inputs(tmp_path)
+def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
+    root = _inputs(tmp_path, fetched=False)
 
     result = CliRunner().invoke(
         cli, ["run", "-p", str(root), "--mode", "sequential", "--seed-smiles", "CCO"]
@@ -141,9 +152,7 @@ def test_run_sh_with_nothing_fetched_says_to_run_fetch(tmp_path):
 def test_run_handles_empty_summary_without_seed(tmp_path):
     root = _inputs(tmp_path)
 
-    result = CliRunner().invoke(
-        cli, ["run", "-p", str(root), "--mode", "joint", "--backend", "ersilia"]
-    )
+    result = CliRunner().invoke(cli, ["run", "-p", str(root), "--mode", "joint"])
 
     assert result.exit_code == 0, result.output
     assert "No candidates were generated" in result.output
@@ -167,7 +176,6 @@ def test_a_run_records_how_it_was_launched(tmp_path):
         "tolerance": 0.1,
         "tanimoto_cutoff": 0.2,
         "tanimoto_direction": "higher",
-        "backend": "ersilia",
     }
 
 
@@ -217,7 +225,7 @@ def test_run_can_use_generators_without_a_similarity_model(tmp_path):
 
 
 def _annotate(*args):
-    return CliRunner().invoke(cli, ["annotate", "--backend", "ersilia", *args])
+    return CliRunner().invoke(cli, ["annotate", *args])
 
 
 def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
@@ -274,6 +282,20 @@ def test_annotate_a_single_model_looks_in_the_project_given(tmp_path, monkeypatc
     # the project's folder, not the store: nothing is fetched there yet
     assert result.exit_code == 1
     assert f"{tmp_path / 'mine'} does not exist" in result.output
+
+
+def test_annotate_a_single_model_that_was_not_fetched_says_to_fetch_it(tmp_path):
+    root = _inputs(tmp_path)  # eos8nyg and eos9taz are fetched, eos4zfy is not
+
+    result = CliRunner().invoke(
+        cli,
+        ["annotate", "-p", str(root), "--source", "ersilia", "--model", "eos4zfy"]
+        + ["--smiles", "CCO"],
+    )
+
+    assert result.exit_code == 1
+    assert "no folder for ['eos4zfy']" in result.output
+    assert "chemsampler fetch" in result.output
 
 
 def test_annotate_requires_smiles(tmp_path):
@@ -433,11 +455,7 @@ def _project(tmp_path, store_root, built=("eos9taz", "eos8nyg")):
     root = tmp_path / "proj"
     create_project(root)
     _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
-    for model in built:
-        (store_root / "models" / model).mkdir(parents=True)
-        env = store_root / "envs" / model
-        env.mkdir(parents=True)
-        write_marker(env, model=model)
+    _fetch(store_root / "models", store_root / "envs", *built)
     return root
 
 
@@ -596,9 +614,8 @@ def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
 #: What each command needs besides the project to succeed here (fakes, rdkit).
 NEEDS_A_PROJECT = {
     "fetch": [],
-    "run": ["--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
-    + ["--backend", "ersilia"],
-    "annotate": ["--smiles", "CCO", "--backend", "ersilia"],
+    "run": ["--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"],
+    "annotate": ["--smiles", "CCO"],
 }
 
 
@@ -649,15 +666,16 @@ def test_a_path_in_no_project_is_refused(tmp_path, command):
     assert f"{plain} is not in a project" in result.output
 
 
-#: Where things are is set once, by `init`; these flags are gone.
+#: Flags that are gone: where things are is set once, by `init`, and every Hub
+#: model runs from its clone (no `--backend`).
 REMOVED = {
     "fetch": ["--config", "--path-to-models", "--path-to-model-repositories"]
     + ["--path-to-envs", "--similarity", "--generators", "--annotators", "--rebuild"],
     "run": ["--config", "--path-to-models", "--path-to-model-repositories"]
     + ["--path-to-envs", "--similarity", "--generators", "--annotators"]
-    + ["--output-dir"],
+    + ["--output-dir", "--backend"],
     "annotate": ["--config", "--path-to-models", "--path-to-model-repositories"]
-    + ["--path-to-envs", "--annotators"],
+    + ["--path-to-envs", "--annotators", "--backend"],
     "catalog": ["--config", "--path-to-model-repositories", "--path-to-envs"],
 }
 

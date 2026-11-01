@@ -7,9 +7,8 @@ from chemsampler.models.generator import HubGenerator, SeedRequiredError
 class FakeHubModel:
     """Stands in for HubModel, returning two fixed candidates per call."""
 
-    def __init__(self, model_id, backend="ersilia", models_dir=None, envs_dir=None):
+    def __init__(self, model_id, models_dir=None, envs_dir=None):
         self.model_id = model_id
-        self.backend = backend
 
     def run(self, smiles_list):
         return pd.DataFrame({"smi_0": ["CCN"], "smi_1": ["CCO"]})

@@ -113,10 +113,11 @@ def test_a_broken_marker_file_is_explained(tmp_path):
         Project.load(tmp_path)
 
 
-def test_the_templates_are_valid_inputs_for_the_shipped_catalog(tmp_path):
+def test_the_templates_are_valid_inputs_for_the_shipped_catalog(tmp_path, fake_fetch):
     create_project(tmp_path)
+    fake_fetch("eos8nyg", "eos9taz", "eos4zfy")
 
-    inputs = load_inputs(path_to_models=str(tmp_path / "input"), backend="ersilia")
+    inputs = load_inputs(path_to_models=str(tmp_path / "input"))
 
     assert inputs.similarity.model_id == "eos8nyg"
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
@@ -342,9 +343,7 @@ QED_ONLY = "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n
 
 
 def annotate_in(project):
-    return CliRunner().invoke(
-        cli, ["annotate", "-p", str(project), "--smiles", "CCO", "--backend", "ersilia"]
-    )
+    return CliRunner().invoke(cli, ["annotate", "-p", str(project), "--smiles", "CCO"])
 
 
 def test_a_copied_project_is_refused_until_its_paths_are_fixed(here):

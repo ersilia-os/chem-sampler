@@ -23,8 +23,8 @@ tool's own CLI rather than importing its Python classes directly.
 **This skill only guides the user through the chemsampler pipeline. It never
 makes a decision that belongs to the user.** Every choice that shapes a run —
 which annotators, cutoffs and directions; the combination mode; the seed; any
-Tanimoto constraint; which generators; the number of rounds, tolerance and
-backend; whether to run at all; whether to run another round — is the user's.
+Tanimoto constraint; which generators; the number of rounds and tolerance;
+whether to run at all; whether to run another round — is the user's.
 
 What the skill does:
 - **Explains** what each choice means and what it will cost or change (a
@@ -41,9 +41,9 @@ What the skill does:
 What the skill never does:
 - Silently pick, default or infer a value the user has not seen and agreed
   to. A default is a proposal until the user accepts it.
-- Drop, add or reorder annotators or generators, change a cutoff, or switch
-  backend on its own, even when its own analysis says that would help. It
-  says so and lets the user decide.
+- Drop, add or reorder annotators or generators, or change a cutoff, on its
+  own, even when its own analysis says that would help. It says so and lets
+  the user decide.
 - Run anything — including the baseline check in step 6 and any follow-up
   round — without the user's go-ahead.
 - Override a choice the user made after being warned. The single exception
@@ -245,16 +245,12 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    - `--n-steps` (only if `--mode incremental` was chosen; no default, must
      be asked)
    - `--tolerance` (default 0.0)
-   - `--backend` (default `run_sh`, which needs each model's clone and its
-     conda environment, which `chemsampler fetch` puts in the machine's store
-     (`~/.chemsampler`, shared by every project; `chemsampler catalog` lists what
-     is there and whether each environment is ready), or a folder of models
-     fetched by `ersilia fetch`; `ersilia` is the fallback and needs neither). If a
-     model is missing, `run` says to use `chemsampler fetch`: relay that rather
-     than switching backend on your own. If `run_sh` fails
-     because a model isn't available locally, tell the user and let them
-     choose whether to fetch it or fall back to `ersilia`; never switch on
-     its own.
+
+   Every Hub model runs from its clone, in its own conda environment, both of
+   which `chemsampler fetch` puts in the machine's store (`~/.chemsampler`,
+   shared by every project; `chemsampler catalog` lists what is there and
+   whether each environment is ready). If a model is missing, `run` says to use
+   `chemsampler fetch`: relay that and let the user decide whether to fetch it.
 
 9. **Where the run lives.** Every run needs a project: if there is none,
    propose `chemsampler init -p <name>` (one per analysis; it refuses a folder

@@ -71,12 +71,6 @@ def _save(output_dir: str, summary, candidates_by_round, record: dict) -> None:
     "'lower' pushes toward novelty (at most this similar).",
 )
 @click.option(
-    "--backend",
-    type=click.Choice(["ersilia", "run_sh"]),
-    default="run_sh",
-    show_default=True,
-)
-@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -92,7 +86,6 @@ def run_cmd(
     tolerance: float,
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
-    backend: str,
     verbose: bool,
 ) -> None:
     """Generate and score candidate molecules across rounds, saving the result.
@@ -117,7 +110,7 @@ def run_cmd(
     output_dir = None
     try:
         root = locate_project(path)
-        inputs = load_inputs(str(root / PROJECT_FILE), backend=backend)
+        inputs = load_inputs(str(root / PROJECT_FILE))
         # the models it used and how it was launched: enough to run it again
         record = {
             **inputs.describe(),
@@ -131,7 +124,6 @@ def run_cmd(
                 "tolerance": tolerance,
                 "tanimoto_cutoff": tanimoto_cutoff,
                 "tanimoto_direction": tanimoto_direction,
-                "backend": backend,
             },
         }
         output_dir = str(inputs.new_round_dir())

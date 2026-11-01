@@ -1,6 +1,6 @@
 import time
 
-from ..hub.client import SIMILARITY_MODEL_IDS, Backend, HubModel
+from ..hub.client import SIMILARITY_MODEL_IDS, HubModel
 from ..utils.logging import logger
 from ._smiles import candidates_from_output
 
@@ -26,11 +26,8 @@ class HubGenerator:
     ----------
     model_id : str
         Ersilia identifier of the generative model (e.g. "eos9taz").
-    backend : {"ersilia", "run_sh"}, optional
-        Passed through to `HubModel`, by default "run_sh".
-    models_dir : str, optional
+    models_dir : str
         Folder holding the model repositories, passed through to `HubModel`.
-        Required by the "run_sh" backend.
     envs_dir : str, optional
         Folder holding the models' conda environments, passed through to
         `HubModel`.
@@ -44,7 +41,6 @@ class HubGenerator:
     def __init__(
         self,
         model_id: str,
-        backend: Backend = "run_sh",
         models_dir: str | None = None,
         envs_dir: str | None = None,
     ):
@@ -54,9 +50,7 @@ class HubGenerator:
                 "use HubSimilarity"
             )
         self.model_id = model_id
-        self._hub_model = HubModel(
-            model_id, backend=backend, models_dir=models_dir, envs_dir=envs_dir
-        )
+        self._hub_model = HubModel(model_id, models_dir=models_dir, envs_dir=envs_dir)
 
     def generate(self, seed_smiles: str | None) -> list[str]:
         """
