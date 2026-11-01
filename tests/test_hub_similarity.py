@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import pytest
 
@@ -36,6 +38,14 @@ def test_search_drops_seed_unparsable_and_duplicates_keeping_rank_order(similari
 def test_raises_when_seed_is_none(similarity):
     with pytest.raises(SeedRequiredError):
         similarity.search(None)
+
+
+def test_a_search_logs_what_it_found_and_how_long_it_took(similarity, caplog):
+    with caplog.at_level("INFO"):
+        similarity.search("CCO")
+
+    found = r"eos8nyg: found 2 neighbours for this seed \(\d+\.\ds\)"
+    assert any(re.fullmatch(found, r.message) for r in caplog.records)
 
 
 def test_search_by_model_is_keyed_by_model_id(similarity):

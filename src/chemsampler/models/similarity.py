@@ -1,8 +1,11 @@
+import time
+
 from ..hub.client import (
     SIMILARITY_MODEL_IDS,
     HubModel,
     not_allowed_similarity_message,
 )
+from ..utils.logging import logger
 from ._smiles import candidates_from_output
 from .generator import SeedRequiredError
 
@@ -69,8 +72,18 @@ class HubSimilarity:
         if seed_smiles is None:
             raise SeedRequiredError(f"{self.model_id} requires a seed molecule")
 
+        start = time.monotonic()
         df = self._hub_model.run([seed_smiles])
-        return candidates_from_output(df, seed_smiles)
+        candidates = candidates_from_output(df, seed_smiles)
+        found = (
+            f"{self.model_id}: found {len(candidates)} neighbours for this seed "
+            f"({time.monotonic() - start:.1f}s)"
+        )
+        if candidates:
+            logger.info(found)
+        else:
+            logger.warning(found)
+        return candidates
 
     def search_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
         """
