@@ -223,10 +223,12 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    step 6's recommendation when a seed was given, and show it. The user accepts
    it or removes/adds generators; the final list is theirs, and the skill
    never drops or adds one on its own. Whatever the user confirms is what
-   step 9 writes to `generators.csv`. A similarity model is also required;
-   `eos8nyg` is the only one supported, so propose it for `similarity.csv` and
-   say that it returns known compounds from a reference library (not generated
-   ones) and is slow per call (about 30 s for one input in its metadata).
+   step 9 writes to `generators.csv`. A similarity model is optional (at least
+   one of similarity and generators is needed), one per run, from three:
+   `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT natural products)
+   or `eos80al` (Enamine Hit Locator). Propose the library that fits the
+   user's goal and say that it returns known compounds (not generated ones) and
+   is slow per call (about 30 s for one input in eos8nyg's metadata).
    Every model is checked against the catalog in `src/chemsampler/hub/catalog.csv`
    (offline), so one that is not in it (not Ready, such as `eos2401` today, or
    newer than the catalog) or is labelled for another role is refused with a

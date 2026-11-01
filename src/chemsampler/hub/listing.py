@@ -107,8 +107,8 @@ def list_local(
 def list_hub(catalog: Catalog, models_dir, role: str | None = None) -> list[HubEntry]:
     """The models the catalog lists, marked when they are in the store.
 
-    Only `eos8nyg` can be a similarity model, so the others are marked
-    unsupported rather than left to look usable.
+    Only the models in `SIMILARITY_MODEL_IDS` can be a similarity model, so the
+    others are marked unsupported rather than left to look usable.
     """
     present = present_models(models_dir)
     entries = [

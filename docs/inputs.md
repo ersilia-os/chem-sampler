@@ -6,7 +6,7 @@ writes a template of each (the same as [`examples/inputs/csv/`](../examples/inpu
 
 | Input | CSV in `input/` |
 |---|---|
-| similarity | `similarity.csv`, header `similarity`, one model (`eos8nyg` for now) |
+| similarity | `similarity.csv`, header `similarity`, one model: `eos8nyg`, `eos1bgt` or `eos80al` |
 | generators | `generators.csv`, header `generators` |
 | annotators | `annotators.csv`, header `source,model,cutoff,direction,priority` (+ `weight,column`) |
 
@@ -51,8 +51,11 @@ Every Hub model is checked against
 [`src/chemsampler/hub/catalog.csv`](../src/chemsampler/hub/catalog.csv): generators
 must be labelled Sampling / Generation, the similarity model Sampling / Similarity
 search, annotators Annotation. The catalog lists only models the Hub lists (the
-Ready ones), and a similarity model other than `eos8nyg` is refused. The check is
-instant and works offline.
+Ready ones). Of the Hub's similarity models only three are accepted, the ones that
+run the same search on a fixed local library: `eos8nyg` (Ersilia Reference
+Library), `eos1bgt` (COCONUT natural products) and `eos80al` (Enamine Hit
+Locator); the others call outside services. The check is instant and works
+offline.
 
 `chemsampler catalog --update` rebuilds the catalog from the Hub (about 20 s, needs
 a network connection), tells you which models are new or gone, and leaves the file
@@ -60,4 +63,4 @@ untouched if the Hub cannot be reached. Commit the file after running it.
 
 A similarity-search model returns the seed's nearest neighbours in a reference
 library: known compounds, not generated ones. Its neighbours of the current best
-molecule join each round's candidates, and the `source` column shows `eos8nyg`.
+molecule join each round's candidates, and the `source` column shows its id.

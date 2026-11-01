@@ -199,7 +199,7 @@ def test_the_hub_listing_marks_what_this_machine_has(folders):
     assert len(listed) == 5
 
 
-def test_only_eos8nyg_is_a_supported_similarity_model(folders):
+def test_only_the_accepted_similarity_models_are_supported(folders):
     models, _ = folders
 
     listed = {e.model_id: e for e in list_hub(CATALOG, models, role="similarity")}

@@ -7,6 +7,27 @@ from ..create_cli import chemsampler_cli
 from ..options import project_option
 
 
+def _chemsampler_version() -> str:
+    import importlib.metadata
+
+    try:
+        return importlib.metadata.version("chemsampler")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _save(output_dir: str, summary, candidates_by_round, record: dict) -> None:
+    """The results, and next to them an inputs.json of what produced them."""
+    import json
+
+    from ...optimize import write_results
+
+    write_results(summary, candidates_by_round, output_dir)
+    with open(os.path.join(output_dir, "inputs.json"), "w") as f:
+        json.dump(record, f, indent=2)
+        f.write("\n")
+
+
 @chemsampler_cli.command(
     "run", short_help="Generate and score candidates around a seed, over rounds."
 )
@@ -79,13 +100,12 @@ def run_cmd(
     The models and folders are the project's; each run writes a new dated folder
     under its rounds/.
     """
-    import json
     import time
 
     import pandas as pd
 
     from ...config import load_inputs
-    from ...optimize import hill_climb, write_results
+    from ...optimize import hill_climb
     from ...project import PROJECT_FILE, locate_project
     from ...utils.logging import logger
 
@@ -98,6 +118,22 @@ def run_cmd(
     try:
         root = locate_project(path)
         inputs = load_inputs(str(root / PROJECT_FILE), backend=backend)
+        # the models it used and how it was launched: enough to run it again
+        record = {
+            **inputs.describe(),
+            "run": {
+                "chemsampler_version": _chemsampler_version(),
+                "mode": mode,
+                "seed_smiles": seed_smiles,
+                "original_seed_smiles": original_seed_smiles,
+                "n_rounds": n_rounds,
+                "n_steps": n_steps,
+                "tolerance": tolerance,
+                "tanimoto_cutoff": tanimoto_cutoff,
+                "tanimoto_direction": tanimoto_direction,
+                "backend": backend,
+            },
+        }
         output_dir = str(inputs.new_round_dir())
         summary, candidates_by_round = hill_climb(
             inputs.generators,
@@ -121,14 +157,11 @@ def run_cmd(
             click.secho("\nInterrupted before the first round.", fg="yellow")
             sys.exit(0)
         click.secho("\nInterrupted! Saving partial results...", fg="yellow")
-        write_results(summary, candidates_by_round, output_dir)
+        _save(output_dir, summary, candidates_by_round, record)
         click.secho(f"Partial results written to {output_dir}", fg="yellow")
         sys.exit(0)
 
-    write_results(summary, candidates_by_round, output_dir)
-    with open(os.path.join(output_dir, "inputs.json"), "w") as f:
-        json.dump(inputs.describe(), f, indent=2)
-        f.write("\n")
+    _save(output_dir, summary, candidates_by_round, record)
 
     if summary.empty:
         click.secho("No candidates were generated; nothing to report.", fg="yellow")

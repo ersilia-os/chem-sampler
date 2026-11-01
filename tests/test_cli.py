@@ -1,4 +1,5 @@
 import csv
+import importlib.metadata
 import json
 import re
 
@@ -146,6 +147,48 @@ def test_run_handles_empty_summary_without_seed(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "No candidates were generated" in result.output
+
+
+def test_a_run_records_how_it_was_launched(tmp_path):
+    root = _inputs(tmp_path)
+
+    result = _run(root, "--tolerance", "0.1", "--tanimoto-cutoff", "0.2")
+
+    assert result.exit_code == 0, result.output
+    saved = json.loads((_round_dir(root) / "inputs.json").read_text())
+    assert saved["similarity"] == "eos8nyg"  # the models are still there
+    assert saved["run"] == {
+        "chemsampler_version": importlib.metadata.version("chemsampler"),
+        "mode": "sequential",
+        "seed_smiles": "CCO",
+        "original_seed_smiles": None,
+        "n_rounds": 1,
+        "n_steps": None,
+        "tolerance": 0.1,
+        "tanimoto_cutoff": 0.2,
+        "tanimoto_direction": "higher",
+        "backend": "ersilia",
+    }
+
+
+def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
+    tmp_path, monkeypatch
+):
+    from chemsampler import optimize
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(optimize, "hill_climb", interrupted)
+    root = _inputs(tmp_path)
+
+    result = _run(root)
+
+    assert result.exit_code == 0, result.output
+    assert "Partial results written" in result.output
+    saved = json.loads((_round_dir(root) / "inputs.json").read_text())
+    assert saved["run"]["mode"] == "sequential"
+    assert (_round_dir(root) / "summary.csv").exists()
 
 
 def test_run_can_use_a_similarity_model_without_generators(tmp_path):

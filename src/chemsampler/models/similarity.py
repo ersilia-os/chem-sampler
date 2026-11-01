@@ -21,8 +21,9 @@ class HubSimilarity:
     Parameters
     ----------
     model_id : str
-        Ersilia identifier of the similarity model. Only "eos8nyg" (Ersilia
-        Reference Library Similarity) is supported for now.
+        Ersilia identifier of the similarity model: "eos8nyg" (Ersilia Reference
+        Library), "eos1bgt" (COCONUT natural products) or "eos80al" (Enamine Hit
+        Locator), see `SIMILARITY_MODEL_IDS`.
     backend : {"ersilia", "run_sh"}, optional
         Passed through to `HubModel`, by default "run_sh".
     models_dir : str, optional
