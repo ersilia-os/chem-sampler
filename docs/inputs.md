@@ -3,6 +3,9 @@
 Annotators are required, and so is at least one of similarity and generators.
 They are three CSV files in the project's `input/` folder; `chemsampler init`
 writes a template of each (the same as [`examples/inputs/csv/`](../examples/inputs/csv/)).
+`chemsampler fetch ID [ID ...]` sets `similarity.csv` and `generators.csv` to the
+ids it is given (a role with none has its file removed); `annotators.csv` is
+always yours to write.
 
 | Input | CSV in `input/` |
 |---|---|

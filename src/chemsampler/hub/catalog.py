@@ -385,3 +385,66 @@ def validate_models(
     ]
     if problems:
         raise ValueError("these models cannot be used:\n  - " + "\n  - ".join(problems))
+
+
+def sort_by_role(
+    model_ids: Sequence[str],
+    *,
+    in_house: Sequence[str] = (),
+    catalog: Catalog | None = None,
+) -> dict[str, list[str]]:
+    """
+    Sort model ids by the role the catalog gives each one: one set for a run.
+
+    Parameters
+    ----------
+    model_ids : Sequence[str]
+        Hub ids, and names of in-house annotators.
+    in_house : Sequence[str]
+        Names of in-house annotators (`mw`, `qed`), which are not Hub models.
+    catalog : Catalog, optional
+        Defaults to the catalog file shipped with the package.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Ids by role (`generators`, `similarity`, `annotators`), in the order
+        given; in-house names are annotators.
+
+    Raises
+    ------
+    ValueError
+        Listing every problem: an id not in the catalog, a similarity model
+        chemsampler does not support, more than one similarity model, no
+        annotator, or no generator nor similarity model.
+    """
+    catalog = catalog or read_catalog()
+    known = catalog.by_id()
+    roles = {role: [] for role in ROLES}
+    problems = []
+    for model_id in model_ids:
+        if model_id in in_house:
+            roles["annotators"].append(model_id)
+        elif model_id not in known:
+            problems.append(
+                f"{model_id} is not a generator, similarity or annotation model in "
+                f"the catalog built on {catalog.built} (`chemsampler catalog "
+                "--update` refreshes it)"
+            )
+        elif known[model_id].role == "similarity" and (
+            model_id not in SIMILARITY_MODEL_IDS
+        ):
+            problems.append(not_allowed_similarity_message(model_id))
+        else:
+            roles[known[model_id].role].append(model_id)
+    if len(roles["similarity"]) > 1:
+        problems.append(
+            f"a run takes one similarity model; got {', '.join(roles['similarity'])}"
+        )
+    if not roles["annotators"]:
+        problems.append("no annotator: name at least one (a Hub model, mw or qed)")
+    if not (roles["generators"] or roles["similarity"]):
+        problems.append("no generator nor similarity model: name at least one")
+    if problems:
+        raise ValueError("cannot fetch these models:\n  - " + "\n  - ".join(problems))
+    return roles

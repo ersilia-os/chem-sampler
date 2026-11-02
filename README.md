@@ -30,8 +30,8 @@ a **store** that every project on the machine shares.
 
 ```bash
 chemsampler init -p my-run && cd my-run   # a project: input/ and rounds/
-$EDITOR input/*.csv                       # which models to use (templates are written for you)
-chemsampler fetch                         # clone them, download checkpoints, build their conda envs
+chemsampler fetch eos9p57 eos8nyg eos4zfy # get these models; writes input/generators.csv and similarity.csv
+$EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
 chemsampler run --mode sequential --seed-smiles "CCO"
 ```
 
@@ -74,17 +74,22 @@ project later, edit its `chemsampler.json`. Two cautions: **never move or rename
 for environments, since model start-up was several times slower on a shared
 filesystem in our tests (a cluster run needs them on the shared one, see below).
 
-`fetch` is safe to repeat. It clones only what is missing and reports the rest:
+`chemsampler fetch ID [ID ...]` (spaces or commas) tells generators, similarity
+models and annotators apart by itself, and needs at least one annotator and one
+generator or similarity model. It sets `input/generators.csv` and
+`input/similarity.csv` to the ids, asking before it changes them (`-f`: without
+asking); `annotators.csv` stays yours, and fetch says where it disagrees with the
+ids. Without ids, it fetches what `input/*.csv` lists. Either way it is safe to
+repeat, and leaves every model current:
 
-- An existing clone is only inspected (`up to date`, `3 behind`, `local changes`).
-  `fetch --update` pulls the ones that are behind, fast-forward only, and never
-  touches a clone with local changes or local commits.
-- An existing environment is compared with its model's recipe (`install.yml`, or
-  the Dockerfile for older models) and differences are reported, for example
-  `torch: installed 2.8.0, recipe 2.9.1`. `fetch --update` also rebuilds the
-  environments that differ, after pulling, so against the new recipe. Recipe lines that pin nothing (an unpinned package, a
-  GitHub install, a shell line) cannot be compared, and `fetch` says how many it
-  skipped.
+- A missing clone is cloned; an existing one is pulled, fast-forward only. A clone
+  with local changes or local commits is never touched.
+- An environment is built when missing, and rebuilt (after pulling, so against the
+  new recipe) when a pinned package differs from its recipe (`install.yml`, or the
+  Dockerfile for older models), e.g. `torch: installed 2.8.0, recipe 2.9.1`.
+  Recipe lines that pin nothing (an unpinned package, a GitHub install, a shell
+  line) cannot be compared and count as matching; `fetch` says how many. Don't
+  fetch while a run uses the same models.
 - An environment left half-built by an interrupted run is removed and rebuilt.
 - With an RDKit annotator in the inputs, `fetch` also builds a small `rdkit`
   environment, which a cluster run scores it with.
@@ -134,7 +139,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | Command | Description |
 |---|---|
 | `chemsampler init` | Create a project for one analysis's inputs and results. |
-| `chemsampler fetch` | Clone the models, download their checkpoints and build their conda environments, in the store. |
+| `chemsampler fetch` | Clone (or pull) the models, download their checkpoints and build their conda environments, in the store. |
 | `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
 | `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
@@ -142,7 +147,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler store` | Show where models, environments and cluster profiles are kept, and how to move them. |
 
 ```bash
-chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ
+chemsampler fetch eos9p57,eos8nyg qed -f        # set the project's samplers and fetch them
 chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
 chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster   # models as Slurm jobs
 chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster --detach   # the run is a job too

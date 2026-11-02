@@ -235,6 +235,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    message; relay it and let the user decide. If the user says a model should be
    there, suggest `chemsampler catalog --update`, which refreshes the catalog from the Hub.
    Similarity and generators are each optional, but at least one is needed.
+   `chemsampler fetch <ids>` (the samplers and the Hub annotators) writes
+   `generators.csv` and `similarity.csv` and fetches them; it asks before it
+   replaces those lists (`-f` does not ask), and leaves `annotators.csv` to be
+   written from step 1.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
    apply any silently either: state the value that will be used, so it is

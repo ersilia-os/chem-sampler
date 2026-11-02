@@ -809,13 +809,131 @@ def test_fetch_says_when_it_builds_the_rdkit_environment(tmp_path, fetched):
     assert fetched["plan"].rdkit
 
 
-@pytest.mark.parametrize("update", [True, False])
-def test_fetch_update_pulls_and_rebuilds_together(tmp_path, fetched, update):
+def test_fetch_pulls_and_rebuilds_by_default(tmp_path, fetched):
     root = _inputs(tmp_path)
 
-    CliRunner().invoke(cli, ["fetch", "-p", str(root), *(["--update"] * update)])
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    old_flag = CliRunner().invoke(cli, ["fetch", "-p", str(root), "--update"])
 
-    assert fetched["update"] is update and fetched["rebuild"] is update
+    assert result.exit_code == 0, result.output
+    assert fetched["update"] is True and fetched["rebuild"] is True
+    assert old_flag.exit_code == 2 and "No such option" in old_flag.output
+
+
+# --- fetch with model ids ----------------------------------------------------------
+
+
+def _fetch_ids(root, *args, can_ask=False, answer=None, monkeypatch=None):
+    if monkeypatch is not None:
+        from chemsampler.cli.commands import fetch as fetch_cmd
+
+        monkeypatch.setattr(fetch_cmd, "_can_ask", lambda: can_ask)
+    return CliRunner().invoke(cli, ["fetch", "-p", str(root), *args], input=answer)
+
+
+def _ids(root, name):
+    path = root / "input" / f"{name}.csv"
+    return path.read_text().split()[1:] if path.exists() else None
+
+
+def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
+    root = _inputs(tmp_path, [QED, ["ersilia", "eos4zfy", "0.5", "higher", "primary"]])
+
+    result = _fetch_ids(root, "eos9p57,eos1bgt", "eos4zfy", "qed", "-f")
+
+    assert result.exit_code == 0, result.output
+    assert _ids(root, "generators") == ["eos9p57"]
+    assert _ids(root, "similarity") == ["eos1bgt"]
+    assert fetched["plan"].model_ids == ("eos9p57", "eos1bgt", "eos4zfy")
+    assert fetched["plan"].rdkit  # qed
+    assert "annotators.csv" not in result.output  # it agrees with the ids
+
+
+def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
+    root = _inputs(tmp_path)
+
+    result = _fetch_ids(root, "eos9p57", "qed", "-f")
+
+    assert result.exit_code == 0, result.output
+    assert "similarity.csv: eos8nyg -> none (file removed)" in result.output
+    assert _ids(root, "similarity") is None  # a missing list is none
+    _fetch(tmp_path / "models", tmp_path / "envs", "eos9p57")
+    inputs = config.load_inputs(str(root / "chemsampler.json"))
+    assert inputs.similarity is None and inputs.generators is not None
+
+
+@pytest.mark.parametrize(
+    "ids, message",
+    [
+        (["eos9p57", "eos0xxx", "qed"], "eos0xxx is not a generator, similarity"),
+        (["eos9p57", "eos8nyg"], "no annotator"),
+        (["eos4zfy", "qed"], "no generator nor similarity model"),
+        (["eos8nyg", "eos1bgt", "qed"], "a run takes one similarity model"),
+        (["eos9p57", "eos1d7r", "qed"], "not meant to be used in chemsampler"),
+    ],
+)
+def test_fetch_ids_that_cannot_make_a_run_are_refused(tmp_path, fetched, ids, message):
+    root = _inputs(tmp_path)
+    before = (root / "input" / "generators.csv").read_text()
+
+    result = _fetch_ids(root, *ids, "-f")
+
+    assert result.exit_code == 1
+    assert message in result.output
+    assert "plan" not in fetched
+    assert (root / "input" / "generators.csv").read_text() == before
+
+
+def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
+    root = _inputs(tmp_path)  # generators: eos9taz, similarity: eos8nyg
+
+    no = _fetch_ids(
+        root,
+        "eos9p57",
+        "eos8nyg",
+        "qed",
+        can_ask=True,
+        answer="n\n",
+        monkeypatch=monkeypatch,
+    )
+
+    assert no.exit_code == 0, no.output
+    assert "generators.csv: eos9taz -> eos9p57" in no.output
+    assert "similarity.csv" not in no.output  # unchanged: not asked about
+    assert "nothing fetched" in no.output and "plan" not in fetched
+    assert _ids(root, "generators") == ["eos9taz"]
+    yes = _fetch_ids(
+        root,
+        "eos9p57",
+        "eos8nyg",
+        "qed",
+        can_ask=True,
+        answer="y\n",
+        monkeypatch=monkeypatch,
+    )
+    assert yes.exit_code == 0, yes.output
+    assert _ids(root, "generators") == ["eos9p57"]
+
+
+def test_fetch_cannot_ask_without_a_terminal(tmp_path, fetched, monkeypatch):
+    root = _inputs(tmp_path)
+
+    result = _fetch_ids(root, "eos9p57", "qed", monkeypatch=monkeypatch)
+
+    assert result.exit_code == 1
+    assert "run it with -f" in result.output
+    assert _ids(root, "generators") == ["eos9taz"] and "plan" not in fetched
+
+
+def test_fetch_ids_say_where_annotators_csv_disagrees(tmp_path, fetched):
+    root = _inputs(tmp_path, [QED, ["ersilia", "eos4zfy", "0.5", "higher", "primary"]])
+
+    result = _fetch_ids(root, "eos9p57", "eos9ei3", "-f")
+
+    assert result.exit_code == 0, result.output
+    assert "eos9ei3 is not in input/annotators.csv" in result.output
+    assert "also lists eos4zfy, which you did not name" in result.output
+    assert fetched["plan"].model_ids == ("eos9p57", "eos9ei3")
 
 
 def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
