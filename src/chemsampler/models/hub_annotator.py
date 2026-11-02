@@ -1,5 +1,3 @@
-import time
-
 import pandas as pd
 
 from ..hub.client import SIMILARITY_MODEL_IDS, HubModel
@@ -76,16 +74,16 @@ class HubAnnotator:
         if not smiles_list:
             return {}
 
-        start_time = time.monotonic()
+        elapsed = 0.0
         scores = {}
         for chunk_start in range(0, len(smiles_list), _MAX_CHUNK):
             chunk = smiles_list[chunk_start : chunk_start + _MAX_CHUNK]
             df = self._hub_model.run(chunk)
+            elapsed += self._hub_model.elapsed
             column = self.column or self._infer_column(df)
             for smi, value in zip(chunk, df[column]):
                 if pd.notna(value):
                     scores[smi] = float(value)
-        elapsed = time.monotonic() - start_time
 
         missing = len(smiles_list) - len(scores)
         if missing:

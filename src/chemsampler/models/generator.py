@@ -1,5 +1,6 @@
 import time
 
+from .. import execution
 from ..hub.client import SIMILARITY_MODEL_IDS, HubModel
 from ..utils.logging import logger
 from ._smiles import candidates_from_output
@@ -79,6 +80,11 @@ class HubGenerator:
         df = self._hub_model.run([seed_smiles])
         return candidates_from_output(df, seed_smiles)
 
+    @property
+    def elapsed(self) -> float | None:
+        """How long the model itself ran on the last call, in seconds."""
+        return self._hub_model.elapsed
+
     def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
         """
         Generate candidates, keyed by this generator's model id.
@@ -141,8 +147,7 @@ class GeneratorPool:
             Deduplicated union of all generators' candidates.
         """
         candidates = set()
-        for generator in self.generators:
-            result = self._generate_one(generator, seed_smiles)
+        for result in self.generate_by_model(seed_smiles).values():
             candidates.update(result)
         return list(candidates)
 
@@ -160,10 +165,11 @@ class GeneratorPool:
         dict[str, list[str]]
             Mapping from model identifier to that model's candidates.
         """
-        by_model = {}
-        for generator in self.generators:
-            by_model[generator.model_id] = self._generate_one(generator, seed_smiles)
-        return by_model
+        results = execution.current().map(
+            lambda generator: self._generate_one(generator, seed_smiles),
+            self.generators,
+        )
+        return {g.model_id: result for g, result in zip(self.generators, results)}
 
     @staticmethod
     def _generate_one(generator, seed_smiles: str | None) -> list[str]:
@@ -175,7 +181,9 @@ class GeneratorPool:
         except SeedRequiredError:
             logger.warning(f"{model_id}: requires a seed molecule, skipped")
             return []
-        elapsed = time.monotonic() - start
+        # the model's own run time when it reports one: on a cluster the call
+        # also waits in the queue
+        elapsed = getattr(generator, "elapsed", None) or time.monotonic() - start
         if not result:
             logger.warning(
                 f"{model_id}: contributed 0 candidates for this seed ({elapsed:.1f}s)"

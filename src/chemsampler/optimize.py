@@ -5,6 +5,7 @@ from typing import Literal
 
 import pandas as pd
 
+from . import execution
 from .models.generator import SeedRequiredError
 from .models.similarity import HubSimilarity
 from .models.spec import AnnotatorDirection, AnnotatorSpec, Cutoff, Direction
@@ -234,7 +235,8 @@ def hill_climb(
 
     try:
         if seed_smiles is not None:
-            seed_scores = _score_candidates([seed_smiles], annotators)
+            with execution.stage("Round 0 · annotation"):
+                seed_scores = _score_candidates([seed_smiles], annotators)
             original_seed_tanimoto = (
                 tanimoto_to_seed(original_seed_smiles, [seed_smiles])
                 if original_seed_smiles is not None
@@ -472,18 +474,22 @@ class _CandidateSources:
         self.generators = [*generators, similarity]
 
     def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
-        by_model = (
-            {}
-            if self._generator is None
-            else dict(self._generator.generate_by_model(seed_smiles))
-        )
+        # the generators and the similarity search run side by side on a cluster
+        calls = [] if self._generator is None else [self._generator.generate_by_model]
+        calls.append(self._search_by_model)
+        by_model = {}
+        for found in execution.current().map(lambda call: call(seed_smiles), calls):
+            by_model.update(found)
+        return by_model
+
+    def _search_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
         try:
-            by_model.update(self._similarity.search_by_model(seed_smiles))
+            return self._similarity.search_by_model(seed_smiles)
         except SeedRequiredError:
             logger.warning(
                 f"{self._similarity.model_id}: requires a seed molecule, skipped"
             )
-        return by_model
+            return {}
 
 
 def _primaries(annotators: list[AnnotatorSpec]) -> list[AnnotatorSpec]:
@@ -523,9 +529,11 @@ def _score_candidates(
     smiles_list: list[str], annotators: list[AnnotatorSpec]
 ) -> dict[str, dict[str, float]]:
     """Score every candidate with every annotator, NaN where an annotator drops it."""
-    scores_by_id = {
-        spec.annotator_id: spec.annotator.score(smiles_list) for spec in annotators
-    }
+    # one call per annotator, side by side on a cluster
+    scores = execution.current().map(
+        lambda spec: spec.annotator.score(smiles_list), annotators
+    )
+    scores_by_id = {spec.annotator_id: found for spec, found in zip(annotators, scores)}
     return {
         smi: {
             aid: scores.get(smi, float("nan")) for aid, scores in scores_by_id.items()
@@ -721,7 +729,8 @@ def _run_rounds(
 
             if logger._quiet_mode:
                 logger.logger.setLevel(logging.ERROR)
-            by_model = generator.generate_by_model(best_smiles)
+            with execution.stage(f"Round {round_num} · sampling"):
+                by_model = generator.generate_by_model(best_smiles)
             if logger._quiet_mode:
                 logger.logger.setLevel(logging.INFO)
                 logger.info(f"Round {round_num}: running...")
@@ -745,7 +754,8 @@ def _run_rounds(
                 smi: "|".join(sources) for smi, sources in source_by_smiles.items()
             }
 
-            scores = _score_candidates(list(joined_source), annotators)
+            with execution.stage(f"Round {round_num} · annotation"):
+                scores = _score_candidates(list(joined_source), annotators)
             tanimoto = (
                 tanimoto_to_seed(seed_smiles, list(joined_source))
                 if seed_smiles is not None

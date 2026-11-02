@@ -4,6 +4,7 @@ import tempfile
 
 import pandas as pd
 
+from .. import execution
 from ..utils.logging import logger
 from .envs import env_path, is_complete
 
@@ -65,10 +66,15 @@ class HubModel:
         self.model_id = model_id
         self.models_dir = models_dir
         self.envs_dir = envs_dir
+        #: How long the model itself ran on its last call, in seconds.
+        self.elapsed = None
 
     def run(self, smiles_list: list[str]) -> pd.DataFrame:
         """
         Run the model on a list of SMILES and return its raw output table.
+
+        The call goes through the current executor (`chemsampler.execution`):
+        here by default, or as a cluster job.
 
         Parameters
         ----------
@@ -80,7 +86,9 @@ class HubModel:
         pandas.DataFrame
             The model's output table, as written to its output CSV.
         """
-        return self._run_sh(smiles_list)
+        ran = execution.current().run_model(self, smiles_list)
+        self.elapsed = ran.elapsed
+        return ran.table
 
     def _process_env(self) -> dict[str, str] | None:
         """
@@ -112,7 +120,8 @@ class HubModel:
         env["PYTHONUNBUFFERED"] = "1"
         return env
 
-    def _run_sh(self, smiles_list: list[str]) -> pd.DataFrame:
+    def run_here(self, smiles_list: list[str]) -> pd.DataFrame:
+        """Run the model on this machine (what `LocalExecutor` does)."""
         # No server, no port, no session: run.sh is a one-shot subprocess, run in
         # the model's own environment (see _process_env) or, for a model fetched
         # by `ersilia fetch`, with the interpreter it baked in at pack time.

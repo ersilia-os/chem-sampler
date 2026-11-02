@@ -1,5 +1,3 @@
-import time
-
 from ..hub.client import (
     SIMILARITY_MODEL_IDS,
     HubModel,
@@ -72,12 +70,11 @@ class HubSimilarity:
         if seed_smiles is None:
             raise SeedRequiredError(f"{self.model_id} requires a seed molecule")
 
-        start = time.monotonic()
         df = self._hub_model.run([seed_smiles])
         candidates = candidates_from_output(df, seed_smiles)
         found = (
             f"{self.model_id}: found {len(candidates)} neighbours for this seed "
-            f"({time.monotonic() - start:.1f}s)"
+            f"({self._hub_model.elapsed:.1f}s)"
         )
         if candidates:
             logger.info(found)

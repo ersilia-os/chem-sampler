@@ -12,6 +12,7 @@ class FakeHubModel:
 
     def __init__(self, model_id, models_dir=None, envs_dir=None):
         self.model_id = model_id
+        self.elapsed = 0.0
 
     def run(self, smiles_list):
         return pd.DataFrame(
