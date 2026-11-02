@@ -1483,3 +1483,154 @@ def test_a_stop_while_scoring_the_seed_has_no_rounds_to_keep():
         )
 
     assert not hasattr(raised.value, "partial")
+
+
+# --- a stopped run continues from the round tables it saved -----------------------
+
+#: Every round brings one better molecule (awkward floats, to test exact reads).
+RESUME_A = {"CCO": 0.1, "CCC": 1 + 1 / 3, "CCN": 2.5, "CCCC": 3.7, "CCCN": 4.9}
+RESUME_B = {"CCO": 0.1 + 0.2, "CCC": 1 / 7, "CCN": 3.5, "CCCC": 4.0, "CCCN": 4.1}
+RESUME_ROUNDS = [["CCC"], ["CCN"], ["CCCC"], ["CCCN"]]
+
+#: Per mode: cutoffs of a and b (None: b unused) and the round to stop in. Each
+#: stop is one the next round depends on: sequential stops in stage b's first
+#: round, incremental in step 2's.
+RESUME_CASES = {
+    "weighted": {"cutoffs": (float("-inf"), float("-inf")), "stop": 3},
+    "joint": {"cutoffs": (1.0, 3.0), "stop": 3},
+    "sequential": {"cutoffs": (2.0, 3.0), "stop": 3},
+    "incremental": {"cutoffs": (3.0, None), "stop": 3, "n_steps": 2},
+}
+
+
+class CountingAnnotator(StubAnnotator):
+    def __init__(self, scores):
+        super().__init__(scores)
+        self.calls = []
+
+    def score(self, smiles_list):
+        self.calls.append(list(smiles_list))
+        return super().score(smiles_list)
+
+
+def _resume_annotators(case):
+    cutoff_a, cutoff_b = RESUME_CASES[case]["cutoffs"]
+    specs = [
+        AnnotatorSpec("a", CountingAnnotator(RESUME_A), cutoff_a, direction="higher")
+    ]
+    if cutoff_b is not None:
+        specs.append(
+            AnnotatorSpec(
+                "b", CountingAnnotator(RESUME_B), cutoff_b, direction="higher"
+            )
+        )
+    return specs
+
+
+def _climb(case, generator, annotators, checkpoint):
+    return hill_climb(
+        generator,
+        annotators,
+        mode=case,
+        seed_smiles="CCO",
+        n_rounds=4,
+        n_steps=RESUME_CASES[case].get("n_steps"),
+        checkpoint=checkpoint,
+    )
+
+
+@pytest.mark.parametrize("case", list(RESUME_CASES))
+def test_a_resumed_run_ends_exactly_as_an_uninterrupted_one(case, tmp_path):
+    stop = RESUME_CASES[case]["stop"]
+    whole, whole_rounds = _climb(
+        case, StubGenerator(RESUME_ROUNDS), _resume_annotators(case), None
+    )
+    with pytest.raises(KeyboardInterrupt):
+        stopping = StoppingGenerator(RESUME_ROUNDS[: stop - 1], KeyboardInterrupt())
+        _climb(case, stopping, _resume_annotators(case), tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        f"round{n}.csv" for n in range(stop)
+    ]
+
+    generator = StubGenerator(RESUME_ROUNDS[stop - 1 :])
+    annotators = _resume_annotators(case)
+    summary, rounds = _climb(case, generator, annotators, tmp_path)
+
+    pd.testing.assert_frame_equal(summary, whole, check_exact=True)
+    assert list(rounds) == list(whole_rounds)
+    for n, table in rounds.items():
+        pd.testing.assert_frame_equal(table, whole_rounds[n], check_exact=True)
+    # the rounds it had were read back: only the later ones ran models
+    live = len(whole_rounds) - stop
+    assert live >= 1 and generator._call_count == live
+    assert len(annotators[0].annotator.calls) == live
+
+
+def test_a_finished_run_called_again_runs_no_model(tmp_path):
+    first = _climb(
+        "weighted",
+        StubGenerator(RESUME_ROUNDS),
+        _resume_annotators("weighted"),
+        tmp_path,
+    )
+
+    again = _climb(
+        "weighted", StubGenerator([]), _resume_annotators("weighted"), tmp_path
+    )
+
+    pd.testing.assert_frame_equal(again[0], first[0], check_exact=True)
+
+
+def test_a_half_written_round_is_run_again(tmp_path):
+    with pytest.raises(KeyboardInterrupt):
+        _climb(
+            "weighted",
+            StoppingGenerator(RESUME_ROUNDS[:1], KeyboardInterrupt()),
+            _resume_annotators("weighted"),
+            tmp_path,
+        )
+    (tmp_path / "round2.csv.partial").write_text(
+        "smiles,source\nCC"
+    )  # killed mid-write
+
+    generator = StubGenerator(RESUME_ROUNDS[1:])
+    summary, _ = _climb("weighted", generator, _resume_annotators("weighted"), tmp_path)
+
+    assert generator._call_count == 3  # rounds 2-4, round 2 included
+    assert list(summary["round"]) == [0, 1, 2, 3, 4]
+
+
+def test_a_saved_round_from_other_annotators_is_refused(tmp_path):
+    _climb(
+        "weighted",
+        StubGenerator(RESUME_ROUNDS),
+        _resume_annotators("weighted"),
+        tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="round0.csv was not made by this run"):
+        _climb(
+            "weighted", StubGenerator([]), _resume_annotators("incremental"), tmp_path
+        )
+
+
+def test_a_round_killed_while_being_written_leaves_no_table(tmp_path, monkeypatch):
+    real = pd.DataFrame.to_csv
+
+    def killed_writing_round_2(self, path, *args, **kwargs):
+        if "round2" in str(path):
+            with open(path, "w") as f:
+                f.write("smiles,source\nCC")
+            raise KeyboardInterrupt
+        return real(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", killed_writing_round_2)
+    with pytest.raises(KeyboardInterrupt):
+        _climb(
+            "weighted",
+            StubGenerator(RESUME_ROUNDS),
+            _resume_annotators("weighted"),
+            tmp_path,
+        )
+
+    assert not (tmp_path / "round2.csv").exists()

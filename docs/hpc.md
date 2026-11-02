@@ -75,14 +75,33 @@ which model and round each one is.
 
 ## When things go wrong
 
+Every round is saved as soon as it is ranked, so a stopped run is never lost:
+`chemsampler resume` continues it (see below).
+
 - **A job fails** (an error, a time limit, out of memory): the run stops. The other
   jobs of the step are cancelled, the error names the model and the end of its
   `slurm.err`, and the finished rounds are written.
-- **Ctrl-C**: every job of the run still on the cluster is cancelled
+- **Ctrl-C** (or SIGTERM): every job of the run still on the cluster is cancelled
   (`scancel`), and the finished rounds are written.
 - **Preemption**: jobs are submitted with `--requeue`. A preempted job goes back
   to the queue and starts over; its output is only renamed into place when it is
   complete, so a half-written file is never read.
 - **The terminal closes**: chemsampler is the one waiting for the jobs, so the run
   stops with it and its jobs carry on alone. Start long runs inside `tmux` or
-  `screen`. If it happens anyway, `jobs.json` lists the job ids to cancel.
+  `screen`. If it happens anyway, `resume` cancels what the run left on the
+  cluster before going on.
+
+## Resuming a run
+
+`chemsampler resume [RUN]` (the latest run by default) continues a run with the
+inputs and options it started with, including its profile:
+
+- The rounds it finished are read back from their `round<n>.csv`; no job is sent
+  for them, and every choice that followed them (winners, stages, steps) comes out
+  as before.
+- The round it was in is run again whole. Its old job folders move to
+  `jobs/stopped/attempt<n>/`, and `jobs.json` keeps every attempt's jobs.
+- Jobs an earlier attempt left on the cluster are cancelled first.
+- `run.lock` in the run folder says who runs it. `resume` refuses a run that is
+  still going (a live process, or a Slurm job still queued or running) and says
+  how to stop it.

@@ -1,6 +1,9 @@
 """Running a round's models as Slurm jobs, side by side (`run --hpc NAME`)."""
 
 import json
+import os
+import re
+import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +31,19 @@ _UNKNOWN_LIMIT = 10
 
 #: Failed checks in a row (ssh down, Slurm not answering) before the run stops.
 _CHECK_FAILURES_LIMIT = 3
+
+RECORD_FILE = "jobs.json"
+
+
+def _stage_number(label: str) -> int | None:
+    """A step's place in the run, from its label alone: the same on every attempt.
+
+    Round r's sampling is 2r and its annotation 2r + 1 (the seed's is 1).
+    """
+    found = re.fullmatch(r"Round (\d+) · (sampling|annotation)", label)
+    if found is None:
+        return None
+    return 2 * int(found.group(1)) + (found.group(2) == "annotation")
 
 
 class SlurmExecutor:
@@ -76,6 +92,9 @@ class SlurmExecutor:
         self._failure = None
         self._stop = threading.Event()
         self._watcher = None
+        #: What earlier attempts at this run (stopped, then resumed) left in jobs.json.
+        self._earlier: list[dict] = []
+        self._attempt = 1
 
     # --- the executor interface (chemsampler.execution) --------------------------
 
@@ -116,8 +135,10 @@ class SlurmExecutor:
     def stage(self, label: str):
         """Name a step of a round; its jobs share a folder and a progress line."""
         with self._lock:
-            self._number += 1
+            number = _stage_number(label)
+            self._number = self._number + 1 if number is None else number
             self._label, self._began, self._counts = label, time.monotonic(), None
+            self._set_aside(stage_folder(self.run_dir, self._number, label))
         yield
         jobs = self._stage_jobs()
         if jobs:
@@ -127,7 +148,53 @@ class SlurmExecutor:
     # --- the run's lifetime ---------------------------------------------------------
 
     def __enter__(self):
+        self._take_over()
         return self
+
+    def job_alive(self, job_id: str) -> bool:
+        """Whether a Slurm job is still pending or running (one a run's lock names)."""
+        state = self.cluster.states([job_id]).get(job_id)
+        return state is not None and state.category in (PENDING, RUNNING)
+
+    def _take_over(self) -> None:
+        """Carry on the record of an earlier attempt, cancelling the jobs it left."""
+        try:
+            data = json.loads((self.run_dir / RECORD_FILE).read_text())
+            self._earlier = list(data["jobs"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return
+        self._attempt = 1 + max(r.get("attempt", 1) for r in self._earlier)
+        ids = [
+            r["job_id"]
+            for r in self._earlier
+            if r.get("job_id") and r.get("state") != "COMPLETED"
+        ]
+        if not ids:
+            return
+        states = self.cluster.states(ids)
+        live = [i for i, s in states.items() if s.category in (PENDING, RUNNING)]
+        if live:
+            self.cluster.cancel(live)
+            self.say(f"Cancelled {len(live)} job(s) an earlier attempt left running.")
+            states.update(self.cluster.states(live))
+        for record in self._earlier:
+            if record.get("job_id") in states:
+                record["state"] = states[record["job_id"]].state
+        self._write_record()
+
+    def _set_aside(self, folder: Path) -> None:
+        """Move an earlier attempt's folder for this step out of the way (lock held)."""
+        if not folder.exists():
+            return
+        attempt = f"attempt{self._attempt - 1}"
+        target = self.run_dir / "jobs" / "stopped" / attempt / folder.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(folder), str(target))
+        old = f"{folder.relative_to(self.run_dir)}{os.sep}"
+        new = f"{target.relative_to(self.run_dir)}{os.sep}"
+        for record in self._earlier:
+            if str(record.get("folder", "")).startswith(old):
+                record["folder"] = new + record["folder"][len(old) :]
 
     def __exit__(self, kind, error, traceback):
         self._halt()
@@ -173,6 +240,7 @@ class SlurmExecutor:
         [job.job_id] = self.cluster.submit([argv])
         with self._lock:
             self._jobs.append(job)
+            self._write_record()
             if self._watcher is None:
                 self._watcher = threading.Thread(
                     target=self._watch, name="chemsampler-slurm", daemon=True
@@ -220,6 +288,7 @@ class SlurmExecutor:
                 with self._lock:
                     if states is not None:
                         self._update(live, states)
+                        self._write_record()
                     self._report()
                     self._lock.notify_all()
             self._stop.wait(self.profile.poll_seconds)
@@ -291,17 +360,21 @@ class SlurmExecutor:
         )
 
     def _write_record(self) -> None:
+        """`jobs.json`, kept current, so a run killed outright still leaves it."""
         with self._lock:
             jobs = list(self._jobs)
-        if not jobs:
+            records = list(self._earlier)
+            for job in jobs:
+                record = job.record()
+                record["folder"] = str(job.folder.relative_to(self.run_dir))
+                record["attempt"] = self._attempt
+                records.append(record)
+        if not records:
             return
-        records = []
-        for job in jobs:
-            record = job.record()
-            record["folder"] = str(job.folder.relative_to(self.run_dir))
-            records.append(record)
         text = json.dumps({"profile": self.profile.name, "jobs": records}, indent=2)
-        (self.run_dir / "jobs.json").write_text(text + "\n")
+        path = self.run_dir / RECORD_FILE
+        path.with_suffix(".partial").write_text(text + "\n")
+        os.replace(path.with_suffix(".partial"), path)
 
 
 def prepare(name: str, inputs, run_dir, *, say=click.echo) -> SlurmExecutor:

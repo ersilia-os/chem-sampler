@@ -52,6 +52,11 @@ inside it, or on any project with `-p PATH`. Each run writes a dated folder unde
 of the models and the options it ran with. The paths are absolute: a copied project is refused until its
 `chemsampler.json` names its own `input/` and `rounds/`.
 
+Rounds are saved as they finish, with a copy of the inputs. A run stopped in any
+way (Ctrl-C, a failed model, a closed terminal, a cancelled job) continues with
+`chemsampler resume`: the latest run, or `resume RUN` for another. Its finished
+rounds are read back, not run again, and the round it was in is run again whole.
+
 **Where models live.** A second project reuses what the first one fetched, so
 `fetch` there is instant. `chemsampler catalog` shows what the store holds and the
 state of each environment. To put a project's models elsewhere (on a cluster, a
@@ -128,6 +133,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler init` | Create a project for one analysis's inputs and results. |
 | `chemsampler fetch` | Clone the models, download their checkpoints and build their conda environments, in the store. |
 | `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
+| `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
 | `chemsampler catalog` | List the models on this machine; `--hub` lists what the Hub offers, `--update` refreshes the bundled catalog. |
 
@@ -135,6 +141,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ
 chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
 chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster   # models as Slurm jobs
+chemsampler resume                               # continue the latest run where it stopped
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed
 chemsampler catalog                              # * marks what the current project needs

@@ -36,6 +36,65 @@ def _keep_finished(error: BaseException, history: list, candidates_by_round: dic
     )
 
 
+def _table_columns(
+    annotators: list[AnnotatorSpec],
+    tanimoto: bool,
+    original_tanimoto: bool,
+    weighted: bool,
+) -> set[str]:
+    """The columns `_round_table` gives a non-empty round, with these options."""
+    columns = {"smiles", "source", "cutoffs_satisfied", "guardrails_satisfied"}
+    columns |= {spec.annotator_id for spec in annotators}
+    if weighted:
+        columns.add("weighted_score")
+    if tanimoto:
+        columns.add("tanimoto_to_seed")
+    if original_tanimoto:
+        columns.add("tanimoto_to_original_seed")
+    return columns
+
+
+def _saved_round(checkpoint, round_num: int, columns: set[str]) -> pd.DataFrame | None:
+    """
+    The table a stopped run saved for this round, or None when it has none.
+
+    Read back exactly as it was made (every float to the last digit, only empty
+    cells as missing), so the round's winner and everything after it come out
+    as they did the first time.
+    """
+    if checkpoint is None:
+        return None
+    path = os.path.join(checkpoint, f"round{round_num}.csv")
+    if not os.path.isfile(path):
+        return None
+    try:
+        table = pd.read_csv(
+            path,
+            float_precision="round_trip",
+            keep_default_na=False,
+            na_values=[""],
+            dtype={"smiles": str, "source": str},
+        )
+    except pd.errors.EmptyDataError:  # a round that found no candidates
+        return pd.DataFrame()
+    if set(table.columns) != columns:
+        raise ValueError(
+            f"{path} was not made by this run's annotators and options: it has "
+            f"columns {sorted(table.columns)}, this run makes {sorted(columns)}"
+        )
+    return table
+
+
+def _save_round(checkpoint, round_num: int, table: pd.DataFrame) -> None:
+    """Write a round's table whole, then rename it: a killed run leaves no half file."""
+    if checkpoint is None:
+        return
+    os.makedirs(checkpoint, exist_ok=True)
+    path = os.path.join(checkpoint, f"round{round_num}.csv")
+    table.to_csv(path + ".partial", index=False)
+    os.replace(path + ".partial", path)
+
+
 def hill_climb(
     generator,
     annotators: list[AnnotatorSpec],
@@ -49,6 +108,7 @@ def hill_climb(
     tolerance: float = 0.0,
     tanimoto_cutoff: float | None = None,
     tanimoto_direction: Direction = "higher",
+    checkpoint: str | os.PathLike | None = None,
 ) -> tuple[pd.DataFrame, dict[int, pd.DataFrame]]:
     """
     Iteratively improve a seed molecule by alternating generation and scoring.
@@ -153,6 +213,12 @@ def hill_climb(
         as `tanimoto_cutoff` - the pre-existing similarity-floor behavior.
         "lower" keeps candidates at most that similar instead, pushing the
         search toward novelty. Ignored if `tanimoto_cutoff` is `None`.
+    checkpoint : str or path-like, optional
+        A folder where each round's table is written as `round<n>.csv` as soon
+        as it is made, and from which rounds already there are read back instead
+        of being run again. A run stopped midway, even killed, continues where
+        it stopped when called again with the same arguments and folder (see
+        Notes).
 
     Returns
     -------
@@ -195,6 +261,13 @@ def hill_climb(
     (`RuntimeError`, `ValueError`) re-raises that exception with the rounds
     finished before it as `partial`: the `(summary, candidates_by_round)` pair
     this function would have returned. It is absent when no round finished.
+
+    With `checkpoint`, nothing but the round tables needs saving to continue: a
+    round's winner, the floors and stages of "sequential" and "incremental",
+    and when to stop are all worked out from the tables, so rounds read back
+    lead to exactly the state the first call reached. The round that was
+    interrupted is run again whole. Calling again with other arguments than
+    the first time gives a run that neither call describes.
     """
     if isinstance(generator, HubSimilarity):
         raise TypeError(
@@ -235,21 +308,29 @@ def hill_climb(
 
     try:
         if seed_smiles is not None:
-            with execution.stage("Round 0 · annotation"):
-                seed_scores = _score_candidates([seed_smiles], annotators)
-            original_seed_tanimoto = (
-                tanimoto_to_seed(original_seed_smiles, [seed_smiles])
-                if original_seed_smiles is not None
-                else None
+            columns = _table_columns(
+                annotators, True, original_seed_smiles is not None, mode == "weighted"
             )
-            round0_table = _round_table(
-                {seed_smiles: "seed"},
-                seed_scores,
-                annotators,
-                {seed_smiles: 1.0},
-                original_seed_tanimoto,
-                include_weighted_score=(mode == "weighted"),
-            )
+            round0_table = _saved_round(checkpoint, 0, columns)
+            if round0_table is not None:
+                logger.info("Round 0: the seed's scores, from round0.csv")
+            else:
+                with execution.stage("Round 0 · annotation"):
+                    seed_scores = _score_candidates([seed_smiles], annotators)
+                original_seed_tanimoto = (
+                    tanimoto_to_seed(original_seed_smiles, [seed_smiles])
+                    if original_seed_smiles is not None
+                    else None
+                )
+                round0_table = _round_table(
+                    {seed_smiles: "seed"},
+                    seed_scores,
+                    annotators,
+                    {seed_smiles: 1.0},
+                    original_seed_tanimoto,
+                    include_weighted_score=(mode == "weighted"),
+                )
+                _save_round(checkpoint, 0, round0_table)
             candidates_by_round[0] = round0_table
             seed_row = round0_table.iloc[0]
             failing = [
@@ -314,6 +395,7 @@ def hill_climb(
                 best_smiles=seed_smiles,
                 best_score=best_score,
                 best_row=best_row,
+                checkpoint=checkpoint,
             )
         elif mode == "weighted":
             stage_history, stage_candidates = _run_weighted(
@@ -328,6 +410,7 @@ def hill_climb(
                 best_smiles=seed_smiles,
                 best_score=best_score,
                 best_row=best_row,
+                checkpoint=checkpoint,
             )
         elif mode == "incremental":
             stage_history, stage_candidates = _run_incremental(
@@ -342,6 +425,7 @@ def hill_climb(
                 best_smiles=seed_smiles,
                 best_row=best_row,
                 n_steps=n_steps,
+                checkpoint=checkpoint,
             )
         else:
             stage_history, stage_candidates = _run_sequential(
@@ -355,6 +439,7 @@ def hill_climb(
                 tanimoto_direction,
                 best_smiles=seed_smiles,
                 best_row=best_row,
+                checkpoint=checkpoint,
             )
 
     except _STOPS as error:
@@ -718,68 +803,45 @@ def _run_rounds(
     active_cutoff: float | None = None,
     sort_column: str = "cutoffs_satisfied",
     include_weighted_score: bool = False,
+    checkpoint=None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame], str | None, float, dict[str, float]]:
-    """Shared loop: generate -> score -> pick_winner -> compare. Used by every mode."""
+    """Shared loop: generate -> score -> pick_winner -> compare. Used by every mode.
+
+    A round whose table is already in `checkpoint` is read back, not run again.
+    """
     history = []
     candidates_by_round: dict[int, pd.DataFrame] = {}
+    columns = _table_columns(
+        annotators,
+        seed_smiles is not None,
+        original_seed_smiles is not None,
+        include_weighted_score,
+    )
 
     try:
         for offset in range(n_rounds):
             round_num = start_round + offset
 
-            if logger._quiet_mode:
-                logger.logger.setLevel(logging.ERROR)
-            try:
-                with execution.stage(f"Round {round_num} · sampling"):
-                    by_model = generator.generate_by_model(best_smiles)
-            finally:  # a run stopped here must not leave the log silenced
-                if logger._quiet_mode:
-                    logger.logger.setLevel(logging.INFO)
-            if logger._quiet_mode:
-                logger.info(f"Round {round_num}: running...")
-            else:
-                if hasattr(generator, "generators"):
-                    gen_ids = [g.model_id for g in generator.generators]
-                else:
-                    gen_ids = list(by_model.keys()) if by_model else ["unknown"]
-                gen_str = ", ".join(gen_ids)
-                ann_ids = [spec.annotator_id for spec in annotators]
-                ann_str = ", ".join(ann_ids)
+            round_table = _saved_round(checkpoint, round_num, columns)
+            if round_table is not None:
                 logger.info(
-                    f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running..."
+                    f"Round {round_num}: {len(round_table)} candidates, from "
+                    f"round{round_num}.csv"
                 )
-
-            source_by_smiles: dict[str, list[str]] = {}
-            for model_id, smiles_list in by_model.items():
-                for smi in smiles_list:
-                    source_by_smiles.setdefault(smi, []).append(model_id)
-            joined_source = {
-                smi: "|".join(sources) for smi, sources in source_by_smiles.items()
-            }
-
-            with execution.stage(f"Round {round_num} · annotation"):
-                scores = _score_candidates(list(joined_source), annotators)
-            tanimoto = (
-                tanimoto_to_seed(seed_smiles, list(joined_source))
-                if seed_smiles is not None
-                else None
-            )
-            original_seed_tanimoto = (
-                tanimoto_to_seed(original_seed_smiles, list(joined_source))
-                if original_seed_smiles is not None
-                else None
-            )
-            round_table = _round_table(
-                joined_source,
-                scores,
-                annotators,
-                tanimoto,
-                original_seed_tanimoto,
-                include_weighted_score,
-            )
-            round_table = _sort_round_table(
-                round_table, active_annotator_id, winner_direction, sort_column
-            )
+            else:
+                round_table = _new_round(
+                    generator,
+                    annotators,
+                    seed_smiles,
+                    original_seed_smiles,
+                    round_num,
+                    best_smiles,
+                    active_annotator_id,
+                    winner_direction,
+                    sort_column,
+                    include_weighted_score,
+                )
+                _save_round(checkpoint, round_num, round_table)
             candidates_by_round[round_num] = round_table
 
             if round_table.empty:
@@ -846,6 +908,75 @@ def _run_rounds(
     return history, candidates_by_round, best_smiles, best_score, best_row
 
 
+def _new_round(
+    generator,
+    annotators: list[AnnotatorSpec],
+    seed_smiles: str | None,
+    original_seed_smiles: str | None,
+    round_num: int,
+    best_smiles: str | None,
+    active_annotator_id: str | None,
+    winner_direction: Direction | None,
+    sort_column: str,
+    include_weighted_score: bool,
+) -> pd.DataFrame:
+    """Run one round's models: candidates around `best_smiles`, scored and sorted."""
+    if logger._quiet_mode:
+        logger.logger.setLevel(logging.ERROR)
+    try:
+        with execution.stage(f"Round {round_num} · sampling"):
+            by_model = generator.generate_by_model(best_smiles)
+    finally:  # a run stopped here must not leave the log silenced
+        if logger._quiet_mode:
+            logger.logger.setLevel(logging.INFO)
+    if logger._quiet_mode:
+        logger.info(f"Round {round_num}: running...")
+    else:
+        if hasattr(generator, "generators"):
+            gen_ids = [g.model_id for g in generator.generators]
+        else:
+            gen_ids = list(by_model.keys()) if by_model else ["unknown"]
+        gen_str = ", ".join(gen_ids)
+        ann_ids = [spec.annotator_id for spec in annotators]
+        ann_str = ", ".join(ann_ids)
+        logger.info(
+            f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running..."
+        )
+
+    source_by_smiles: dict[str, list[str]] = {}
+    for model_id, smiles_list in by_model.items():
+        for smi in smiles_list:
+            source_by_smiles.setdefault(smi, []).append(model_id)
+    joined_source = {
+        smi: "|".join(sources) for smi, sources in source_by_smiles.items()
+    }
+
+    with execution.stage(f"Round {round_num} · annotation"):
+        scores = _score_candidates(list(joined_source), annotators)
+    tanimoto = (
+        tanimoto_to_seed(seed_smiles, list(joined_source))
+        if seed_smiles is not None
+        else None
+    )
+    original_seed_tanimoto = (
+        tanimoto_to_seed(original_seed_smiles, list(joined_source))
+        if original_seed_smiles is not None
+        else None
+    )
+    round_table = _round_table(
+        joined_source,
+        scores,
+        annotators,
+        tanimoto,
+        original_seed_tanimoto,
+        include_weighted_score,
+    )
+    round_table = _sort_round_table(
+        round_table, active_annotator_id, winner_direction, sort_column
+    )
+    return round_table
+
+
 def _row_values(row: pd.Series, annotators: list[AnnotatorSpec]) -> dict[str, float]:
     """Every annotator's value for one round-table row, as a plain dict."""
     return {spec.annotator_id: row[spec.annotator_id] for spec in annotators}
@@ -863,6 +994,7 @@ def _run_joint(
     best_smiles: str | None,
     best_score: float,
     best_row: dict[str, float],
+    checkpoint=None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     def pick_winner(round_table: pd.DataFrame):
         eligible = round_table[
@@ -888,6 +1020,7 @@ def _run_joint(
         pick_winner=pick_winner,
         winner_direction=None,
         active_annotator_id=None,
+        checkpoint=checkpoint,
     )
     return history, candidates_by_round
 
@@ -904,6 +1037,7 @@ def _run_weighted(
     best_smiles: str | None,
     best_score: float,
     best_row: dict[str, float],
+    checkpoint=None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     def pick_winner(round_table: pd.DataFrame):
         mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
@@ -931,6 +1065,7 @@ def _run_weighted(
         active_annotator_id=None,
         sort_column="weighted_score",
         include_weighted_score=True,
+        checkpoint=checkpoint,
     )
     return history, candidates_by_round
 
@@ -946,6 +1081,7 @@ def _run_sequential(
     tanimoto_direction: Direction,
     best_smiles: str | None,
     best_row: dict[str, float],
+    checkpoint=None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     history = []
     candidates_by_round: dict[int, pd.DataFrame] = {}
@@ -1053,6 +1189,7 @@ def _run_sequential(
                 winner_direction=spec.direction,
                 active_annotator_id=spec.annotator_id,
                 active_cutoff=spec.cutoff,
+                checkpoint=checkpoint,
             )
             history.extend(stage_history)
             candidates_by_round.update(stage_candidates)
@@ -1098,6 +1235,7 @@ def _run_incremental(
     best_smiles: str,
     best_row: dict[str, float],
     n_steps: int,
+    checkpoint=None,
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     """Like `_run_sequential`, but cycling `annotators` `n_steps` times through
     interpolated interim targets instead of once through each own cutoff."""
@@ -1217,6 +1355,7 @@ def _run_incremental(
                     winner_direction=spec.direction,
                     active_annotator_id=spec.annotator_id,
                     active_cutoff=target,
+                    checkpoint=checkpoint,
                 )
                 for row in step_history:
                     row["step_level"] = level

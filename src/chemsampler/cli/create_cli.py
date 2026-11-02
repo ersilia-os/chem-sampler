@@ -1,7 +1,7 @@
 import click
 
 #: The order a user needs the commands in, rather than alphabetical.
-_COMMAND_ORDER = ("init", "fetch", "run", "annotate", "catalog", "suggest")
+_COMMAND_ORDER = ("init", "fetch", "run", "resume", "annotate", "catalog", "suggest")
 
 _EPILOG = """\b
 Typical use:
@@ -33,6 +33,14 @@ def chemsampler_cli() -> None:
 def create_cli() -> click.Group:
     """Import every command module, registering it via its decorator's side
     effect, and return the assembled group."""
-    from .commands import annotate, catalog, fetch, init, run, suggest  # noqa: F401
+    from .commands import (  # noqa: F401
+        annotate,
+        catalog,
+        fetch,
+        init,
+        resume,
+        run,
+        suggest,
+    )
 
     return chemsampler_cli

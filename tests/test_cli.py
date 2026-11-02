@@ -178,6 +178,8 @@ def test_a_run_records_how_it_was_launched(tmp_path):
         "tanimoto_cutoff": 0.2,
         "tanimoto_direction": "higher",
         "hpc": None,
+        "verbose": False,
+        "status": "finished",
     }
 
 
@@ -243,6 +245,170 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
     assert f"Finished rounds written to {_round_dir(root)}" in result.output
     summary = pd.read_csv(_round_dir(root) / "summary.csv")
     assert summary["round"].tolist() == [0, 1]
+
+
+# --- resume -------------------------------------------------------------------------
+
+#: Heavier molecules each round, so every round improves on the last.
+MW_HIGHER = ["rdkit", "mw", "0", "higher", "primary"]
+HEAVIER = ["CCCC", "CCCCC", "CCCCCC"]
+
+
+def _script(monkeypatch, *steps):
+    """The generator's answers, one per call: a SMILES, an error, or a function."""
+    steps = list(steps)
+
+    def run(self, smiles_list):
+        step = steps.pop(0)
+        if isinstance(step, BaseException):
+            raise step
+        if callable(step):
+            step()
+        return pd.DataFrame({"smi_0": [step]})
+
+    monkeypatch.setattr(FakeHubModel, "run", run)
+    return steps
+
+
+def _generator_project(tmp_path, annotators=(MW_HIGHER,)):
+    root = _inputs(tmp_path, list(annotators))
+    (root / "input" / "similarity.csv").unlink()  # one model call per round
+    return root
+
+
+def _three_rounds(root):
+    return _run(root, "--mode", "weighted", "--n-rounds", "3")
+
+
+def _resume(root, *args):
+    return CliRunner().invoke(cli, ["resume", "-p", str(root), *args])
+
+
+def _status(root):
+    return json.loads((_round_dir(root) / "inputs.json").read_text())["run"]["status"]
+
+
+def _same_results(here, there):
+    names = sorted(p.name for p in here.glob("*.csv"))
+    assert names == sorted(p.name for p in there.glob("*.csv"))
+    for name in names:
+        pd.testing.assert_frame_equal(
+            pd.read_csv(here / name, float_precision="round_trip"),
+            pd.read_csv(there / name, float_precision="round_trip"),
+            check_exact=True,
+        )
+
+
+def test_a_stopped_run_resumes_to_what_an_uninterrupted_run_gives(
+    tmp_path, monkeypatch
+):
+    whole = _generator_project(tmp_path / "whole")
+    _script(monkeypatch, *HEAVIER)
+    assert _three_rounds(whole).exit_code == 0
+    root = _generator_project(tmp_path / "stopped")
+    _script(monkeypatch, *HEAVIER[:2], KeyboardInterrupt())
+
+    stopped = _three_rounds(root)
+
+    assert stopped.exit_code == 0, stopped.output
+    name = _round_dir(root).name
+    assert f"Continue it with `chemsampler resume {name}`" in stopped.output
+    assert _status(root) == "stopped"
+    assert not (_round_dir(root) / "run.lock").exists()
+    left = _script(monkeypatch, HEAVIER[2])
+
+    resumed = _resume(root)
+
+    assert resumed.exit_code == 0, resumed.output
+    assert f"Resuming {name} (stopped)." in resumed.output
+    assert left == []  # only round 3 ran a model
+    assert _status(root) == "finished"
+    _same_results(_round_dir(whole), _round_dir(root))
+
+
+def test_resume_uses_the_inputs_the_run_started_with(tmp_path, monkeypatch):
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, HEAVIER[0], KeyboardInterrupt())
+    _three_rounds(root)
+    _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
+    _script(monkeypatch, *HEAVIER[1:])
+
+    result = _resume(root, _round_dir(root).name)
+
+    assert result.exit_code == 0, result.output
+    assert "mw" in pd.read_csv(_round_dir(root) / "round3.csv").columns
+
+
+def test_sigterm_stops_a_run_as_ctrl_c_does(tmp_path, monkeypatch):
+    import os
+    import signal
+
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, HEAVIER[0], lambda: os.kill(os.getpid(), signal.SIGTERM))
+
+    result = _three_rounds(root)
+
+    assert result.exit_code == 0, result.output
+    assert "Partial results written" in result.output
+    assert _status(root) == "stopped"
+    assert pd.read_csv(_round_dir(root) / "summary.csv")["round"].tolist() == [0, 1]
+
+
+def test_a_failed_run_can_be_resumed_once_fixed(tmp_path, monkeypatch):
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, HEAVIER[0], RuntimeError("eos9taz: out of memory"))
+
+    failed = _three_rounds(root)
+
+    assert failed.exit_code == 1
+    assert "Once fixed, continue it with `chemsampler resume" in failed.output
+    assert _status(root) == "failed"
+    _script(monkeypatch, *HEAVIER[1:])
+    assert _resume(root).exit_code == 0
+    assert _status(root) == "finished"
+
+
+def test_a_finished_run_is_not_run_again(tmp_path, monkeypatch):
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, *HEAVIER)
+    _three_rounds(root)
+    _script(monkeypatch)  # any model call would fail
+
+    result = _resume(root)
+
+    assert result.exit_code == 0, result.output
+    assert "already finished" in result.output
+
+
+def test_resume_explains_what_it_cannot_resume(tmp_path, monkeypatch):
+    root = _generator_project(tmp_path)
+    assert "no runs in" in _resume(root).output
+    old = root / "rounds" / "2026-01-01_00-00-00"
+    old.mkdir()
+    (old / "inputs.json").write_text(json.dumps({"run": {"mode": "weighted"}}))
+
+    result = _resume(root)
+
+    assert result.exit_code == 1
+    assert "made before chemsampler could resume runs" in result.output
+
+
+def test_resume_refuses_a_run_still_going_here(tmp_path, monkeypatch):
+    import os
+    import socket
+
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, HEAVIER[0], KeyboardInterrupt())
+    _three_rounds(root)
+    lock = _round_dir(root) / "run.lock"
+    held = {"host": socket.gethostname(), "pid": os.getpid(), "job": None}
+    lock.write_text(json.dumps(held))
+
+    result = _resume(root)
+
+    assert result.exit_code == 1
+    assert "still going on this machine" in result.output
+    assert json.loads(lock.read_text()) == held
 
 
 def test_run_can_use_a_similarity_model_without_generators(tmp_path):

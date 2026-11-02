@@ -90,6 +90,7 @@ class FakeCluster:
         self.argvs, self.folders, self.outcomes = [], {}, {}
         self.cancelled, self.preflights, self.problems = [], [], []
         self.hold = lambda folder: False
+        self.queued = set()  # job ids that stay pending until cancelled
         self.on_check = None
 
     def __call__(self, profile):  # used in place of the Cluster class
@@ -114,7 +115,7 @@ class FakeCluster:
             if job_id in self.cancelled:  # sacct keeps it, as Slurm does
                 found[job_id] = JobState(job_id, "CANCELLED", FAILED)
                 continue
-            if self.hold(folder):
+            if job_id in self.queued or self.hold(folder):
                 found[job_id] = JobState(job_id, "PENDING", PENDING)
                 continue
             if job_id not in self.outcomes:
@@ -283,6 +284,75 @@ def test_ctrl_c_cancels_the_jobs_on_the_cluster_and_keeps_finished_rounds(
     record = json.loads((run / "jobs.json").read_text())
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert all(states[i] == "CANCELLED" for i in round2)
+
+
+def test_a_resumed_cluster_run_cancels_what_a_killed_attempt_left_and_keeps_its_record(
+    project, cluster
+):
+    whole = _run(project, "--hpc", "test")
+    assert whole.exit_code == 0, whole.output
+    # an attempt stopped in round 2 ...
+    cluster.hold = lambda f: "round2" in str(f)
+    cluster.on_check = lambda fake, ids: (
+        any(fake.hold(fake.folders[i]) for i in ids)
+        and signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+    )
+    assert _run(project, "--hpc", "test").exit_code == 0
+    _, run = _runs(project)
+    round2 = sorted(
+        i
+        for i, f in cluster.folders.items()
+        if "round2" in str(f) and f.is_relative_to(run)
+    )
+    # ... then killed outright: its round 2 jobs still queued, its lock left
+    cluster.cancelled.clear()
+    record = json.loads((run / "jobs.json").read_text())
+    for job in record["jobs"]:
+        if job["job_id"] in round2:
+            job["state"] = "PENDING"
+    (run / "jobs.json").write_text(json.dumps(record))
+    cluster.hold, cluster.on_check = (lambda f: False), None
+    cluster.queued = set(round2)
+
+    result = CliRunner().invoke(cli, ["resume", "-p", str(project), run.name])
+
+    assert result.exit_code == 0, result.output
+    assert "Cancelled 2 job(s) an earlier attempt left running." in result.output
+    assert sorted(cluster.cancelled) == round2
+    first, _ = _runs(project)
+    for name in ("round0.csv", "round1.csv", "round2.csv", "summary.csv"):
+        pd.testing.assert_frame_equal(
+            pd.read_csv(first / name), pd.read_csv(run / name), check_exact=True
+        )
+    jobs = json.loads((run / "jobs.json").read_text())["jobs"]
+    assert {job["attempt"] for job in jobs} == {1, 2}
+    redone = [job for job in jobs if job["attempt"] == 2]
+    assert {job["stage"] for job in redone} == {
+        "Round 2 · sampling",
+        "Round 2 · annotation",
+    }  # rounds 0 and 1 were read back, not sent again
+    stale = run / "jobs" / "stopped" / "attempt1" / "04-round2-sampling"
+    assert stale.is_dir() and (run / "jobs" / "04-round2-sampling").is_dir()
+    assert all(
+        job["folder"].startswith("jobs/stopped/attempt1/")
+        for job in jobs
+        if job["job_id"] in round2
+    )
+
+
+def test_jobs_json_lists_a_job_while_it_waits(project, cluster):
+    # a run killed outright (preempted) still leaves the ids of its jobs
+    listed = []
+
+    def look(fake, ids):
+        path = _runs(project)[0] / "jobs.json"
+        record = json.loads(path.read_text()) if path.exists() else {"jobs": []}
+        listed.append(set(ids) <= {job["job_id"] for job in record["jobs"]})
+
+    cluster.on_check = look
+
+    assert _run(project, "--hpc", "test").exit_code == 0
+    assert listed and all(listed)
 
 
 def test_problems_found_before_the_run_are_listed_and_nothing_is_sent(project, cluster):

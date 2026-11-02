@@ -14,6 +14,8 @@ def store_root(tmp_path, monkeypatch):
     """
     root = tmp_path / "store"
     monkeypatch.setenv(store.HOME_VARIABLE, str(root))
+    # a suite run inside a Slurm job must not look like a cluster run
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     return root
 
 

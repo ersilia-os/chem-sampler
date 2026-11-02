@@ -269,7 +269,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
     it — a run can be slow and hits the real Ersilia Model Hub. Run it only
     after the user's explicit go-ahead, and ask again if anything changed.
     The same applies to the baseline check in step 6 and to any follow-up
-    round from step 11.
+    round from step 11. A run that stopped (Ctrl-C, a failed model, a closed
+    terminal) is not started over: `chemsampler resume [RUN]` continues it
+    from its finished rounds, with the options it started with. Offer that,
+    with the same go-ahead, rather than a new `run`.
 
 11. **Report the result and check generator performance.** Don't just dump
     `summary.csv`/`round<n>.csv` — interpret them into a short, structured
