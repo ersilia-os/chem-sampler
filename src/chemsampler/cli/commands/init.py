@@ -29,7 +29,7 @@ def _model_folders(models: str | None, envs: str | None) -> tuple[Path, Path]:
     if models is None or envs is None:
         from ... import store
 
-        shared = store.resolve()  # a broken store config raises ValueError
+        shared = store.resolve()  # an old config.json in it raises ValueError
         models = shared.models if models is None else models
         envs = shared.envs if envs is None else envs
     return _absolute(models), _absolute(envs)

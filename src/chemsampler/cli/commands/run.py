@@ -75,7 +75,8 @@ def _save(output_dir: str, summary, candidates_by_round, record: dict) -> None:
     metavar="NAME",
     default=None,
     help="Run every model as a Slurm job, with the cluster profile NAME in "
-    "~/.chemsampler/hpc.json. Default: here, one model at a time.",
+    "hpc.json in chemsampler's folder ($CHEMSAMPLER_HOME, default ~/.chemsampler). "
+    "Default: here, one model at a time.",
 )
 @click.option(
     "--verbose",

@@ -292,22 +292,21 @@ def test_models_given_alone_keep_the_store_environments(here, store_root):
     assert marker["path_to_envs"] == str(store_root / "envs")
 
 
-def test_a_broken_store_setting_stops_init_before_anything_is_made(here, store_root):
+def test_an_old_store_config_stops_init_before_anything_is_made(here, store_root):
     store_root.mkdir()
-    (store_root / "config.json").write_text("[1, 2]")
+    (store_root / "config.json").write_text("{}")
 
     result = init("-p", "run")
 
     assert result.exit_code == 1
     assert "could not create the project" in result.stderr
+    assert "CHEMSAMPLER_HOME" in result.stderr
     assert list(here.iterdir()) == []
 
 
-def test_with_both_folders_given_a_broken_store_setting_does_not_matter(
-    here, store_root
-):
+def test_with_both_folders_given_an_old_store_config_does_not_matter(here, store_root):
     store_root.mkdir()
-    (store_root / "config.json").write_text("[1, 2]")
+    (store_root / "config.json").write_text("{}")
 
     result = init("-p", "run", "--models", "m", "--envs", "e")
 

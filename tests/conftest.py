@@ -7,13 +7,13 @@ from chemsampler.hub.envs import write_marker
 @pytest.fixture(autouse=True)
 def store_root(tmp_path, monkeypatch):
     """
-    Point the store somewhere harmless for every test.
+    Point chemsampler's folder somewhere harmless for every test.
 
     Without this a test would read, and `fetch` would write, the real
-    `~/.chemsampler` of whoever runs the suite.
+    `~/.chemsampler` (or `$CHEMSAMPLER_HOME`) of whoever runs the suite.
     """
     root = tmp_path / "store"
-    monkeypatch.setattr(store, "DEFAULT_STORE", root)
+    monkeypatch.setenv(store.HOME_VARIABLE, str(root))
     return root
 
 

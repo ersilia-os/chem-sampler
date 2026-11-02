@@ -3,7 +3,7 @@
 Each round, the similarity and generative models run as parallel jobs; once all
 are done their candidates are put together, then every annotator (Hub models and
 RDKit ones) runs as its own job, and the round is ranked as a local run would.
-The profiles are in `~/.chemsampler/hpc.json` (see `profiles`).
+The profiles are in `hpc.json` in chemsampler's folder (see `profiles`).
 """
 
 from .executor import SlurmExecutor, prepare

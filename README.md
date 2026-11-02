@@ -38,10 +38,11 @@ chemsampler run --mode sequential --seed-smiles "CCO"
 `init` only creates a new folder; without `-p` it makes a dummy `chemsampler-test`.
 
 ```
-my-run/                       ~/.chemsampler/        the store
+my-run/                       ~/.chemsampler/        the store ($CHEMSAMPLER_HOME)
   chemsampler.json              models/              one git clone per model
   input/                        envs/                one conda environment per model
   rounds/                       logs/                what fetch ran, per model
+                                hpc.json             cluster profiles, if any
 ```
 
 Every location is set once, by `init`, and written to the project's
@@ -60,10 +61,10 @@ shared filesystem), give the folders to `init`:
 chemsampler init -p my-run --models /shared/chemsampler/models --envs /local/envs
 ```
 
-To change the default for every new project, write `~/.chemsampler/config.json`
-(`{"store": "/shared/chemsampler"}`, or `path_to_model_repositories` /
-`path_to_envs` for one folder). To change a project later, edit its
-`chemsampler.json`. Two cautions: **never move or rename these folders** after
+To move the store itself, and so the default of every new project, set
+`CHEMSAMPLER_HOME` (e.g. `export CHEMSAMPLER_HOME=/shared/.chemsampler` in
+`~/.bashrc`); everything chemsampler keeps is in that one folder. To change a
+project later, edit its `chemsampler.json`. Two cautions: **never move or rename these folders** after
 `fetch`, because conda environments record their own path; and prefer a local disk
 for environments, since model start-up was several times slower on a shared
 filesystem in our tests (a cluster run needs them on the shared one, see below).
@@ -109,16 +110,15 @@ terminal waits and says how many jobs are pending, running and done; each round 
 ranked as a local run would rank it. Ctrl-C cancels the run's jobs and keeps the
 rounds already finished.
 
-The cluster is described once, in `~/.chemsampler/hpc.json`, which stays on your
-machine:
+The cluster is described once, in `hpc.json` in the store, never in a project:
 
 ```json
 {"mycluster": {"ssh": "login.example.org", "partition": "cpu",
                "nodes": ["node01", "node02"], "cpus": 4, "mem": "8G", "time": "01:00:00"}}
 ```
 
-The project, the models and their environments must be on a filesystem the nodes
-share, at the same paths; start long runs inside `tmux`. Every key, and what a run
+The project and the store must be on a filesystem the nodes share, at the same
+paths (set `CHEMSAMPLER_HOME` there); start long runs inside `tmux`. Every key, and what a run
 leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 
 ## CLI

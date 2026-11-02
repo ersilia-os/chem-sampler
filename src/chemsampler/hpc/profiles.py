@@ -1,7 +1,8 @@
 """Cluster profiles: how `chemsampler run --hpc NAME` reaches a Slurm cluster.
 
-They live in `~/.chemsampler/hpc.json`, a file of the user on one machine, never
-of a project or of chemsampler itself, since it names hosts and nodes:
+They live in `hpc.json` in chemsampler's folder (`$CHEMSAMPLER_HOME`, or
+`~/.chemsampler`), a file of the user, never of a project or of chemsampler
+itself, since it names hosts and nodes:
 
     {
       "mycluster": {
@@ -54,13 +55,13 @@ class Profile:
 
 
 def profiles_path() -> Path:
-    """The file with the profiles, next to the machine's store settings."""
-    return store.DEFAULT_STORE / HPC_FILE
+    """The file with the profiles, in chemsampler's folder beside the store."""
+    return store.home() / HPC_FILE
 
 
 def load_profile(name: str) -> Profile:
     """
-    Read one profile from `~/.chemsampler/hpc.json`.
+    Read one profile from `hpc.json` in chemsampler's folder.
 
     Raises
     ------

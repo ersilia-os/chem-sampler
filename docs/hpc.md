@@ -27,8 +27,9 @@ are slow; fast models can finish sooner locally.
 
 ## The profile
 
-`~/.chemsampler/hpc.json` maps profile names to clusters. It is a file of your own
-machine: it is not part of a project or of chemsampler. Every key is optional.
+`hpc.json` maps profile names to clusters. It lives in the store, chemsampler's one
+folder (`$CHEMSAMPLER_HOME`, or `~/.chemsampler`), beside `models/` and `envs/`:
+it is yours, not part of a project or of chemsampler. Every key is optional.
 
 | Key | What it does |
 |---|---|
@@ -52,9 +53,9 @@ Several profiles can live in the same file; pick one per run with `--hpc NAME`.
 - the run's folders, the models and their environments are visible from the
   cluster.
 
-The cluster has to see the same paths: put the project, the models and the
-environments on a shared filesystem (`init --models/--envs`, or `store` in
-`~/.chemsampler/config.json`). The nodes need neither conda nor chemsampler. A
+The cluster has to see the same paths: put the project and the store on a shared
+filesystem (`export CHEMSAMPLER_HOME=/shared/.chemsampler`, or one project's
+folders with `init --models/--envs`). The nodes need neither conda nor chemsampler. A
 model runs its own `run.sh` with its environment first on `PATH`; an RDKit
 annotator runs a copy of chemsampler's scoring file with the `rdkit` environment,
 which has chemsampler's own RDKit version, so scores equal a local run's.

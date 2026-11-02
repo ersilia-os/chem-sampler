@@ -691,11 +691,8 @@ def test_plan_fetch_outside_a_project_still_has_somewhere_to_put_models(
     assert plan.envs_dir == store_root / "envs"
 
 
-def test_plan_fetch_follows_a_store_moved_by_the_machine_settings(inputs_dir, tmp_path):
-    from chemsampler import store
-
-    store.config_path().parent.mkdir(parents=True)
-    store.config_path().write_text(json.dumps({"store": str(tmp_path / "shared")}))
+def test_plan_fetch_follows_chemsampler_home(inputs_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("CHEMSAMPLER_HOME", str(tmp_path / "shared"))
 
     plan = plan_fetch(path_to_models=str(inputs_dir))
 
