@@ -14,7 +14,10 @@ itself, since it names hosts and nodes:
       }
     }
 
-Every key is optional. Leave `ssh` out when chemsampler runs where `sbatch` does.
+Every key is optional. Leave `ssh` out when chemsampler runs where `sbatch` does;
+inside a cluster job it is never used. `env` (an environment with chemsampler
+that the nodes see) and `driver` (that job's own resources) are for running the
+run itself as a job, `--detach`.
 """
 
 from dataclasses import dataclass, field
@@ -28,7 +31,22 @@ HPC_FILE = "hpc.json"
 #: What each job asks Slurm for; a profile's `models` can change them per model.
 RESOURCES = ("cpus", "mem", "time")
 
-KEYS = ("ssh", "partition", "nodes", *RESOURCES, "poll_seconds", "models")
+KEYS = (
+    "ssh",
+    "partition",
+    "qos",
+    "nodes",
+    *RESOURCES,
+    "poll_seconds",
+    "models",
+    "env",
+    "driver",
+)
+
+#: What the run's own job (`--detach`) may ask for; unset, the profile's
+#: partition, QoS, nodes and time, one CPU and 2G.
+DRIVER_KEYS = ("partition", "qos", "nodes", *RESOURCES)
+DRIVER_DEFAULTS = {"cpus": 1, "mem": "2G"}
 
 
 @dataclass(frozen=True)
@@ -47,11 +65,27 @@ class Profile:
     poll_seconds: float = 60.0
     #: Per-model resources: model id (or `mw`, `qed`) -> {resource: value}.
     models: dict = field(default_factory=dict)
+    qos: str | None = None
+    #: An environment with chemsampler, visible from the nodes, for `--detach`.
+    env: str | None = None
+    #: The run's own job: any of `DRIVER_KEYS`.
+    driver: dict = field(default_factory=dict)
 
     def resources(self, model_id: str) -> dict:
         """`cpus`, `mem` and `time` for one model: its own, else the profile's."""
         own = self.models.get(model_id, {})
         return {key: own.get(key, getattr(self, key)) for key in RESOURCES}
+
+    def driver_resources(self) -> dict:
+        """Everything the run's own job asks for: `driver`, else the defaults."""
+        # a cluster may require a time limit; the models' is the one known to pass
+        inherited = {
+            "partition": self.partition,
+            "qos": self.qos,
+            "nodes": self.nodes,
+            "time": self.time,
+        }
+        return {**inherited, **DRIVER_DEFAULTS, **self.driver}
 
 
 def profiles_path() -> Path:
@@ -86,13 +120,10 @@ def _parse(name: str, data, where: str) -> Profile:
     unknown = sorted(set(data) - set(KEYS))
     if unknown:
         raise ValueError(f"{where}: unknown key(s) {unknown}; allowed: {list(KEYS)}")
-    for key in ("ssh", "partition"):
+    for key in ("ssh", "partition", "qos", "env"):
         if key in data and not _filled(data[key]):
             raise ValueError(f"{where}: '{key}' must be text")
-    if "nodes" in data and not (
-        is_list_of(data["nodes"], str) and all(map(_filled, data["nodes"]))
-    ):
-        raise ValueError(f"{where}: 'nodes' must be a list of node names")
+    _check_nodes(data, where)
     if "poll_seconds" in data and not (
         isinstance(data["poll_seconds"], (int, float))
         and not isinstance(data["poll_seconds"], bool)
@@ -113,6 +144,21 @@ def _parse(name: str, data, where: str) -> Profile:
                 f"{inner}: unknown key(s) {extra}; allowed: {list(RESOURCES)}"
             )
         _check_resources(own, inner)
+    driver = data.get("driver", {})
+    if not is_object(driver):
+        raise ValueError(f"{where}: 'driver' must be a JSON object")
+    extra = sorted(set(driver) - set(DRIVER_KEYS))
+    if extra:
+        raise ValueError(
+            f"{where}: driver: unknown key(s) {extra}; allowed: {list(DRIVER_KEYS)}"
+        )
+    for key in ("partition", "qos"):
+        if key in driver and not _filled(driver[key]):
+            raise ValueError(f"{where}: driver: '{key}' must be text")
+    _check_nodes(driver, f"{where}: driver")
+    _check_resources(driver, f"{where}: driver")
+    if "nodes" in driver:
+        driver = {**driver, "nodes": tuple(driver["nodes"])}
     return Profile(
         name=name,
         ssh=data.get("ssh"),
@@ -123,7 +169,17 @@ def _parse(name: str, data, where: str) -> Profile:
         time=data.get("time"),
         poll_seconds=float(data.get("poll_seconds", 60.0)),
         models=models,
+        qos=data.get("qos"),
+        env=None if "env" not in data else str(Path(data["env"]).expanduser()),
+        driver=driver,
     )
+
+
+def _check_nodes(data: dict, where: str) -> None:
+    if "nodes" in data and not (
+        is_list_of(data["nodes"], str) and all(map(_filled, data["nodes"]))
+    ):
+        raise ValueError(f"{where}: 'nodes' must be a list of node names")
 
 
 def _check_resources(data: dict, where: str) -> None:

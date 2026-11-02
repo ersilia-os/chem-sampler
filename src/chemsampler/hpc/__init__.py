@@ -3,10 +3,19 @@
 Each round, the similarity and generative models run as parallel jobs; once all
 are done their candidates are put together, then every annotator (Hub models and
 RDKit ones) runs as its own job, and the round is ranked as a local run would.
-The profiles are in `hpc.json` in chemsampler's folder (see `profiles`).
+With `--detach`, the run itself is a job too (see `driver`). The profiles are in
+`hpc.json` in chemsampler's folder (see `profiles`).
 """
 
+from .driver import say_detached, submit_driver
 from .executor import SlurmExecutor, prepare
 from .profiles import Profile, load_profile
 
-__all__ = ["Profile", "SlurmExecutor", "load_profile", "prepare"]
+__all__ = [
+    "Profile",
+    "SlurmExecutor",
+    "load_profile",
+    "prepare",
+    "say_detached",
+    "submit_driver",
+]

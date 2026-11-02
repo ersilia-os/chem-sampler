@@ -56,6 +56,8 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
             )
         if input_dir is not None:
             runs.start(run_dir, input_dir, record)
+        if job_alive is not None:
+            runs.check_driver(record, job_alive)
         runs.take_lock(run_dir, job_alive)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
@@ -112,6 +114,47 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
     runs.set_status(run_dir, record, "finished")
     runs.release_lock(run_dir)
     _report(summary, elapsed, options["verbose"], run_dir)
+
+
+def detach_run(inputs, record: dict, run_dir, project_root, input_dir=None) -> None:
+    """
+    Send the run in `run_dir` to the cluster as a job of its own, and say so.
+
+    `input_dir` is given for a new run, whose folder is made once the cluster has
+    been checked. A run that something still runs, or that a job of its own
+    waits to run, is refused.
+    """
+    from ... import runs
+    from ...hpc import say_detached, submit_driver
+
+    def ready(executor):
+        if input_dir is not None:
+            record["run"]["status"] = "queued"
+            runs.start(run_dir, input_dir, record)
+            return
+        runs.check_driver(record, executor.job_alive)
+        runs.check_lock(run_dir, executor.job_alive)
+        runs.release_lock(run_dir)  # left by a run that is gone
+
+    hpc = record["run"]["hpc"]
+    if hpc is None:
+        click.secho(
+            "--detach sends the run to a cluster as a job: it needs --hpc NAME",
+            fg="red",
+        )
+        sys.exit(1)
+    try:
+        job_id = submit_driver(hpc, inputs, run_dir, project_root, before_submit=ready)
+    except (ValueError, RuntimeError, FileNotFoundError) as e:
+        click.secho(str(e), fg="red")
+        if input_dir is not None and os.path.isdir(run_dir):
+            import shutil
+
+            shutil.rmtree(run_dir)  # a new run that never left: nothing to resume
+        sys.exit(1)
+    record["run"]["driver_job"] = job_id
+    runs.set_status(run_dir, record, "queued")
+    say_detached(run_dir, job_id)
 
 
 def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
@@ -198,6 +241,14 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
     "Default: here, one model at a time.",
 )
 @click.option(
+    "--detach",
+    is_flag=True,
+    default=False,
+    help="With --hpc: send the run itself to the cluster as a small job (the "
+    "profile's 'env' and 'driver') and return; it resumes by itself after a "
+    "preemption. Follow it in the run's run.log.",
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -214,6 +265,7 @@ def run_cmd(
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
     hpc: str | None,
+    detach: bool,
     verbose: bool,
 ) -> None:
     """Generate and score candidate molecules across rounds, saving the result.
@@ -254,4 +306,8 @@ def run_cmd(
             "status": "running",
         },
     }
-    execute(inputs, record, inputs.new_round_dir(), Project.load(root).input)
+    run_dir, input_dir = inputs.new_round_dir(), Project.load(root).input
+    if detach:
+        detach_run(inputs, record, run_dir, root, input_dir)
+    else:
+        execute(inputs, record, run_dir, input_dir)

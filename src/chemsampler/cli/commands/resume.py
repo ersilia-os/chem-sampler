@@ -11,7 +11,14 @@ from ..options import project_option
 )
 @project_option
 @click.argument("run", required=False)
-def resume_cmd(path: str | None, run: str | None) -> None:
+@click.option(
+    "--detach",
+    is_flag=True,
+    default=False,
+    help="Send it to the cluster as a job of its own, as `run --detach` does "
+    "(a run that used --hpc only).",
+)
+def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
     """Continue a run that stopped: Ctrl-C, a failed model, a closed terminal, a
     preempted or cancelled cluster job.
 
@@ -24,7 +31,7 @@ def resume_cmd(path: str | None, run: str | None) -> None:
     from ...config import load_inputs
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger
-    from .run import execute
+    from .run import detach_run, execute
 
     try:
         root = locate_project(path)
@@ -53,5 +60,8 @@ def resume_cmd(path: str | None, run: str | None) -> None:
         click.secho(str(e), fg="red")
         sys.exit(1)
 
+    if detach:
+        detach_run(inputs, record, run_dir, root)
+        return
     click.echo(f"Resuming {run_dir.name} ({record['run']['status']}).")
     execute(inputs, record, run_dir)

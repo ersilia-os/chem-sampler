@@ -22,6 +22,7 @@ from chemsampler.hpc.slurm import (
     RUNNING,
     Cluster,
     JobState,
+    driver_argv,
     parse_states,
     sbatch_argv,
 )
@@ -91,6 +92,7 @@ class FakeCluster:
         self.cancelled, self.preflights, self.problems = [], [], []
         self.hold = lambda folder: False
         self.queued = set()  # job ids that stay pending until cancelled
+        self.placements = []
         self.on_check = None
 
     def __call__(self, profile):  # used in place of the Cluster class
@@ -141,8 +143,9 @@ class FakeCluster:
     def cancel(self, ids):
         self.cancelled.extend(ids)
 
-    def preflight(self, folders):
+    def preflight(self, folders, partition=None, nodes=None):
         self.preflights.append([str(f) for f in folders])
+        self.placements.append((partition, nodes))
         return list(self.problems)
 
 
@@ -355,6 +358,112 @@ def test_jobs_json_lists_a_job_while_it_waits(project, cluster):
     assert listed and all(listed)
 
 
+# --- the run itself as a job (--detach) ------------------------------------------------
+
+
+def _with_env(project, store_root, **driver):
+    """Give the test profile an environment with chemsampler (and driver settings)."""
+    env = store_root / "chemsampler-env"
+    (env / "bin").mkdir(parents=True)
+    (env / "bin" / "chemsampler").write_text("#!/bin/bash\n")
+    profiles = json.loads((store_root / "hpc.json").read_text())
+    profiles["test"].update(env=str(env), driver=driver)
+    (store_root / "hpc.json").write_text(json.dumps(profiles))
+    return env
+
+
+def _resume(project, *args, **env):
+    return CliRunner().invoke(cli, ["resume", "-p", str(project), *args], env=env)
+
+
+def test_a_detached_run_is_sent_as_one_job_that_resumes_it(
+    project, cluster, store_root
+):
+    env = _with_env(project, store_root, partition="other", nodes=["node-c"])
+
+    result = _run(project, "--hpc", "test", "--detach")
+
+    assert result.exit_code == 0, result.output
+    [run] = _runs(project)
+    [argv] = cluster.argvs  # only the run's own job: no model ran here
+    assert argv[-1] == f"{run}/driver.sh" and "--requeue" in argv
+    [job_id] = cluster.folders
+    assert f"Slurm job {job_id}" in result.output
+    assert f"tail -f {run / 'run.log'}" in result.output
+    assert f"scancel {job_id}" in result.output
+    assert f"chemsampler resume {run.name} --detach" in result.output
+    record = json.loads((run / "inputs.json").read_text())["run"]
+    assert record["status"] == "queued" and record["driver_job"] == job_id
+    assert (run / "input" / "annotators.csv").is_file()
+    assert not list(run.glob("round*.csv"))
+    script = (run / "driver.sh").read_text()
+    assert f'export PATH={env}/bin:"$PATH"' in script
+    assert f"export CHEMSAMPLER_HOME={store_root}" in script
+    assert f"exec chemsampler resume -p {project} {run.name}" in script
+    # the cluster sees the env and the store, on the partition the job goes to
+    assert [str(env), str(store_root)] in cluster.preflights
+    assert ("other", ("node-c",)) in cluster.placements
+
+
+def test_the_run_s_own_job_runs_it_where_slurm_is(project, cluster, store_root):
+    _with_env(project, store_root)
+    assert _run(project, "--hpc", "test", "--detach").exit_code == 0
+    [run] = _runs(project)
+    [job_id] = cluster.folders
+    cluster.queued.add(job_id)  # it is running: it is the job below
+
+    result = _resume(project, run.name, SLURM_JOB_ID=job_id)
+
+    assert result.exit_code == 0, result.output
+    assert "Resuming" in result.output and "(queued)" in result.output
+    assert json.loads((run / "inputs.json").read_text())["run"]["status"] == "finished"
+    assert (run / "summary.csv").is_file()
+
+
+def test_a_run_waiting_as_a_job_is_not_run_twice(project, cluster, store_root):
+    _with_env(project, store_root)
+    assert _run(project, "--hpc", "test", "--detach").exit_code == 0
+    [run] = _runs(project)
+    [job_id] = cluster.folders
+    cluster.queued.add(job_id)  # still in the queue: no lock yet
+
+    here = _resume(project, run.name)
+    again = _resume(project, run.name, "--detach")
+
+    for result in (here, again):
+        assert result.exit_code == 1
+        assert f"queued or running as Slurm job {job_id}" in result.output
+    assert len(cluster.argvs) == 1
+    cluster.cancelled.append(job_id)  # scancel: now it can be sent again
+    assert _resume(project, run.name, "--detach").exit_code == 0
+    assert len(cluster.argvs) == 2
+
+
+def test_a_new_run_whose_job_is_refused_leaves_no_folder(
+    project, cluster, store_root, monkeypatch
+):
+    _with_env(project, store_root)
+
+    def refuse(argvs):
+        raise RuntimeError("sbatch: error: Time limit specification required")
+
+    monkeypatch.setattr(cluster, "submit", refuse)
+
+    result = _run(project, "--hpc", "test", "--detach")
+
+    assert result.exit_code == 1 and "Time limit specification" in result.output
+    assert not list((project / "rounds").iterdir())
+
+
+def test_detaching_needs_a_cluster_and_an_env(project, cluster, store_root):
+    without_hpc = _run(project, "--detach")
+    without_env = _run(project, "--hpc", "test", "--detach")
+
+    assert without_hpc.exit_code == 1 and "it needs --hpc NAME" in without_hpc.output
+    assert without_env.exit_code == 1 and "has no 'env'" in without_env.output
+    assert cluster.argvs == [] and not list((project / "rounds").iterdir())
+
+
 def test_problems_found_before_the_run_are_listed_and_nothing_is_sent(project, cluster):
     cluster.problems = ["no node node-b", "the cluster cannot see /somewhere"]
 
@@ -433,6 +542,10 @@ def test_without_a_profiles_file_it_says_where_to_write_one(store_root):
         ({"mem": 8}, "'mem' must be text"),
         ({"poll_seconds": -1}, "'poll_seconds' must be a number"),
         ({"models": {"eos8nyg": {"gpus": 1}}}, r"models.eos8nyg: unknown key"),
+        ({"env": 3}, "'env' must be text"),
+        ({"driver": {"gpus": 1}}, r"driver: unknown key"),
+        ({"driver": {"cpus": 0}}, "driver: 'cpus' must be a whole number"),
+        ({"driver": {"nodes": "node-a"}}, "driver: 'nodes' must be a list"),
     ],
 )
 def test_a_malformed_profile_is_explained(store_root, profile, message):
@@ -449,6 +562,7 @@ def test_sbatch_asks_for_the_profile_s_nodes_and_the_model_s_resources():
     profile = Profile(
         "c",
         partition="spot",
+        qos="low",
         nodes=("node-a", "node-b"),
         cpus=2,
         mem="4G",
@@ -465,6 +579,7 @@ def test_sbatch_asks_for_the_profile_s_nodes_and_the_model_s_resources():
         "--cpus-per-task=8",
         "--requeue",
         "--partition=spot",
+        "--qos=low",
         "--nodelist=node-a,node-b",
         "--mem=4G",
         "--time=02:00:00",
@@ -531,6 +646,74 @@ def test_commands_go_over_ssh_when_the_profile_names_a_host(monkeypatch):
     assert over_ssh[0] == "ssh" and "BatchMode=yes" in over_ssh
     assert over_ssh[-2:] == ["login", "bash -s"] and "sbatch --parsable j.sh" in script
     assert here == ["bash", "-s"] and cancel.strip() == "scancel 4242"
+
+
+def test_the_checks_can_look_at_another_partition_and_nodes(monkeypatch):
+    scripts = []
+
+    def run(argv, **kwargs):
+        scripts.append(kwargs["input"])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("chemsampler.hpc.slurm.subprocess.run", run)
+    cluster = Cluster(Profile("c", partition="spot", nodes=("node-a",)))
+
+    cluster.preflight(["/x"])
+    cluster.preflight(["/x"], partition="other", nodes=("node-c",))
+
+    profiles, driver = scripts
+    assert "-p spot" in profiles and "-n node-a" in profiles
+    assert "-p other" in driver and "-n node-c" in driver
+    assert "spot" not in driver and "node-a" not in driver
+
+
+def test_inside_a_cluster_job_slurm_is_never_reached_over_ssh(monkeypatch):
+    # the run's own job (--detach) uses the same profile as the machine it came from
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("chemsampler.hpc.slurm.subprocess.run", run)
+    monkeypatch.setenv("SLURM_JOB_ID", "77")
+
+    Cluster(Profile("c", ssh="login")).cancel(["4242"])
+
+    assert calls == [["bash", "-s"]]
+
+
+def test_the_run_s_own_job_asks_for_its_resources_and_restarts_after_preemption():
+    profile = Profile(
+        "c",
+        partition="spot",
+        qos="low",
+        nodes=("node-a",),
+        cpus=4,
+        mem="8G",
+        time="01:00:00",
+        driver={"mem": "4G", "nodes": ("node-b",)},
+    )
+
+    argv = driver_argv(profile, "/runs/x")
+
+    assert argv[:2] == ["sbatch", "--parsable"] and argv[-1] == "/runs/x/driver.sh"
+    for expected in [
+        "--job-name=chemsampler",
+        "--cpus-per-task=1",  # not the models' 4
+        "--requeue",
+        "--open-mode=append",
+        "--output=/runs/x/run.log",
+        "--error=/runs/x/run.log",
+        "--partition=spot",
+        "--qos=low",
+        "--mem=4G",
+        "--nodelist=node-b",
+        "--time=01:00:00",  # the profile's, unless driver.time says otherwise
+    ]:
+        assert expected in argv
+    longer = Profile("c", time="01:00:00", driver={"time": "3-00:00:00"})
+    assert "--time=3-00:00:00" in driver_argv(longer, "/runs/x")
 
 
 def test_a_job_that_stops_halfway_leaves_no_output(tmp_path):

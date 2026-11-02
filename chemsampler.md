@@ -249,6 +249,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      model as a Slurm job using a profile from `hpc.json` in the store (see
      `docs/hpc.md`). Mention it only if the user has a cluster profile. Its
      queue waits make it worth it only for slow models; that is the user's call.
+     With `--detach` the run itself becomes a job (the profile needs `env`):
+     the command returns at once and the run is followed in its `run.log`.
 
    Every Hub model runs from its clone, in its own conda environment, both of
    which `chemsampler fetch` puts in the machine's store (`~/.chemsampler`, or

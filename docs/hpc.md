@@ -35,13 +35,18 @@ it is yours, not part of a project or of chemsampler. Every key is optional.
 |---|---|
 | `ssh` | Host (or `~/.ssh/config` alias) of a login node with Slurm. Leave it out when chemsampler runs where `sbatch` does. Keys only: it runs with `BatchMode=yes`. |
 | `partition` | `--partition` for every job. |
+| `qos` | `--qos` for every job. |
 | `nodes` | List of nodes, passed as `--nodelist` with `--nodes=1`, so that a job may run on any of them. |
 | `cpus` | `--cpus-per-task` (default 1). The thread limits of the job (`OMP_NUM_THREADS` and others) follow it. |
 | `mem`, `time` | `--mem` and `--time`, as sbatch takes them (`"8G"`, `"01:00:00"`). |
 | `poll_seconds` | How often the jobs are checked (default 60). |
 | `models` | Resources per model, e.g. `{"eos8nyg": {"mem": "16G"}, "qed": {"cpus": 1}}`. |
+| `env` | For `--detach`: an environment with chemsampler, at a path the nodes see. |
+| `driver` | For `--detach`: the run's own job, any of `partition`, `qos`, `nodes`, `cpus`, `mem`, `time`. By default the profile's partition, QoS, nodes and `time`, 1 CPU and `2G`; give it a `time` long enough for a whole run. |
 
 Several profiles can live in the same file; pick one per run with `--hpc NAME`.
+Inside a cluster job `ssh` is never used, so the same profile serves the machine
+you start from and the run's own job.
 
 ## Before the first job
 
@@ -91,6 +96,27 @@ Every round is saved as soon as it is ranked, so a stopped run is never lost:
   `screen`. If it happens anyway, `resume` cancels what the run left on the
   cluster before going on.
 
+## The run itself as a job (`--detach`)
+
+`run --hpc NAME --detach` checks everything a run checks, makes the run's
+folder, and sends one small job that runs `chemsampler resume` on it; then it
+returns, printing the job id and how to follow, stop and continue the run.
+Nothing then depends on the machine you started from or on your connection to
+it.
+
+- **Follow it:** `tail -f rounds/<run>/run.log`, from any machine that sees the
+  project. Each start of the job adds to the log, with a header line.
+- **Preemption:** the job is submitted with `--requeue`. Preempted, it receives
+  SIGTERM, cancels the run's jobs and goes back to the queue; when it starts
+  again it resumes the run from its finished rounds. Killed outright, the next
+  start cancels what it left.
+- **Stop it:** `scancel <job id>`; the run stops as with Ctrl-C.
+  `chemsampler resume RUN --detach` sends it again, `resume RUN` runs it in your
+  terminal.
+- **The environment** (`env`) needs chemsampler and its dependencies; build it
+  with conda on a path the nodes see. If it is an editable install of a clone,
+  a job that starts again runs the clone's code as it is then.
+
 ## Resuming a run
 
 `chemsampler resume [RUN]` (the latest run by default) continues a run with the
@@ -103,5 +129,5 @@ inputs and options it started with, including its profile:
   `jobs/stopped/attempt<n>/`, and `jobs.json` keeps every attempt's jobs.
 - Jobs an earlier attempt left on the cluster are cancelled first.
 - `run.lock` in the run folder says who runs it. `resume` refuses a run that is
-  still going (a live process, or a Slurm job still queued or running) and says
-  how to stop it.
+  still going (a live process, a Slurm job running it, or its own `--detach` job
+  still waiting in the queue) and says how to stop it.

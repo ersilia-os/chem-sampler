@@ -123,7 +123,10 @@ The cluster is described once, in `hpc.json` in the store, never in a project:
 ```
 
 The project and the store must be on a filesystem the nodes share, at the same
-paths (set `CHEMSAMPLER_HOME` there); start long runs inside `tmux`. Every key, and what a run
+paths (set `CHEMSAMPLER_HOME` there); start long runs inside `tmux`. Or add
+`--detach`: the run itself becomes a small job (`env` and `driver` in the
+profile), writes what it would print to `run.log` in its folder, and resumes by
+itself if the cluster preempts it. Every key, and what a run
 leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 
 ## CLI
@@ -141,6 +144,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ
 chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
 chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster   # models as Slurm jobs
+chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster --detach   # the run is a job too
 chemsampler resume                               # continue the latest run where it stopped
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed

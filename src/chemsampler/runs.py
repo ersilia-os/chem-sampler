@@ -138,6 +138,26 @@ def check_lock(run_dir, job_alive=None) -> None:
     )
 
 
+def check_driver(record: dict, job_alive) -> None:
+    """
+    Refuse to run a run that its own cluster job (`--detach`) still runs or waits to.
+
+    A job still in the queue holds no lock yet, so the lock alone cannot tell.
+
+    Raises
+    ------
+    ValueError
+        If `record` names a driver job, other than this one, that is pending or
+        running.
+    """
+    job = record["run"].get("driver_job")
+    if job and job != os.environ.get("SLURM_JOB_ID") and job_alive(job):
+        raise ValueError(
+            f"the run is queued or running as Slurm job {job}; stop it with "
+            f"`scancel {job}` first"
+        )
+
+
 def release_lock(run_dir) -> None:
     (Path(run_dir) / LOCK_FILE).unlink(missing_ok=True)
 

@@ -5,6 +5,7 @@ node a profile names with `ssh <host> bash -s`. Reading what Slurm answers is
 done by pure functions, so it can be tested without a cluster.
 """
 
+import os
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -58,15 +59,41 @@ def sbatch_argv(profile: Profile, model_id: str, name: str, folder) -> list[str]
         f"--output={folder}/slurm.out",
         f"--error={folder}/slurm.err",
     ]
-    if profile.partition:
-        argv.append(f"--partition={profile.partition}")
-    if profile.nodes:
-        argv.append(f"--nodelist={','.join(profile.nodes)}")
-    if wants["mem"]:
-        argv.append(f"--mem={wants['mem']}")
-    if wants["time"]:
-        argv.append(f"--time={wants['time']}")
+    where = {"partition": profile.partition, "qos": profile.qos, "nodes": profile.nodes}
+    argv += _placement({**where, **wants})
     argv.append(f"{folder}/job.sh")
+    return argv
+
+
+def driver_argv(profile: Profile, run_dir) -> list[str]:
+    """The `sbatch` command for the run's own job (`driver.sh` in `run_dir`)."""
+    log = f"{run_dir}/run.log"
+    argv = [
+        "sbatch",
+        "--parsable",
+        "--job-name=chemsampler",
+        "--nodes=1",
+        "--ntasks=1",
+        f"--cpus-per-task={profile.driver_resources()['cpus']}",
+        # preempted, it goes back to the queue and resumes the run where it was
+        "--requeue",
+        # every start writes after the last one, not over it
+        "--open-mode=append",
+        f"--output={log}",
+        f"--error={log}",
+    ]
+    argv += _placement(profile.driver_resources())
+    argv.append(f"{run_dir}/driver.sh")
+    return argv
+
+
+def _placement(wants: dict) -> list[str]:
+    argv = []
+    for key in ("partition", "qos", "mem", "time"):
+        if wants[key]:
+            argv.append(f"--{key}={wants[key]}")
+    if wants["nodes"]:
+        argv.append(f"--nodelist={','.join(wants['nodes'])}")
     return argv
 
 
@@ -129,12 +156,17 @@ class Cluster:
         self.profile = profile
 
     @property
+    def here(self) -> bool:
+        """Whether Slurm is on this machine: no `ssh`, or inside a cluster job."""
+        return self.profile.ssh is None or bool(os.environ.get("SLURM_JOB_ID"))
+
+    @property
     def where(self) -> str:
-        return "this machine" if self.profile.ssh is None else self.profile.ssh
+        return "this machine" if self.here else self.profile.ssh
 
     def shell(self, script: str) -> str:
         """Run a bash script where Slurm is; return what it printed."""
-        if self.profile.ssh is None:
+        if self.here:
             argv = ["bash", "-s"]
         else:
             argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=30"]
@@ -171,24 +203,26 @@ class Cluster:
     def cancel(self, job_ids: list[str]) -> None:
         self.shell("scancel " + " ".join(shlex.quote(i) for i in job_ids) + "\n")
 
-    def preflight(self, folders) -> list[str]:
+    def preflight(self, folders, partition=None, nodes=None) -> list[str]:
         """
         Problems that would stop jobs from running, one line each (none: ready):
-        missing Slurm commands, an unknown partition or node, a folder the
-        cluster cannot see.
+        missing Slurm commands, an unknown partition or node (the profile's,
+        unless others are given), a folder the cluster cannot see.
         """
+        partition = partition or self.profile.partition
+        nodes = self.profile.nodes if nodes is None else nodes
         lines = [
             "for c in sbatch squeue sacct scancel sinfo; do",
             '  command -v "$c" >/dev/null || echo "Slurm command not found: $c"',
             "done",
         ]
-        if self.profile.partition:
-            p = shlex.quote(self.profile.partition)
+        if partition:
+            p = shlex.quote(partition)
             lines.append(
                 f'[ -n "$(sinfo -h -p {p} -o %P 2>/dev/null)" ] '
-                f"|| echo 'no partition {self.profile.partition}'"
+                f"|| echo 'no partition {partition}'"
             )
-        for node in self.profile.nodes:
+        for node in nodes:
             n = shlex.quote(node)
             lines.append(
                 f"[ -n \"$(sinfo -h -n {n} -o %N 2>/dev/null)\" ] || echo 'no node {node}'"
