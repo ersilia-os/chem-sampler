@@ -111,7 +111,8 @@ class FakeCluster:
         found = {}
         for job_id in ids:
             folder = self.folders[job_id]
-            if job_id in self.cancelled:
+            if job_id in self.cancelled:  # sacct keeps it, as Slurm does
+                found[job_id] = JobState(job_id, "CANCELLED", FAILED)
                 continue
             if self.hold(folder):
                 found[job_id] = JobState(job_id, "PENDING", PENDING)
@@ -252,6 +253,9 @@ def test_a_failed_job_stops_the_run_cancels_the_rest_and_keeps_finished_rounds(
     assert "Cancelled 1 job(s) still on the cluster." in result.output
     [run] = _runs(project)
     assert pd.read_csv(run / "summary.csv")["round"].tolist() == [0, 1]
+    record = json.loads((run / "jobs.json").read_text())
+    states = {job["job_id"]: job["state"] for job in record["jobs"]}
+    assert states[held] == "CANCELLED"
 
 
 def test_ctrl_c_cancels_the_jobs_on_the_cluster_and_keeps_finished_rounds(
@@ -276,6 +280,9 @@ def test_ctrl_c_cancels_the_jobs_on_the_cluster_and_keeps_finished_rounds(
     assert round2 and sorted(cluster.cancelled) == round2
     [run] = _runs(project)
     assert pd.read_csv(run / "summary.csv")["round"].tolist() == [0, 1]
+    record = json.loads((run / "jobs.json").read_text())
+    states = {job["job_id"]: job["state"] for job in record["jobs"]}
+    assert all(states[i] == "CANCELLED" for i in round2)
 
 
 def test_problems_found_before_the_run_are_listed_and_nothing_is_sent(project, cluster):

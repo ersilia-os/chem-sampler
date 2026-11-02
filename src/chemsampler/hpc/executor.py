@@ -141,10 +141,21 @@ class SlurmExecutor:
             try:
                 self.cluster.cancel(unfinished)
                 self.say(f"Cancelled {len(unfinished)} job(s) still on the cluster.")
+                self._last_look(unfinished)
             except RuntimeError as e:
                 self.say(f"Could not cancel job(s) {', '.join(unfinished)}: {e}")
         self._write_record()
         return False
+
+    def _last_look(self, ids: list[str]) -> None:
+        """Ask once more, so `jobs.json` says CANCELLED rather than what was last seen."""
+        try:
+            states = self.cluster.states(ids)
+        except RuntimeError:
+            return  # the record keeps what was last known
+        for job in self._jobs:
+            if job.job_id in states:
+                job.state = states[job.job_id]
 
     # --- jobs -----------------------------------------------------------------------
 
