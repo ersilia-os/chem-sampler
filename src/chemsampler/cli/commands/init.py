@@ -42,28 +42,20 @@ def _model_folders(models: str | None, envs: str | None) -> tuple[Path, Path]:
     "-p",
     "--path",
     type=click.Path(),
-    help=f"Folder to create (default: ./{DEFAULT_NAME}, a dummy project).",
+    help=f"Folder to create (default: ./{DEFAULT_NAME}).",
 )
 @click.option(
     "--models",
     type=click.Path(file_okay=False),
-    help="Where `chemsampler fetch` clones the models. Default: this machine's "
-    "store, shared by every project.",
+    help="Where fetch clones the models (default: the store, see `chemsampler store`).",
 )
 @click.option(
     "--envs",
     type=click.Path(file_okay=False),
-    help="Where `chemsampler fetch` builds their conda environments; prefer a "
-    "local disk. Default: this machine's store.",
+    help="Where fetch builds their environments (default: the store).",
 )
 def init_cmd(path: str | None, models: str | None, envs: str | None) -> None:
-    """Create a NEW project folder for one analysis's inputs and results.
-
-    Without --path it makes ./chemsampler-test, a dummy project to try things in.
-    A path that already exists is never written into: init says so and stops.
-    Every location goes into the project's chemsampler.json, so the other
-    commands need only the project; edit that file to change one later.
-    """
+    """Create a new project folder (input/ and rounds/) for one analysis."""
     from ...project import create_project, find_project
 
     # abspath, not resolve: a dangling symlink must count as taken, not be followed

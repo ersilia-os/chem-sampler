@@ -68,7 +68,7 @@ def _show_table(result, pool, entry, model, version, column, direction) -> None:
 @click.option(
     "--version",
     required=True,
-    help="Stored version, e.g. v2. Versions of one model can give different results.",
+    help="Stored version, e.g. v2.",
 )
 @click.option("--column", required=True, help="Output column of the model.")
 @click.option(
@@ -87,15 +87,7 @@ def _show_table(result, pool, entry, model, version, column, direction) -> None:
 def suggest_cmd(
     model: str, version: str, column: str, direction: str, top: int
 ) -> None:
-    """Developer tool: the compounds with the highest or lowest value of one column.
-
-    Only for annotation models (the ones that give scores); representation and
-    sampling models are refused. Reads the precalculations isaura holds for the
-    Ersilia Reference Library, so no model is run. Needs `pip install
-    chemsampler[isaura]` and `isaura configure --remote`. At a terminal it shows a
-    table; redirected or piped it prints plain CSV (smiles, COLUMN), to keep as
-    seeds for `chemsampler run`.
-    """
+    """Developer tool: top compounds by one model column, from isaura (chemsampler[isaura])."""
     from ...hub.precalc import (
         PrecalcError,
         open_isaura,

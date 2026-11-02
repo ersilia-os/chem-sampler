@@ -14,14 +14,11 @@ from ..options import project_option
     "--update",
     is_flag=True,
     default=False,
-    help="Bring existing models up to date: pull clones that are behind "
-    "(fast-forward only; a clone with local changes is never touched) and rebuild "
-    "environments that differ from their recipe. Without it, they are only checked.",
+    help="Also pull clones that are behind and rebuild environments that differ "
+    "from their recipe.",
 )
 def fetch_cmd(path: str | None, update: bool) -> None:
-    """Get the models a project needs: clone each one, download its checkpoints
-    and build its conda environment, in the folders the project names.
-    """
+    """Clone the project's models, download their checkpoints and build their environments."""
     from ...config import plan_fetch
     from ...hub.fetch import check_prerequisites, fetch_models, summarize
     from ...project import PROJECT_FILE, locate_project

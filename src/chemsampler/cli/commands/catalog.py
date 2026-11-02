@@ -18,8 +18,7 @@ _ROLES = ["generators", "similarity", "annotators"]
     "--hub",
     is_flag=True,
     default=False,
-    help="List what the Ersilia Model Hub offers (from the bundled catalog) "
-    "instead of what this machine has.",
+    help="List what the Ersilia Model Hub offers instead.",
 )
 @click.option(
     "--role",
@@ -31,15 +30,10 @@ _ROLES = ["generators", "similarity", "annotators"]
     "--update",
     is_flag=True,
     default=False,
-    help="Rebuild the bundled catalog from the Hub (about 20 s, needs a network) "
-    "and report which models are new or gone.",
+    help="Rebuild the bundled catalog from the Hub (needs a network).",
 )
 def catalog_cmd(path: str | None, hub: bool, role: str | None, update: bool) -> None:
-    """List the models on this machine, or those the Hub offers, or refresh the catalog.
-
-    In a project, the listing is of the project's folders and marks what it needs;
-    elsewhere, of this machine's store.
-    """
+    """List the models here or on the Hub; refresh the bundled catalog."""
     if update:
         if hub or role:
             click.secho("--update cannot be combined with --hub or --role.", fg="red")

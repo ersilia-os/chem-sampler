@@ -204,55 +204,59 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
 @click.option(
     "--original-seed-smiles",
     default=None,
-    help="SMILES of the true original molecule in a manually re-seeded chain "
-    "of runs. Adds a tanimoto_to_original_seed column, independent of "
-    "--seed-smiles.",
+    help="Original molecule of a re-seeded chain of runs (adds "
+    "tanimoto_to_original_seed).",
 )
-@click.option("--n-rounds", default=5, show_default=True, type=int)
+@click.option(
+    "--n-rounds",
+    default=5,
+    show_default=True,
+    type=int,
+    help="Most rounds (per stage in sequential, per step in incremental).",
+)
 @click.option(
     "--n-steps",
     default=None,
     type=int,
-    help="Number of interpolation levels per annotator. Required for "
-    "--mode incremental; unused (and rejected) otherwise.",
+    help="Levels per annotator (--mode incremental only).",
 )
-@click.option("--tolerance", default=0.0, show_default=True, type=float)
+@click.option(
+    "--tolerance",
+    default=0.0,
+    show_default=True,
+    type=float,
+    help="How much a round must improve on the best to count.",
+)
 @click.option(
     "--tanimoto-cutoff",
     default=None,
     type=float,
-    help="Similarity cutoff vs --seed-smiles, gated by --tanimoto-direction. "
-    "Requires --seed-smiles.",
+    help="Similarity to the seed that candidates must respect.",
 )
 @click.option(
     "--tanimoto-direction",
     type=click.Choice(["higher", "lower"]),
     default="higher",
     show_default=True,
-    help="'higher' keeps candidates at least this similar to the seed; "
-    "'lower' pushes toward novelty (at most this similar).",
+    help="higher: at least this similar; lower: at most.",
 )
 @click.option(
     "--hpc",
     metavar="NAME",
     default=None,
-    help="Run every model as a Slurm job, with the cluster profile NAME in "
-    "hpc.json in chemsampler's folder ($CHEMSAMPLER_HOME, default ~/.chemsampler). "
-    "Default: here, one model at a time.",
+    help="Run the models as Slurm jobs with this cluster profile (see docs/hpc.md).",
 )
 @click.option(
     "--detach",
     is_flag=True,
     default=False,
-    help="With --hpc: send the run itself to the cluster as a small job (the "
-    "profile's 'env' and 'driver') and return; it resumes by itself after a "
-    "preemption. Follow it in the run's run.log.",
+    help="With --hpc: make the run itself a cluster job and return.",
 )
 @click.option(
     "--verbose",
     is_flag=True,
     default=False,
-    help="Show detailed logs with timestamps and all model calls. Default: clean progress output.",
+    help="Show every model call, with timestamps.",
 )
 def run_cmd(
     path: str | None,
@@ -268,13 +272,7 @@ def run_cmd(
     detach: bool,
     verbose: bool,
 ) -> None:
-    """Generate and score candidate molecules across rounds, saving the result.
-
-    The models and folders are the project's; each run writes a new dated folder
-    under its rounds/, round by round, so a stopped run can be continued with
-    `chemsampler resume`. With --hpc, each round's models run as parallel jobs on
-    a cluster (see docs/hpc.md).
-    """
+    """Generate and score candidates around a seed, round by round."""
     from ...config import load_inputs
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger

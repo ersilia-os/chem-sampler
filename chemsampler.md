@@ -254,7 +254,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 
    Every Hub model runs from its clone, in its own conda environment, both of
    which `chemsampler fetch` puts in the machine's store (`~/.chemsampler`, or
-   `$CHEMSAMPLER_HOME`, shared by every project; `chemsampler catalog` lists what is there and
+   `$CHEMSAMPLER_HOME`, shared by every project; `chemsampler store` says where
+   it is and how to move it, `chemsampler catalog` lists what is there and
    whether each environment is ready). If a model is missing, `run` says to use
    `chemsampler fetch`: relay that and let the user decide whether to fetch it.
 

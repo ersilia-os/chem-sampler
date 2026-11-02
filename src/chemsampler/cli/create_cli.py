@@ -1,7 +1,16 @@
 import click
 
 #: The order a user needs the commands in, rather than alphabetical.
-_COMMAND_ORDER = ("init", "fetch", "run", "resume", "annotate", "catalog", "suggest")
+_COMMAND_ORDER = (
+    "init",
+    "fetch",
+    "run",
+    "resume",
+    "annotate",
+    "catalog",
+    "store",
+    "suggest",
+)
 
 _EPILOG = """\b
 Typical use:
@@ -40,6 +49,7 @@ def create_cli() -> click.Group:
         init,
         resume,
         run,
+        store,
         suggest,
     )
 

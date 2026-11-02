@@ -139,6 +139,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
 | `chemsampler catalog` | List the models on this machine; `--hub` lists what the Hub offers, `--update` refreshes the bundled catalog. |
+| `chemsampler store` | Show where models, environments and cluster profiles are kept, and how to move them. |
 
 ```bash
 chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ

@@ -15,18 +15,10 @@ from ..options import project_option
     "--detach",
     is_flag=True,
     default=False,
-    help="Send it to the cluster as a job of its own, as `run --detach` does "
-    "(a run that used --hpc only).",
+    help="Continue it as a cluster job (runs that used --hpc).",
 )
 def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
-    """Continue a run that stopped: Ctrl-C, a failed model, a closed terminal, a
-    preempted or cancelled cluster job.
-
-    RUN is one of the project's runs (a folder of rounds/, or its path); without
-    it, the latest. The rounds it finished are read back from its folder, not run
-    again, and the one it was in is run again whole, with the inputs and options
-    the run started with (including --hpc).
-    """
+    """Continue a stopped run from the rounds it finished (default: the latest run)."""
     from ... import runs
     from ...config import load_inputs
     from ...project import PROJECT_FILE, Project, locate_project

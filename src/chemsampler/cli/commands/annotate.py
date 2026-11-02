@@ -14,14 +14,13 @@ from ..options import project_option
     "--source",
     type=click.Choice(["ersilia", "rdkit"]),
     default=None,
-    help="With --model: score against one annotator only, no cutoff. Needs no project.",
+    help="With --model: ersilia (a Hub model) or rdkit.",
 )
 @click.option(
     "--model",
     "model_id",
     default=None,
-    help="With --source: an Ersilia Hub model id, or an in-house name (mw, qed). "
-    "Prints its raw value only.",
+    help="Score with this one model instead (a Hub id, or mw / qed).",
 )
 @click.option("--smiles", required=True, help="SMILES of the molecule to score.")
 def annotate_cmd(
@@ -30,11 +29,7 @@ def annotate_cmd(
     model_id: str | None,
     smiles: str,
 ) -> None:
-    """Score a single molecule against the project's annotators, or a single model.
-
-    With --source/--model no project is needed: the model is looked for in the
-    project's folders when there is one, otherwise in this machine's store.
-    """
+    """Score one molecule against the project's annotators, or one model."""
     single = source is not None or model_id is not None
     if single and (source is None or model_id is None):
         click.secho("--source and --model go together.", fg="red")
