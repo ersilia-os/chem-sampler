@@ -729,10 +729,13 @@ def _run_rounds(
 
             if logger._quiet_mode:
                 logger.logger.setLevel(logging.ERROR)
-            with execution.stage(f"Round {round_num} · sampling"):
-                by_model = generator.generate_by_model(best_smiles)
+            try:
+                with execution.stage(f"Round {round_num} · sampling"):
+                    by_model = generator.generate_by_model(best_smiles)
+            finally:  # a run stopped here must not leave the log silenced
+                if logger._quiet_mode:
+                    logger.logger.setLevel(logging.INFO)
             if logger._quiet_mode:
-                logger.logger.setLevel(logging.INFO)
                 logger.info(f"Round {round_num}: running...")
             else:
                 if hasattr(generator, "generators"):

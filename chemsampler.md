@@ -245,6 +245,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    - `--n-steps` (only if `--mode incremental` was chosen; no default, must
      be asked)
    - `--tolerance` (default 0.0)
+   - `--hpc NAME` (default: none, the run stays on this machine). It runs every
+     model as a Slurm job using a profile from `~/.chemsampler/hpc.json` (see
+     `docs/hpc.md`). Mention it only if the user has a cluster profile. Its
+     queue waits make it worth it only for slow models; that is the user's call.
 
    Every Hub model runs from its clone, in its own conda environment, both of
    which `chemsampler fetch` puts in the machine's store (`~/.chemsampler`,

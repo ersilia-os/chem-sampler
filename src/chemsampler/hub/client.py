@@ -90,15 +90,15 @@ class HubModel:
         self.elapsed = ran.elapsed
         return ran.table
 
-    def _process_env(self) -> dict[str, str] | None:
+    def env_dir(self):
         """
-        The environment variables for the model's process, or None to inherit ours.
+        The model's own conda environment, as `chemsampler fetch` built it, or
+        None for a model that brings its own interpreter (`ersilia fetch`).
 
-        A model cloned and built by `chemsampler fetch` has a plain `run.sh`
-        (`python main.py ...`), so it must run as if its conda env were active:
-        that env's `bin` first on PATH and its own libraries first on the loader
-        path (otherwise the system's older libstdc++ is loaded), the user site off,
-        and nothing of chemsampler's own PYTHONPATH.
+        Raises
+        ------
+        RuntimeError
+            If an environments folder is set but this model's is not complete.
         """
         if not self.envs_dir:
             return None
@@ -108,6 +108,22 @@ class HubModel:
                 f"{self.model_id}: no complete environment at {env_dir}; "
                 "run `chemsampler fetch` first"
             )
+        return env_dir
+
+    def _process_env(self) -> dict[str, str] | None:
+        """
+        The environment variables for the model's process, or None to inherit ours.
+
+        A model cloned and built by `chemsampler fetch` has a plain `run.sh`
+        (`python main.py ...`), so it must run as if its conda env were active:
+        that env's `bin` first on PATH and its own libraries first on the loader
+        path (otherwise the system's older libstdc++ is loaded), the user site off,
+        and nothing of chemsampler's own PYTHONPATH. A cluster job sets the same
+        (`chemsampler.hpc.jobs`).
+        """
+        env_dir = self.env_dir()
+        if env_dir is None:
+            return None
         env = {**os.environ}
         env.pop("PYTHONPATH", None)
         env["PATH"] = os.pathsep.join(
@@ -120,27 +136,36 @@ class HubModel:
         env["PYTHONUNBUFFERED"] = "1"
         return env
 
-    def run_here(self, smiles_list: list[str]) -> pd.DataFrame:
-        """Run the model on this machine (what `LocalExecutor` does)."""
-        # No server, no port, no session: run.sh is a one-shot subprocess, run in
-        # the model's own environment (see _process_env) or, for a model fetched
-        # by `ersilia fetch`, with the interpreter it baked in at pack time.
-        bundle = os.path.join(os.path.expanduser(self.models_dir), self.model_id)
+    def files(self) -> tuple[str, str, str]:
+        """
+        The model's framework folder, its `run.sh` and its app folder: what
+        `bash run.sh <framework> <input.csv> <output.csv> <app>` needs.
 
+        Raises
+        ------
+        RuntimeError
+            If the model or its `run.sh` is not there.
+        """
+        bundle = os.path.join(os.path.expanduser(self.models_dir), self.model_id)
         if not os.path.isdir(bundle):
             raise RuntimeError(
                 f"{self.model_id}: not found at {bundle}; run `chemsampler fetch`"
             )
-
         framework_dir = os.path.join(bundle, "model", "framework")
         run_sh_path = os.path.join(framework_dir, "run.sh")
-
         if not os.path.isfile(run_sh_path):
             raise RuntimeError(
                 f"{self.model_id}: run.sh not found at {run_sh_path}; the model "
                 "is not fully fetched: run `chemsampler fetch`"
             )
-        app_dir = os.path.join(bundle, "app")
+        return framework_dir, run_sh_path, os.path.join(bundle, "app")
+
+    def run_here(self, smiles_list: list[str]) -> pd.DataFrame:
+        """Run the model on this machine (what `LocalExecutor` does)."""
+        # No server, no port, no session: run.sh is a one-shot subprocess, run in
+        # the model's own environment (see _process_env) or, for a model fetched
+        # by `ersilia fetch`, with the interpreter it baked in at pack time.
+        framework_dir, run_sh_path, app_dir = self.files()
         process_env = self._process_env()
 
         with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp_dir:

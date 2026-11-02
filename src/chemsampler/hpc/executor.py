@@ -1,0 +1,342 @@
+"""Running a round's models as Slurm jobs, side by side (`run --hpc NAME`)."""
+
+import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from pathlib import Path
+
+import click
+import pandas as pd
+
+from ..execution import Ran
+from ..hub.envs import RDKIT_ENV, env_path, is_complete
+from ..models import _rdkit_scores
+from ..models.annotator import RDKIT_ANNOTATORS
+from .jobs import Job, stage_folder, write_model_job, write_rdkit_job
+from .profiles import Profile, load_profile
+from .slurm import DONE, FAILED, PENDING, RUNNING, Cluster, sbatch_argv
+
+#: How long a job's output may take to show on the shared disk once Slurm says
+#: the job completed: network filesystems cache what a folder holds.
+OUTPUT_GRACE_SECONDS = 60
+
+#: Checks in a row in which Slurm may not know a submitted job before it counts
+#: as lost.
+_UNKNOWN_LIMIT = 10
+
+#: Failed checks in a row (ssh down, Slurm not answering) before the run stops.
+_CHECK_FAILURES_LIMIT = 3
+
+
+class SlurmExecutor:
+    """
+    Send every model call to a Slurm cluster as a job (see `chemsampler.execution`).
+
+    Calls made side by side through `map` become parallel jobs, and each waits
+    for its own. All of them are checked together every `poll_seconds`, and a
+    line says how many are pending, running and done whenever that changes. A
+    job that fails stops the run. Leaving the `with` block on any exception,
+    Ctrl-C included, cancels every job still on the cluster. `jobs.json` in the
+    run folder records every job.
+
+    Parameters
+    ----------
+    profile : Profile
+        The cluster profile.
+    run_dir : str or Path
+        The run's folder; the jobs' folders go in its `jobs/`.
+    rdkit_env : Path, optional
+        The `rdkit` environment, needed when RDKit annotators are used.
+    cluster : Cluster, optional
+        What submits and checks the jobs (by default, the profile's).
+    say : callable, optional
+        Where progress lines go.
+    """
+
+    def __init__(
+        self,
+        profile: Profile,
+        run_dir,
+        *,
+        rdkit_env=None,
+        cluster=None,
+        say=click.echo,
+    ):
+        self.profile = profile
+        self.run_dir = Path(run_dir)
+        self.rdkit_env = rdkit_env
+        self.cluster = cluster or Cluster(profile)
+        self.say = say
+        self._lock = threading.Condition()
+        self._jobs: list[Job] = []
+        self._label, self._number, self._began = "jobs", 0, time.monotonic()
+        self._counts = None
+        self._failure = None
+        self._stop = threading.Event()
+        self._watcher = None
+
+    # --- the executor interface (chemsampler.execution) --------------------------
+
+    def map(self, function, items) -> list:
+        """`function` applied to each item in its own thread, results in order."""
+        items = list(items)
+        if len(items) < 2:
+            return [function(item) for item in items]
+        with ThreadPoolExecutor(max_workers=len(items)) as pool:
+            futures = [pool.submit(function, item) for item in items]
+            try:
+                return [future.result() for future in futures]
+            except BaseException:
+                self._halt()  # the others stop waiting, so the pool can close
+                raise
+
+    def run_model(self, model, smiles_list: list[str]) -> Ran:
+        """Run a Hub model as one job and read its output as a local run would."""
+        job = self._new_job(model.model_id)
+        write_model_job(job, model, smiles_list)
+        self._run(job)
+        return Ran(pd.read_csv(job.folder / "output.csv"), job.state.elapsed or 0.0)
+
+    def run_rdkit(self, name: str, smiles_list: list[str]) -> Ran:
+        """Score with an RDKit annotator as one job, with the `rdkit` environment."""
+        if not smiles_list:
+            return Ran(pd.DataFrame({"smiles": [], "value": []}, dtype=object), 0.0)
+        if self.rdkit_env is None:
+            raise RuntimeError(f"{name}: no rdkit environment to run it on the cluster")
+        job = self._new_job(name)
+        write_rdkit_job(job, name, smiles_list, self.rdkit_env)
+        self._run(job)
+        values = _rdkit_scores.read(job.folder / "output.csv")
+        table = pd.DataFrame({"smiles": smiles_list, "value": values}, dtype=object)
+        return Ran(table, job.state.elapsed or 0.0)
+
+    @contextmanager
+    def stage(self, label: str):
+        """Name a step of a round; its jobs share a folder and a progress line."""
+        with self._lock:
+            self._number += 1
+            self._label, self._began, self._counts = label, time.monotonic(), None
+        yield
+        jobs = self._stage_jobs()
+        if jobs:
+            self.say(f"{label}: {len(jobs)} job(s) done ({self._minutes()})")
+        self._write_record()
+
+    # --- the run's lifetime ---------------------------------------------------------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, error, traceback):
+        self._halt()
+        unfinished = [
+            job.job_id
+            for job in self._jobs
+            if job.job_id
+            and (job.state is None or job.state.category in (PENDING, RUNNING))
+        ]
+        if unfinished:
+            try:
+                self.cluster.cancel(unfinished)
+                self.say(f"Cancelled {len(unfinished)} job(s) still on the cluster.")
+            except RuntimeError as e:
+                self.say(f"Could not cancel job(s) {', '.join(unfinished)}: {e}")
+        self._write_record()
+        return False
+
+    # --- jobs -----------------------------------------------------------------------
+
+    def _new_job(self, model_id: str) -> Job:
+        with self._lock:
+            base = stage_folder(self.run_dir, self._number, self._label)
+            folder, n = base / model_id, 2
+            while folder.exists():  # a model called twice in one step (chunks)
+                folder, n = base / f"{model_id}-{n}", n + 1
+            folder.mkdir(parents=True)
+            return Job(stage=self._label, model_id=model_id, folder=folder)
+
+    def _run(self, job: Job) -> None:
+        argv = sbatch_argv(self.profile, job.model_id, job.name, job.folder)
+        [job.job_id] = self.cluster.submit([argv])
+        with self._lock:
+            self._jobs.append(job)
+            if self._watcher is None:
+                self._watcher = threading.Thread(
+                    target=self._watch, name="chemsampler-slurm", daemon=True
+                )
+                self._watcher.start()
+            while True:
+                if self._failure is not None:
+                    raise RuntimeError(self._failure)
+                if self._stop.is_set():
+                    raise RuntimeError("the run was stopped")
+                if job.state is not None and job.state.category == DONE:
+                    break
+                self._lock.wait(timeout=1.0)
+        self._wait_for_output(job)
+
+    def _wait_for_output(self, job: Job) -> None:
+        output = job.folder / "output.csv"
+        deadline = time.monotonic() + OUTPUT_GRACE_SECONDS
+        while not output.exists():
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    f"{job.model_id}: Slurm job {job.job_id} completed but its output "
+                    f"never appeared; see {job.folder / 'slurm.err'}"
+                )
+            if self._stop.wait(1.0):
+                raise RuntimeError("the run was stopped")
+
+    def _watch(self) -> None:
+        failed_checks = 0
+        while not self._stop.is_set():
+            with self._lock:
+                live = [
+                    j
+                    for j in self._jobs
+                    if j.state is None or j.state.category in (PENDING, RUNNING)
+                ]
+            if live:
+                try:
+                    states = self.cluster.states([j.job_id for j in live])
+                    failed_checks = 0
+                except RuntimeError as e:
+                    states, failed_checks = None, failed_checks + 1
+                    if failed_checks >= _CHECK_FAILURES_LIMIT:
+                        self._fail(f"could not check the jobs: {e}")
+                with self._lock:
+                    if states is not None:
+                        self._update(live, states)
+                    self._report()
+                    self._lock.notify_all()
+            self._stop.wait(self.profile.poll_seconds)
+
+    def _update(self, live: list[Job], states: dict) -> None:
+        """Take in what Slurm said (called with the lock held)."""
+        for job in live:
+            state = states.get(job.job_id)
+            if state is None:
+                job.unknown += 1
+                if job.unknown >= _UNKNOWN_LIMIT:
+                    self._fail(
+                        f"{job.model_id}: Slurm no longer knows job {job.job_id}"
+                    )
+                continue
+            job.unknown, job.state = 0, state
+            if state.category == FAILED:
+                self._fail(self._failure_message(job))
+
+    def _fail(self, message: str) -> None:
+        with self._lock:
+            if self._failure is None:
+                self._failure = message
+            self._lock.notify_all()
+
+    def _failure_message(self, job: Job) -> str:
+        state = job.state
+        log = job.folder / "slurm.err"
+        on = f" on {state.node}" if state.node else ""
+        message = (
+            f"{job.model_id}: Slurm job {job.job_id} ended {state.state}{on} "
+            f"(exit code {state.exit_code or '?'}); log: {log}"
+        )
+        try:
+            tail = log.read_text(errors="replace").strip().splitlines()[-10:]
+        except OSError:
+            tail = []
+        return "\n".join([message, *tail])
+
+    def _halt(self) -> None:
+        self._stop.set()
+        with self._lock:
+            self._lock.notify_all()
+
+    # --- what the user sees, and what the run folder keeps -------------------------
+
+    def _stage_jobs(self) -> list[Job]:
+        return [job for job in self._jobs if job.stage == self._label]
+
+    def _minutes(self) -> str:
+        return f"{int((time.monotonic() - self._began) // 60)} min"
+
+    def _report(self) -> None:
+        """A progress line when the counts of this step change (lock held)."""
+        jobs = self._stage_jobs()
+        if not jobs:
+            return
+        tally = {PENDING: 0, RUNNING: 0, DONE: 0, FAILED: 0}
+        for job in jobs:
+            tally[PENDING if job.state is None else job.state.category] += 1
+        counts = tuple(tally.values())
+        if counts == self._counts:
+            return
+        self._counts = counts
+        failed = f", {tally[FAILED]} failed" if tally[FAILED] else ""
+        self.say(
+            f"{self._label}: {len(jobs)} job(s): {tally[PENDING]} PD, "
+            f"{tally[RUNNING]} R, {tally[DONE]} done{failed} ({self._minutes()})"
+        )
+
+    def _write_record(self) -> None:
+        with self._lock:
+            jobs = list(self._jobs)
+        if not jobs:
+            return
+        records = []
+        for job in jobs:
+            record = job.record()
+            record["folder"] = str(job.folder.relative_to(self.run_dir))
+            records.append(record)
+        text = json.dumps({"profile": self.profile.name, "jobs": records}, indent=2)
+        (self.run_dir / "jobs.json").write_text(text + "\n")
+
+
+def prepare(name: str, inputs, run_dir, *, say=click.echo) -> SlurmExecutor:
+    """
+    Load profile `name` and check, before any job is sent, that this run can go
+    to the cluster: environments for every model (and the `rdkit` one for RDKit
+    annotators), Slurm reachable, its partition and nodes there, and the run's
+    folders visible from it.
+
+    Raises
+    ------
+    ValueError
+        Listing every problem found; nothing has been submitted.
+    """
+    profile = load_profile(name)
+    problems = []
+    envs = None if inputs.envs_dir is None else Path(inputs.envs_dir)
+    if envs is None:
+        problems.append(
+            "the models have no environments folder: on a cluster each model "
+            "runs in the environment `chemsampler fetch` builds"
+        )
+    rdkit_env = None
+    rdkit = tuple(RDKIT_ANNOTATORS.values())
+    if envs is not None and any(
+        isinstance(s.annotator, rdkit) for s in inputs.annotators
+    ):
+        rdkit_env = env_path(envs, RDKIT_ENV)
+        if not is_complete(rdkit_env):
+            problems.append(
+                f"no complete rdkit environment at {rdkit_env}, which RDKit "
+                "annotators run with on a cluster; run `chemsampler fetch`"
+            )
+    cluster = Cluster(profile)
+    if not problems:
+        folders = [Path(run_dir).parent, inputs.models_dir, envs]
+        folders += [] if rdkit_env is None else [rdkit_env]
+        try:
+            problems += cluster.preflight(folders)
+        except RuntimeError as e:
+            problems.append(str(e))
+    if problems:
+        raise ValueError(
+            f"cannot run on the cluster of profile {name!r}:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return SlurmExecutor(
+        profile, run_dir, rdkit_env=rdkit_env, cluster=cluster, say=say
+    )

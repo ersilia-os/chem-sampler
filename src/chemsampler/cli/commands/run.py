@@ -71,6 +71,13 @@ def _save(output_dir: str, summary, candidates_by_round, record: dict) -> None:
     "'lower' pushes toward novelty (at most this similar).",
 )
 @click.option(
+    "--hpc",
+    metavar="NAME",
+    default=None,
+    help="Run every model as a Slurm job, with the cluster profile NAME in "
+    "~/.chemsampler/hpc.json. Default: here, one model at a time.",
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -86,17 +93,21 @@ def run_cmd(
     tolerance: float,
     tanimoto_cutoff: float | None,
     tanimoto_direction: str,
+    hpc: str | None,
     verbose: bool,
 ) -> None:
     """Generate and score candidate molecules across rounds, saving the result.
 
     The models and folders are the project's; each run writes a new dated folder
-    under its rounds/.
+    under its rounds/. With --hpc, each round's models run as parallel jobs on a
+    cluster (see docs/hpc.md).
     """
+    import contextlib
     import time
 
     import pandas as pd
 
+    from ... import execution
     from ...config import load_inputs
     from ...optimize import hill_climb
     from ...project import PROJECT_FILE, locate_project
@@ -124,22 +135,34 @@ def run_cmd(
                 "tolerance": tolerance,
                 "tanimoto_cutoff": tanimoto_cutoff,
                 "tanimoto_direction": tanimoto_direction,
+                "hpc": hpc,
             },
         }
-        output_dir = str(inputs.new_round_dir())
-        summary, candidates_by_round = hill_climb(
-            inputs.generators,
-            inputs.annotators,
-            mode=mode,
-            similarity=inputs.similarity,
-            seed_smiles=seed_smiles,
-            original_seed_smiles=original_seed_smiles,
-            n_rounds=n_rounds,
-            n_steps=n_steps,
-            tolerance=tolerance,
-            tanimoto_cutoff=tanimoto_cutoff,
-            tanimoto_direction=tanimoto_direction,
-        )
+        run_dir = str(inputs.new_round_dir())
+        cluster = contextlib.nullcontext()
+        if hpc is not None:
+            from ...hpc import prepare
+
+            cluster = prepare(hpc, inputs, run_dir)  # checks first, submits nothing
+            click.echo(
+                f"Running every model on the cluster of profile {hpc!r}; jobs are "
+                f"checked every {cluster.profile.poll_seconds:g} s."
+            )
+        output_dir = run_dir
+        with cluster as executor, execution.use(executor):
+            summary, candidates_by_round = hill_climb(
+                inputs.generators,
+                inputs.annotators,
+                mode=mode,
+                similarity=inputs.similarity,
+                seed_smiles=seed_smiles,
+                original_seed_smiles=original_seed_smiles,
+                n_rounds=n_rounds,
+                n_steps=n_steps,
+                tolerance=tolerance,
+                tanimoto_cutoff=tanimoto_cutoff,
+                tanimoto_direction=tanimoto_direction,
+            )
         elapsed = time.time() - start_time
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")

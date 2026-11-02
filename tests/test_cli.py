@@ -177,6 +177,7 @@ def test_a_run_records_how_it_was_launched(tmp_path):
         "tolerance": 0.1,
         "tanimoto_cutoff": 0.2,
         "tanimoto_direction": "higher",
+        "hpc": None,
     }
 
 

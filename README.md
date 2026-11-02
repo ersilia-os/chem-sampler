@@ -66,7 +66,7 @@ To change the default for every new project, write `~/.chemsampler/config.json`
 `chemsampler.json`. Two cautions: **never move or rename these folders** after
 `fetch`, because conda environments record their own path; and prefer a local disk
 for environments, since model start-up was several times slower on a shared
-filesystem in our tests.
+filesystem in our tests (a cluster run needs them on the shared one, see below).
 
 `fetch` is safe to repeat. It clones only what is missing and reports the rest:
 
@@ -80,6 +80,8 @@ filesystem in our tests.
   GitHub install, a shell line) cannot be compared, and `fetch` says how many it
   skipped.
 - An environment left half-built by an interrupted run is removed and rebuilt.
+- With an RDKit annotator in the inputs, `fetch` also builds a small `rdkit`
+  environment, which a cluster run scores it with.
 
 ## Inputs
 
@@ -98,6 +100,27 @@ project file and the catalog are in [docs/inputs.md](docs/inputs.md); the four
 ways to combine primaries (`sequential`, `joint`, `weighted`, `incremental`) and the
 Python API are in [docs/modes.md](docs/modes.md).
 
+## Running on a cluster
+
+`chemsampler run --hpc NAME` sends every model of a round to a Slurm cluster as its
+own job: the similarity and generative models side by side, then, once their
+candidates are put together, one job per annotator (RDKit ones included). The
+terminal waits and says how many jobs are pending, running and done; each round is
+ranked as a local run would rank it. Ctrl-C cancels the run's jobs and keeps the
+rounds already finished.
+
+The cluster is described once, in `~/.chemsampler/hpc.json`, which stays on your
+machine:
+
+```json
+{"mycluster": {"ssh": "login.example.org", "partition": "cpu",
+               "nodes": ["node01", "node02"], "cpus": 4, "mem": "8G", "time": "01:00:00"}}
+```
+
+The project, the models and their environments must be on a filesystem the nodes
+share, at the same paths; start long runs inside `tmux`. Every key, and what a run
+leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
+
 ## CLI
 
 | Command | Description |
@@ -111,6 +134,7 @@ Python API are in [docs/modes.md](docs/modes.md).
 ```bash
 chemsampler fetch --update                       # pull clones that are behind, rebuild envs that differ
 chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
+chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster   # models as Slurm jobs
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed
 chemsampler catalog                              # * marks what the current project needs
