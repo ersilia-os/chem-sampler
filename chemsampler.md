@@ -59,18 +59,18 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    property before they know a seed. For each annotator the user names,
    collect:
    - `source` and `model` — `ersilia` with a Hub annotation model id, or
-     `rdkit` with `mw` or `qed`.
+     `rdkit` with `mw`, `qed` or `tanimoto` (similarity to the seed, see step 5).
    - `cutoff` — the threshold value, or `min-max` for a range.
    - `direction` — `higher`, `lower`, or `range` (a range is only valid for a
-     secondary annotator; `higher`/`lower` take a single number).
-   - `priority` — `primary` (optimized; usually the activity) or `secondary` (a
-     guard-rail every candidate must satisfy, e.g. an MW range or a QED floor;
+     guard-rail; `higher`/`lower` take a single number).
+   - `priority` — `primary` (optimized; usually the activity) or `guard-rail`
+     (a constraint every candidate must satisfy, e.g. an MW range or a QED floor;
      it is never optimized and takes no weight). At least one primary.
 
    Do not write `annotators.csv` yet — run the feasibility check below first.
 
 2. **Feasibility & relevance check.** For every cutoff collected above (and
-   for `--tanimoto-cutoff` in step 5, once given), judge it two distinct
+   for the Tanimoto row of step 5, once given), judge it two distinct
    ways before it ever reaches `annotators.csv` or the CLI:
 
    - **Feasible?** Can the model's output possibly take this value at all?
@@ -134,23 +134,29 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      an unrecoverable overshoot on an uncorrelated one (see the "Open
      questions" note below on annotator correlation).
 
-   Whatever the mode, secondary annotators apply as guard-rails: a candidate
-   that fails one is never eligible.
+   Whatever the mode, guard-rails apply: a candidate that fails one is never
+   eligible.
 
 4. **Seed compound (optional).** Ask for a SMILES. If the user names a
    compound instead of pasting a SMILES, look it up from an authoritative
    source (PubChem) and confirm by **InChIKey** before using it — never
    write a SMILES from memory (see `CLAUDE.md`) — and show the user what it
-   resolved to so they can confirm it is the compound they meant. Every Hub
+   resolved to so they can confirm it is the compound they meant. It goes in
+   the project's `input/smiles.csv` (header `smiles`, one molecule: several
+   seeds are not supported yet); `run --seed-smiles` overrides the file. Every Hub
    generator needs a seed to run, so without one no candidates are produced
    in round 1, and steps 5-6 below don't apply (no seed to be similar to, or
    to score a baseline against).
 
 5. **Tanimoto constraint (optional, only if a seed was given).** Ask
-   whether to bound similarity to the seed at all, and if so
-   `--tanimoto-cutoff` + `--tanimoto-direction` (`higher` = stay at least
-   this similar; `lower` = novelty-seeking, stay at most this similar). Run
-   it through the feasibility check from step 2 — it's always `[0, 1]`.
+   whether to bound similarity to the seed at all, and if so add a row
+   `rdkit,tanimoto,<cutoff>,<direction>,guard-rail` to `annotators.csv`
+   (`higher` = stay at least this similar; `lower` = novelty-seeking, stay at
+   most this similar; `range` = both, e.g. `0.4-0.9`). It can also be a
+   primary (`lower` drives the search away from the seed; `higher` as the
+   first primary of `sequential`/`incremental` cannot improve on the seed's
+   1.0). Run it through the feasibility check from step 2 — it's always
+   `[0, 1]`.
    Collected here, before generator selection, because it directly
    constrains which generators make sense to use next.
 
@@ -176,7 +182,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 
      The groups are the user's choice, not a measurement: `eos935d` measures
      as near (0.63) and `eos633t` as in between (0.33, although it keeps the
-     scaffold in 100% of cases). `--tanimoto-cutoff` gates on fingerprint
+     scaffold in 100% of cases). The Tanimoto annotator measures fingerprint
      Tanimoto, so when a floor is set use the measured figure, not the group
      label.
    - **Large gap, no (or a loose) Tanimoto floor** → recommend the
@@ -265,8 +271,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 
 9. **Where the run lives.** Every run needs a project: if there is none,
    propose `chemsampler init -p <name>` (one per analysis; it refuses a folder
-   that exists, and records where the models go). Write the three CSVs into its
-   `input/` folder and let `run` pick its own dated folder under `rounds/`,
+   that exists, and records where the models go). Write the CSVs (and
+   `smiles.csv` with the seed) into its `input/` folder and let `run` pick its own dated folder under `rounds/`,
    which also stores an `inputs.json` of what was resolved — no output folder
    to choose and nothing stale to inherit. Give `-p <project>` to every command
    unless the working directory is inside the project.

@@ -9,7 +9,7 @@ from .. import store
 from ..hub.catalog import validate_models
 from ..hub.envs import env_path, is_complete
 from ..hub.fetch import FetchPlan
-from ..models.annotator import RDKIT_ANNOTATORS
+from ..models.annotator import RDKIT_ANNOTATORS, RDKIT_ENV_ANNOTATORS
 from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
 from ..models.similarity import HubSimilarity
@@ -31,6 +31,8 @@ from .schema import (
 #: all of those, in the working directory). The CSVs' single column has the same
 #: name; annotators.csv has the columns of `schema.REQUIRED_FIELDS`.
 INPUT_NAMES = ("similarity", "generators", "annotators")
+#: The seed: `smiles.csv`, found the same way, with a single column `smiles`.
+SEED_NAME = "smiles"
 PATH_KEYS = (
     "path_to_models",
     "path_to_model_repositories",
@@ -50,6 +52,7 @@ class Inputs:
     models_dir: str | None
     envs_dir: str | None
     rounds_dir: str | None
+    seed_smiles: str | None = None
 
     def describe(self) -> dict:
         """What was resolved, to save next to a run's results."""
@@ -140,14 +143,16 @@ def load_inputs(
     -------
     Inputs
         The generator pool and the similarity model (each `None` if not given),
-        the annotators and the folder of model repositories.
+        the annotators, the folder of model repositories, and the seed from
+        `smiles.csv` (`None` without one).
 
     Raises
     ------
     ValueError
         If annotators, or both similarity and generators, are missing; an input
-        is given twice or malformed; a model is not in the catalog with the label
-        its role needs; or a model folder is missing.
+        is given twice or malformed; `smiles.csv` holds no molecule, more than
+        one, or one RDKit cannot parse; a model is not in the catalog with the
+        label its role needs; or a model folder is missing.
     """
     files = {
         "similarity": similarity,
@@ -169,6 +174,7 @@ def load_inputs(
         models_dir=loaded["models_dir"],
         envs_dir=loaded["envs_dir"],
         rounds_dir=loaded["rounds_dir"],
+        seed_smiles=loaded["seed_smiles"],
     )
 
 
@@ -203,6 +209,29 @@ def load_annotators(
     return loaded["annotators"]
 
 
+def load_seed(config: str | None = None, path_to_models: str | None = None):
+    """
+    The seed in `smiles.csv`, found as `load_inputs` finds it.
+
+    Parameters
+    ----------
+    config, path_to_models : str, optional
+        As in `load_inputs`.
+
+    Returns
+    -------
+    str or None
+        The seed's SMILES, or None when there is no `smiles.csv`.
+
+    Raises
+    ------
+    ValueError
+        If `smiles.csv` holds no molecule, more than one, or one RDKit cannot
+        parse.
+    """
+    return _read_seed(_locations(config, path_to_models, None))
+
+
 def load_annotator(
     source: str,
     model: str,
@@ -223,7 +252,7 @@ def load_annotator(
     source : {"ersilia", "rdkit"}
         Where the annotator comes from.
     model : str
-        An Ersilia Hub model id, or an in-house name ("mw", "qed").
+        An Ersilia Hub model id, or an in-house name ("mw", "qed", "tanimoto").
     path_to_model_repositories, path_to_envs : str, optional
         Folders with the model repositories and their environments. They
         default to the config's, or else the machine's store.
@@ -233,7 +262,7 @@ def load_annotator(
 
     Returns
     -------
-    MolecularWeightAnnotator, QEDAnnotator or HubAnnotator
+    MolecularWeightAnnotator, QEDAnnotator, TanimotoAnnotator or HubAnnotator
         An object with a `score(smiles_list)` method.
     """
     models_dir = envs_dir = None
@@ -262,7 +291,7 @@ def build_annotator(
         Where the annotator comes from.
     model : str
         An Ersilia Hub model id for "ersilia", or an in-house name for "rdkit"
-        ("mw", "qed").
+        ("mw", "qed", "tanimoto").
     column : str, optional
         Output column to score on, for Ersilia models with several numeric
         outputs. Not used by rdkit annotators.
@@ -273,8 +302,9 @@ def build_annotator(
 
     Returns
     -------
-    MolecularWeightAnnotator, QEDAnnotator or HubAnnotator
-        An object with a `score(smiles_list)` method.
+    MolecularWeightAnnotator, QEDAnnotator, TanimotoAnnotator or HubAnnotator
+        An object with a `score(smiles_list)` method; a TanimotoAnnotator still
+        needs its seed (`against`).
 
     Raises
     ------
@@ -348,6 +378,31 @@ def _read_ids_csv(path: Path, column: str) -> list[str]:
                 )
             ids.append(row[0])
     return _unique_ids(ids, path.name)
+
+
+def _read_seed_csv(path: Path) -> str:
+    """The one SMILES of a `smiles.csv`; blank rows are skipped."""
+    from rdkit import Chem
+
+    with open(path, newline="") as f:
+        reader = csv.reader(f)
+        check_header(path, next(reader, None), [SEED_NAME])
+        rows = [row for row in reader if any(cell.strip() for cell in row)]
+    if not rows:
+        raise ValueError(
+            f"{path.name} has no molecule; remove the file for a run without a seed"
+        )
+    if len(rows) > 1:
+        raise ValueError(
+            f"{path.name}: only one seed is supported for now, got {len(rows)} "
+            "(see https://github.com/ersilia-os/chem-sampler/issues/8)"
+        )
+    if len(rows[0]) != 1:
+        raise ValueError(f"{path.name}: expected one value, got {len(rows[0])}")
+    smiles = rows[0][0].strip()
+    if Chem.MolFromSmiles(smiles) is None:
+        raise ValueError(f"{path.name}: RDKit cannot read the SMILES {smiles!r}")
+    return smiles
 
 
 def _read_annotators_csv(path: Path) -> list[AnnotatorRow]:
@@ -563,6 +618,14 @@ def _read_inputs(names, loc: _Locations, files):
     return generators, similarity, rows
 
 
+def _read_seed(loc: _Locations) -> str | None:
+    """The seed from `smiles.csv`, or None when there is none."""
+    # a config file holds no seed, so there is nothing inline to read
+    return _find_source(
+        SEED_NAME, None, {}, loc.models, _read_seed_csv, None, required=False
+    )
+
+
 def _load(
     names,
     config,
@@ -579,6 +642,7 @@ def _load(
     """
     loc = _locations(config, path_to_models, path_to_model_repositories, path_to_envs)
     generators, similarity, rows = _read_inputs(names, loc, files)
+    seed_smiles = _read_seed(loc) if "generators" in names else None
 
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
     hub_ids = [*(generators or []), *(similarity or []), *ersilia_annotators]
@@ -598,6 +662,7 @@ def _load(
         "models_dir": models_dir,
         "envs_dir": envs_dir,
         "rounds_dir": _as_text(loc.rounds),
+        "seed_smiles": seed_smiles,
         "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,
         "similarity": None,
@@ -656,7 +721,7 @@ def plan_fetch(
 
     The clones go to the model repositories folder and the environments to the
     envs folder: the flags, the config, or else the machine's store. An RDKit
-    annotator adds the `rdkit` environment, which cluster jobs score it with. Logs go in
+    annotator scored by cluster jobs (`mw`, `qed`) adds the `rdkit` environment. Logs go in
     the store's `logs` folder, or in a `logs` folder beside the clones when the
     user named the folder for them.
 
@@ -686,7 +751,9 @@ def plan_fetch(
         models_dir=loc.repos,
         envs_dir=envs_dir,
         logs_dir=shared.logs if loc.from_store else loc.repos.parent / "logs",
-        rdkit=any(row.source == "rdkit" for row in rows),
+        rdkit=any(
+            row.source == "rdkit" and row.model in RDKIT_ENV_ANNOTATORS for row in rows
+        ),
     )
 
 
@@ -697,8 +764,8 @@ def _check_annotator_rows(rows: list[AnnotatorRow]) -> None:
         raise ValueError(f"annotators: listed more than once: {repeated}")
     if not any(row.priority == "primary" for row in rows):
         raise ValueError(
-            "annotators: at least one primary annotator is required; secondary "
-            "annotators are guard-rails and are not optimized"
+            "annotators: at least one primary annotator is required; guard-rails "
+            "are not optimized"
         )
 
 

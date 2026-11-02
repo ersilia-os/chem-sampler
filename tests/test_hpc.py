@@ -44,7 +44,7 @@ RUN_SH = {
 ANNOTATORS = (
     "source,model,cutoff,direction,priority\n"
     "ersilia,eos4zfy,0,higher,primary\n"
-    "rdkit,qed,0-1,range,secondary\n"
+    "rdkit,qed,0-1,range,guard-rail\n"
 )
 PROFILES = {"test": {"partition": "fake", "nodes": ["node-a", "node-b"]}}
 
@@ -490,6 +490,27 @@ def test_a_missing_rdkit_environment_is_found_before_asking_the_cluster(
     assert "no complete rdkit environment" in result.output
     assert "chemsampler fetch" in result.output
     assert cluster.preflights == [] and cluster.argvs == []
+
+
+def test_a_tanimoto_annotator_is_scored_here_and_needs_no_rdkit_environment(
+    project, cluster, store_root
+):
+    (store_root / "envs" / "rdkit" / ".chemsampler-env.json").unlink()
+    (project / "input" / "annotators.csv").write_text(
+        "source,model,cutoff,direction,priority\n"
+        "ersilia,eos4zfy,0,higher,primary\n"
+        "rdkit,tanimoto,0-1,range,guard-rail\n"
+    )
+
+    result = _run(project, "--hpc", "test")
+
+    assert result.exit_code == 0, result.output
+    jobs = [Path(argv[-1]).parent.name for argv in cluster.argvs]
+    assert "tanimoto" not in jobs and "eos4zfy" in jobs
+    [folders] = cluster.preflights
+    assert not any(f.endswith("rdkit") for f in folders)
+    round1 = pd.read_csv(_runs(project)[0] / "round1.csv")
+    assert round1["tanimoto"].notna().all()
 
 
 def test_an_unknown_profile_says_which_ones_exist(project, cluster):

@@ -126,6 +126,8 @@ def _write_lists(input_dir, roles: dict, force: bool) -> None:
 
 def _named(plan, roles: dict, in_house):
     """Fetch the models named, and say where they and annotators.csv disagree."""
+    from ...models.annotator import RDKIT_ENV_ANNOTATORS
+
     samplers = [*roles["generators"], *roles["similarity"]]
     named = [m for m in roles["annotators"] if m not in in_house]
     listed = [m for m in plan.model_ids if m not in samplers]  # annotators.csv
@@ -143,5 +145,5 @@ def _named(plan, roles: dict, in_house):
                 "name: it is not fetched; name it too, or remove its row.",
                 fg="yellow",
             )
-    rdkit = plan.rdkit or any(m in in_house for m in roles["annotators"])
+    rdkit = plan.rdkit or any(m in RDKIT_ENV_ANNOTATORS for m in roles["annotators"])
     return dataclasses.replace(plan, model_ids=(*samplers, *named), rdkit=rdkit)

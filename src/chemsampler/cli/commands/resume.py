@@ -5,6 +5,9 @@ import click
 from ..create_cli import chemsampler_cli
 from ..options import project_option
 
+#: Options of older runs that a run can no longer take, so cannot resume with.
+_REMOVED_OPTIONS = ("tanimoto_cutoff", "original_seed_smiles")
+
 
 @chemsampler_cli.command(
     "resume", short_help="Continue a stopped run from the rounds it finished."
@@ -35,6 +38,13 @@ def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
             raise ValueError(
                 f"{run_dir} was made before chemsampler could resume runs: it has "
                 "no copy of its inputs"
+            )
+        if any(record["run"].get(k) is not None for k in _REMOVED_OPTIONS):
+            raise ValueError(
+                f"{run_dir.name} was made by an older chemsampler with "
+                "--tanimoto-cutoff or --original-seed-smiles, which runs no longer "
+                "take (a Tanimoto limit is now an annotator, rdkit,tanimoto): start "
+                "it again"
             )
         if record["run"]["status"] == "finished":
             click.secho(f"{run_dir.name} already finished: see {run_dir}", fg="green")

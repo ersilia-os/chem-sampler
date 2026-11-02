@@ -107,8 +107,8 @@ def test_run_writes_results_and_merges_generator_and_similarity_candidates(tmp_p
     assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
 
 
-def test_a_secondary_annotator_acts_as_a_guard_rail_through_the_cli(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-10", "range", "secondary"]])
+def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-10", "range", "guard-rail"]])
 
     result = _run(root)
 
@@ -162,7 +162,7 @@ def test_run_handles_empty_summary_without_seed(tmp_path):
 def test_a_run_records_how_it_was_launched(tmp_path):
     root = _inputs(tmp_path)
 
-    result = _run(root, "--tolerance", "0.1", "--tanimoto-cutoff", "0.2")
+    result = _run(root, "--tolerance", "0.1")
 
     assert result.exit_code == 0, result.output
     saved = json.loads((_round_dir(root) / "inputs.json").read_text())
@@ -171,12 +171,9 @@ def test_a_run_records_how_it_was_launched(tmp_path):
         "chemsampler_version": importlib.metadata.version("chemsampler"),
         "mode": "sequential",
         "seed_smiles": "CCO",
-        "original_seed_smiles": None,
         "n_rounds": 1,
         "n_steps": None,
         "tolerance": 0.1,
-        "tanimoto_cutoff": 0.2,
-        "tanimoto_direction": "higher",
         "hpc": None,
         "verbose": False,
         "status": "finished",
@@ -436,24 +433,193 @@ def test_run_can_use_generators_without_a_similarity_model(tmp_path):
 # --- annotate -----------------------------------------------------------------------
 
 
+# --- the seed (input/smiles.csv) and the Tanimoto annotator ---------------------------
+
+TANIMOTO = ["rdkit", "tanimoto", "0.5", "higher", "guard-rail"]
+
+
+def _seed(root, text):
+    (root / "input" / "smiles.csv").write_text(text)
+
+
+def _run_from_csv(root):
+    """A run that takes its seed from input/smiles.csv, if anything."""
+    return CliRunner().invoke(
+        cli, ["run", "-p", str(root), "--mode", "sequential", "--n-rounds", "1"]
+    )
+
+
+def _record(root):
+    return json.loads((_round_dir(root) / "inputs.json").read_text())
+
+
+def test_the_seed_comes_from_smiles_csv(tmp_path):
+    root = _inputs(tmp_path)
+    _seed(root, "smiles\nCCO\n")
+
+    result = _run_from_csv(root)
+
+    assert result.exit_code == 0, result.output
+    assert _record(root)["run"]["seed_smiles"] == "CCO"
+    assert (_round_dir(root) / "input" / "smiles.csv").read_text() == "smiles\nCCO\n"
+    assert pd.read_csv(_round_dir(root) / "round0.csv")["smiles"].tolist() == ["CCO"]
+
+
+def test_seed_smiles_wins_over_smiles_csv(tmp_path):
+    root = _inputs(tmp_path)
+    _seed(root, "smiles\nCCC\n")
+
+    result = _run(root)  # --seed-smiles CCO
+
+    assert result.exit_code == 0, result.output
+    assert "--seed-smiles given: ignoring input/smiles.csv" in result.output
+    assert _record(root)["run"]["seed_smiles"] == "CCO"
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("smiles\nCCO\nCCC\n", "only one seed is supported for now, got 2"),
+        ("smiles\n", "smiles.csv has no molecule"),
+        ("smiles\nnot-a-molecule\n", "RDKit cannot read the SMILES"),
+        ("seed\nCCO\n", "smiles.csv"),
+    ],
+)
+def test_a_bad_smiles_csv_is_refused(tmp_path, text, message):
+    root = _inputs(tmp_path)
+    _seed(root, text)
+
+    result = _run_from_csv(root)
+
+    assert result.exit_code == 1
+    assert message in result.output
+    assert not (root / "rounds").exists() or not any((root / "rounds").iterdir())
+
+
+def test_a_tanimoto_guard_rail_through_the_cli(tmp_path):
+    root = _inputs(tmp_path, [QED, TANIMOTO])
+    _seed(root, "smiles\nCCO\n")
+
+    result = _run_from_csv(root)
+
+    assert result.exit_code == 0, result.output
+    round0 = pd.read_csv(_round_dir(root) / "round0.csv")
+    assert round0["tanimoto"].tolist() == [1.0]
+    round1 = pd.read_csv(_round_dir(root) / "round1.csv")  # CCN, 0.333 to CCO
+    assert round1["tanimoto"].tolist() == [round1["tanimoto_to_seed"][0]]
+    assert round1["guardrails_satisfied"].tolist() == [False]
+
+
+def test_a_tanimoto_annotator_needs_a_seed(tmp_path):
+    root = _inputs(tmp_path, [QED, TANIMOTO])
+
+    result = _run_from_csv(root)
+
+    assert result.exit_code == 1
+    assert "tanimoto compares candidates with the seed" in result.output
+    assert not (root / "rounds").exists() or not any((root / "rounds").iterdir())
+
+
+@pytest.mark.parametrize(
+    "option", ["--tanimoto-cutoff", "--tanimoto-direction", "--original-seed-smiles"]
+)
+def test_the_tanimoto_options_are_gone(tmp_path, option):
+    result = _run(_inputs(tmp_path), option, "0.5")
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output
+
+
+def test_a_stopped_run_with_a_tanimoto_annotator_resumes(tmp_path, monkeypatch):
+    tanimoto = ["rdkit", "tanimoto", "0", "higher", "guard-rail"]
+    whole = _generator_project(tmp_path / "whole", [MW_HIGHER, tanimoto])
+    _script(monkeypatch, *HEAVIER)
+    assert _three_rounds(whole).exit_code == 0
+    root = _generator_project(tmp_path / "stopped", [MW_HIGHER, tanimoto])
+    _script(monkeypatch, *HEAVIER[:2], KeyboardInterrupt())
+    assert _three_rounds(root).exit_code == 0
+    _script(monkeypatch, HEAVIER[2])
+
+    resumed = _resume(root)
+
+    assert resumed.exit_code == 0, resumed.output
+    _same_results(_round_dir(whole), _round_dir(root))
+
+
+@pytest.mark.parametrize(
+    "key, value", [("tanimoto_cutoff", 0.3), ("original_seed_smiles", "CCO")]
+)
+def test_resume_refuses_a_run_made_with_the_removed_options(
+    tmp_path, monkeypatch, key, value
+):
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, HEAVIER[0], KeyboardInterrupt())
+    _three_rounds(root)
+    record = _record(root)
+    record["run"][key] = value
+    (_round_dir(root) / "inputs.json").write_text(json.dumps(record))
+
+    result = _resume(root)
+
+    assert result.exit_code == 1
+    assert "made by an older chemsampler" in result.output
+
+
+def test_annotate_measures_tanimoto_against_the_seed(tmp_path):
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "tanimoto", "0.2", "higher", "guard-rail"]]
+    )
+    _seed(root, "smiles\nCCO\n")
+
+    result = _annotate("-p", str(root), "--smiles", "CO")
+
+    assert result.exit_code == 0, result.output
+    assert "tanimoto [guard-rail] (>= 0.2): 0.2857142857142857" in result.output
+    assert "guard-rails all satisfied" in result.output
+
+
+def test_annotate_without_a_seed_leaves_tanimoto_out(tmp_path):
+    root = _inputs(tmp_path, [QED, TANIMOTO])
+
+    result = _annotate("-p", str(root), "--smiles", "CO")
+
+    assert result.exit_code == 0, result.output
+    assert "tanimoto [guard-rail] (>= 0.5): needs a seed" in result.output
+    assert "1 of 1 primary cutoffs satisfied" in result.output
+
+
+def test_annotate_a_single_tanimoto_uses_the_project_seed(tmp_path):
+    root = _inputs(tmp_path)
+    args = ["-p", str(root), "--source", "rdkit", "--model", "tanimoto"]
+
+    without = _annotate(*args, "--smiles", "CO")
+    _seed(root, "smiles\nCCO\n")
+    seeded = _annotate(*args, "--smiles", "CO")
+
+    assert without.exit_code == 1
+    assert "tanimoto compares candidates with the seed" in without.output
+    assert seeded.exit_code == 0, seeded.output
+    assert "tanimoto: 0.2857142857142857" in seeded.output
+
+
 def _annotate(*args):
     return CliRunner().invoke(cli, ["annotate", *args])
 
 
 def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "secondary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "guard-rail"]])
 
     result = _annotate("-p", str(root), "--smiles", "CCO")
 
     assert result.exit_code == 0, result.output
     assert "qed [primary] (>= 0)" in result.output
-    assert "mw [secondary] (0-1000)" in result.output
+    assert "mw [guard-rail] (0-1000)" in result.output
     assert "1 of 1 primary cutoffs satisfied" in result.output
     assert "guard-rails all satisfied" in result.output
 
 
 def test_annotate_reports_a_broken_guard_rail(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "250-450", "range", "secondary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "250-450", "range", "guard-rail"]])
 
     result = _annotate("-p", str(root), "--smiles", "CCO")
 
@@ -809,6 +975,16 @@ def test_fetch_says_when_it_builds_the_rdkit_environment(tmp_path, fetched):
     assert fetched["plan"].rdkit
 
 
+def test_a_tanimoto_annotator_needs_no_rdkit_environment(tmp_path, fetched):
+    root = _inputs(tmp_path, [["rdkit", "tanimoto", "0.5", "lower", "primary"]])
+
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert "rdkit environment" not in result.output
+    assert not fetched["plan"].rdkit
+
+
 def test_fetch_pulls_and_rebuilds_by_default(tmp_path, fetched):
     root = _inputs(tmp_path)
 
@@ -847,6 +1023,19 @@ def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
     assert fetched["plan"].model_ids == ("eos9p57", "eos1bgt", "eos4zfy")
     assert fetched["plan"].rdkit  # qed
     assert "annotators.csv" not in result.output  # it agrees with the ids
+
+
+def test_fetch_ids_with_tanimoto_need_no_rdkit_environment(tmp_path, fetched):
+    tanimoto = ["rdkit", "tanimoto", "0.5", "higher", "guard-rail"]
+    root = _inputs(
+        tmp_path, [["ersilia", "eos4zfy", "0.5", "higher", "primary"], tanimoto]
+    )
+
+    result = _fetch_ids(root, "eos9p57", "eos4zfy", "tanimoto", "-f")
+
+    assert result.exit_code == 0, result.output
+    assert fetched["plan"].model_ids == ("eos9p57", "eos4zfy")
+    assert not fetched["plan"].rdkit
 
 
 def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):

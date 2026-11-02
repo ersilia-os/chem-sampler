@@ -16,7 +16,7 @@ import pandas as pd
 from ..execution import Ran
 from ..hub.envs import RDKIT_ENV, env_path, is_complete
 from ..models import _rdkit_scores
-from ..models.annotator import RDKIT_ANNOTATORS
+from ..models.annotator import _RDKitAnnotator
 from .jobs import Job, stage_folder, write_model_job, write_rdkit_job
 from .profiles import Profile, load_profile
 from .slurm import DONE, FAILED, PENDING, RUNNING, Cluster, sbatch_argv
@@ -398,9 +398,8 @@ def prepare(name: str, inputs, run_dir, *, say=click.echo) -> SlurmExecutor:
             "runs in the environment `chemsampler fetch` builds"
         )
     rdkit_env = None
-    rdkit = tuple(RDKIT_ANNOTATORS.values())
     if envs is not None and any(
-        isinstance(s.annotator, rdkit) for s in inputs.annotators
+        isinstance(s.annotator, _RDKitAnnotator) for s in inputs.annotators
     ):
         rdkit_env = env_path(envs, RDKIT_ENV)
         if not is_complete(rdkit_env):

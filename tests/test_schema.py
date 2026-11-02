@@ -88,14 +88,14 @@ def test_parses_a_primary_ersilia_annotator():
     assert (row.priority, row.weight, row.column) == ("primary", 2.0, "score")
 
 
-def test_parses_a_secondary_rdkit_guard_rail():
+def test_parses_an_rdkit_guard_rail():
     row = parse_annotator(
         _row(
             source="rdkit",
             model="mw",
             cutoff="250-450",
             direction="range",
-            priority="secondary",
+            priority="guard-rail",
         ),
         "annotators.csv row 2",
     )
@@ -117,10 +117,11 @@ def test_empty_cells_and_whitespace_count_as_missing_or_are_stripped():
         ({"direction": "up"}, "direction must be one of"),
         ({"priority": ""}, "missing"),
         ({"priority": "main"}, "priority must be one of"),
+        ({"priority": "secondary"}, "'secondary' is now called 'guard-rail'"),
         ({"weight": "-1"}, "weight must be >= 0"),
         ({"weight": "heavy"}, "invalid weight"),
-        ({"cutoff": "0.5-0.9", "direction": "range"}, "only allowed for secondary"),
-        ({"priority": "secondary", "weight": "2"}, "weight only applies to primary"),
+        ({"cutoff": "0.5-0.9", "direction": "range"}, "only allowed for guard-rails"),
+        ({"priority": "guard-rail", "weight": "2"}, "weight only applies to primary"),
         ({"source": "rdkit", "model": "logp"}, "unknown rdkit model"),
         ({"source": "rdkit", "model": "qed", "column": "x"}, "column only applies"),
         ({"colour": "red"}, "unknown field"),
@@ -140,20 +141,20 @@ def test_errors_say_where_they_are():
 
 
 def test_spec_rejects_a_range_on_a_primary():
-    with pytest.raises(ValueError, match="only allowed for secondary"):
+    with pytest.raises(ValueError, match="only allowed for guard-rails"):
         AnnotatorSpec("mw", object(), (250.0, 450.0), "range")
 
 
 def test_spec_rejects_a_range_without_range_direction_and_vice_versa():
     with pytest.raises(ValueError, match="direction must be 'range'"):
-        AnnotatorSpec("mw", object(), (250.0, 450.0), "higher", priority="secondary")
+        AnnotatorSpec("mw", object(), (250.0, 450.0), "higher", priority="guard-rail")
     with pytest.raises(ValueError, match="needs a \\(min, max\\) cutoff"):
-        AnnotatorSpec("mw", object(), 250.0, "range", priority="secondary")
+        AnnotatorSpec("mw", object(), 250.0, "range", priority="guard-rail")
 
 
 def test_spec_rejects_a_bad_range_and_an_unknown_priority():
     with pytest.raises(ValueError, match="min < max"):
-        AnnotatorSpec("mw", object(), (450.0, 250.0), "range", priority="secondary")
+        AnnotatorSpec("mw", object(), (450.0, 250.0), "range", priority="guard-rail")
     with pytest.raises(ValueError, match="priority must be"):
         AnnotatorSpec("mw", object(), 1.0, "higher", priority="main")
 

@@ -10,7 +10,7 @@
 2. When all of them are done, their candidates are put together (as a local run
    does).
 3. Every annotator starts, one job each: Hub models and the RDKit ones (`mw`,
-   `qed`).
+   `qed`). `tanimoto` is no job: the run computes it itself.
 4. When all of them are done, the round is ranked and its best molecule seeds the
    next round.
 
@@ -53,7 +53,7 @@ you start from and the run's own job.
 `run --hpc` checks and lists every problem before submitting anything:
 
 - every model has the environment `chemsampler fetch` built, and the `rdkit`
-  environment is there when RDKit annotators are used;
+  environment is there when `mw` or `qed` is used;
 - Slurm's commands answer, and the partition and nodes exist;
 - the run's folders, the models and their environments are visible from the
   cluster.

@@ -3,6 +3,7 @@ import math
 import pandas as pd
 import pytest
 
+from chemsampler.models.annotator import TanimotoAnnotator
 from chemsampler.models.generator import SeedRequiredError
 from chemsampler.models.similarity import HubSimilarity
 from chemsampler.models.spec import AnnotatorSpec
@@ -184,21 +185,17 @@ def test_seedless_first_round_is_unconditionally_the_new_best():
     assert "tanimoto_to_seed" not in candidates_by_round[1].columns
 
 
-def test_tanimoto_cutoff_requires_seed_raises():
-    generator = StubGenerator([["CCC"]])
+def test_a_tanimoto_annotator_requires_a_seed():
     annotators = [
+        AnnotatorSpec("score", StubAnnotator({"CCC": 1.0}), 0.0, "higher"),
         AnnotatorSpec(
-            "score",
-            StubAnnotator({"CCC": 1.0}),
-            cutoff=float("-inf"),
-            direction="higher",
-        )
+            "tanimoto", TanimotoAnnotator(), 0.2, "higher", priority="guard-rail"
+        ),
     ]
 
-    with pytest.raises(ValueError, match="tanimoto_cutoff"):
-        hill_climb(
-            generator, annotators, mode="joint", seed_smiles=None, tanimoto_cutoff=0.5
-        )
+    # refused before anything is generated: StubGenerator([]) fails if called
+    with pytest.raises(ValueError, match="tanimoto compares candidates with the seed"):
+        hill_climb(StubGenerator([]), annotators, mode="joint", seed_smiles=None)
 
 
 def test_sequential_mode_single_annotator_reproduces_pure_maximization():
@@ -755,7 +752,7 @@ def test_active_annotator_id_is_none_for_joint_mode():
     assert summary["active_annotator_id"].isna().all()
 
 
-def test_tanimoto_cutoff_excluded_from_joint_mode_count():
+def test_a_tanimoto_guard_rail_is_not_counted_in_joint_mode():
     # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
     a_scores = {"CCO": 1.0, "CO": 1.0, "c1ccc2ccccc2c1": 1.0}
     b_scores = {"CCO": 1.0, "CO": 0.0, "c1ccc2ccccc2c1": 10.0}
@@ -763,22 +760,22 @@ def test_tanimoto_cutoff_excluded_from_joint_mode_count():
     annotators = [
         AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
         AnnotatorSpec("b", StubAnnotator(b_scores), cutoff=5.0, direction="higher"),
+        AnnotatorSpec(
+            "tanimoto", TanimotoAnnotator(), 0.2, "higher", priority="guard-rail"
+        ),
     ]
 
     summary, candidates_by_round = hill_climb(
-        generator,
-        annotators,
-        mode="joint",
-        seed_smiles="CCO",
-        n_rounds=1,
-        tanimoto_cutoff=0.2,
+        generator, annotators, mode="joint", seed_smiles="CCO", n_rounds=1
     )
 
-    # Naphthalene clears both cutoffs (count=2) but fails the Tanimoto gate
-    # (0.0 < 0.2); methanol clears only "a" (count=1) but passes Tanimoto
+    # Naphthalene clears both cutoffs (count=2) but fails the Tanimoto guard-rail
+    # (0.0 < 0.2); methanol clears only "a" (count=1) but passes it
     # (0.2857 >= 0.2) and wins despite the lower count.
     round1 = candidates_by_round[1].set_index("smiles")
     assert round1.loc["c1ccc2ccccc2c1", "cutoffs_satisfied"] == 2
+    assert round1.loc["CO", "tanimoto"] == 0.2857142857142857
+    assert candidates_by_round[0].iloc[0]["tanimoto"] == 1.0
     assert summary.iloc[-1]["smiles"] == "CO"
     assert summary.iloc[-1]["score"] == 1
 
@@ -876,25 +873,23 @@ def test_active_annotator_id_is_none_for_weighted_mode():
     assert summary["active_annotator_id"].isna().all()
 
 
-def test_tanimoto_cutoff_excluded_from_weighted_mode_score():
+def test_a_tanimoto_guard_rail_is_not_weighted():
     # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
     scores = {"CCO": 1.0, "CO": 1.0, "c1ccc2ccccc2c1": 100.0}
     generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
     annotators = [
         AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec(
+            "tanimoto", TanimotoAnnotator(), 0.2, "higher", priority="guard-rail"
+        ),
     ]
 
     summary, candidates_by_round = hill_climb(
-        generator,
-        annotators,
-        mode="weighted",
-        seed_smiles="CCO",
-        n_rounds=1,
-        tanimoto_cutoff=0.2,
+        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
     )
 
-    # Naphthalene has the far higher weighted_score but fails the Tanimoto gate
-    # (0.0 < 0.2); methanol passes (0.2857 >= 0.2) and wins despite the lower score.
+    # Naphthalene has the far higher weighted_score but fails the Tanimoto
+    # guard-rail (0.0 < 0.2); methanol passes (0.2857 >= 0.2) and wins.
     round1 = candidates_by_round[1].set_index("smiles")
     assert round1.loc["c1ccc2ccccc2c1", "weighted_score"] == 100.0
     assert summary.iloc[-1]["smiles"] == "CO"
@@ -940,56 +935,99 @@ def test_weighted_score_column_only_present_in_weighted_mode():
     assert "weighted_score" in candidates_by_round[1].columns
 
 
-def test_tanimoto_direction_lower_seeks_novelty():
+def test_a_lower_tanimoto_guard_rail_seeks_novelty():
     # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
     scores = {"CCO": 1.0, "CO": 1.0, "c1ccc2ccccc2c1": 1.0}
     generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
     annotators = [
         AnnotatorSpec("score", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        AnnotatorSpec(
+            "tanimoto", TanimotoAnnotator(), 0.2, "lower", priority="guard-rail"
+        ),
     ]
 
     summary, _ = hill_climb(
-        generator,
-        annotators,
-        mode="joint",
-        seed_smiles="CCO",
-        n_rounds=1,
-        tanimoto_cutoff=0.2,
-        tanimoto_direction="lower",
+        generator, annotators, mode="joint", seed_smiles="CCO", n_rounds=1
     )
 
-    # Both candidates clear the annotator cutoff equally, so the Tanimoto gate
-    # decides the winner. Methanol (0.2857) is too similar under a "lower"
-    # (novelty) gate and is excluded; naphthalene (0.0) is admitted and wins -
-    # the opposite outcome from the same cutoff under the default "higher" gate
-    # (see test_tanimoto_cutoff_excluded_from_joint_mode_count above).
+    # Both candidates clear the annotator cutoff equally, so the guard-rail
+    # decides: methanol (0.2857) is too similar, naphthalene (0.0) wins.
     assert summary.iloc[-1]["smiles"] == "c1ccc2ccccc2c1"
 
 
-def test_original_seed_smiles_reports_tanimoto_to_original_seed_column():
+def test_a_tanimoto_range_guard_rail_keeps_similar_but_not_identical():
     # Real Tanimoto (Morgan, radius 2) to "CCO": "CO" = 0.2857, naphthalene = 0.0.
-    scores = {"CO": 1.0, "c1ccc2ccccc2c1": 2.0}
-    generator = StubGenerator([["c1ccc2ccccc2c1"]])
+    scores = {"CCO": 1.0, "CCO.O": 5.0, "CO": 2.0, "c1ccc2ccccc2c1": 9.0}
+    generator = StubGenerator([["CCO.O", "CO", "c1ccc2ccccc2c1"]])
     annotators = [
+        AnnotatorSpec("score", StubAnnotator(scores), float("-inf"), "higher"),
         AnnotatorSpec(
-            "score", StubAnnotator(scores), cutoff=float("-inf"), direction="higher"
-        )
+            "tanimoto", TanimotoAnnotator(), (0.2, 0.8), "range", priority="guard-rail"
+        ),
     ]
 
-    _, candidates_by_round = hill_climb(
-        generator,
-        annotators,
-        mode="sequential",
-        seed_smiles="CO",
-        original_seed_smiles="CCO",
-        n_rounds=1,
+    summary, candidates_by_round = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
     )
 
-    round0 = candidates_by_round[0]
-    assert round0.iloc[0]["tanimoto_to_original_seed"] == 0.2857142857142857
-
+    # "CCO.O" (ethanol and water) is too close to the seed (0.857), naphthalene
+    # too far (0.0); methanol (0.286) is in between and wins.
     round1 = candidates_by_round[1].set_index("smiles")
-    assert round1.loc["c1ccc2ccccc2c1", "tanimoto_to_original_seed"] == 0.0
+    assert round1.loc["CCO.O", "tanimoto"] == 0.8571428571428571
+    assert summary.iloc[-1]["smiles"] == "CO"
+
+
+def test_a_lower_tanimoto_primary_drives_the_search_away_from_the_seed():
+    generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
+    annotators = [
+        AnnotatorSpec("tanimoto", TanimotoAnnotator(), 0.1, "lower"),
+    ]
+
+    summary, _ = hill_climb(
+        generator, annotators, mode="sequential", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert summary.iloc[-1]["smiles"] == "c1ccc2ccccc2c1"
+    assert summary.iloc[-1]["score"] == 0.0
+
+
+def test_a_higher_tanimoto_first_primary_warns(caplog, verbose_logger):
+    annotators = [
+        AnnotatorSpec("tanimoto", TanimotoAnnotator(), 0.5, "higher"),
+        AnnotatorSpec("score", StubAnnotator({"CCO": 1.0, "CO": 2.0}), 0.0, "higher"),
+    ]
+
+    with caplog.at_level("WARNING"):
+        hill_climb(
+            StubGenerator([["CO"], ["CO"]]),
+            annotators,
+            mode="sequential",
+            seed_smiles="CCO",
+            n_rounds=1,
+        )
+
+    assert any("is the first primary" in r.message for r in caplog.records)
+
+
+def test_a_tanimoto_annotator_never_runs_as_a_model_call(monkeypatch):
+    from chemsampler import execution
+
+    calls = []
+    monkeypatch.setattr(
+        execution.LocalExecutor, "run_rdkit", lambda self, *a: calls.append(a)
+    )
+    annotators = [
+        AnnotatorSpec("score", StubAnnotator({"CCO": 1.0, "CO": 2.0}), 0.0, "higher"),
+        AnnotatorSpec(
+            "tanimoto", TanimotoAnnotator(), 0.0, "higher", priority="guard-rail"
+        ),
+    ]
+
+    hill_climb(
+        StubGenerator([["CO"]]), annotators, mode="joint", seed_smiles="CCO", n_rounds=1
+    )
+
+    assert calls == []
 
 
 # --- annotate ------------------------------------------------------------
@@ -1183,7 +1221,7 @@ def test_similarity_model_is_rejected_as_generator():
         )
 
 
-# --- guard-rails (secondary annotators) ---------------------------------------------
+# --- guard-rails --------------------------------------------------------------------
 
 
 def _primary(scores, cutoff=1.5, direction="higher", annotator_id="score"):
@@ -1198,7 +1236,7 @@ def _guard(scores, cutoff, direction="higher", annotator_id="guard"):
         StubAnnotator(scores),
         cutoff=cutoff,
         direction=direction,
-        priority="secondary",
+        priority="guard-rail",
     )
 
 
@@ -1234,7 +1272,7 @@ def test_guard_rail_blocks_the_best_primary_candidate_in_every_mode(mode, extra)
     assert round1.loc["CCC", "guardrails_satisfied"]
 
 
-def test_secondary_annotators_do_not_count_or_weigh():
+def test_guard_rails_do_not_count_or_weigh():
     annotators = [
         _primary({"CCO": 1.0, "CCC": 2.0}),
         _guard({"CCO": 100.0, "CCC": 100.0}, cutoff=0.0),
@@ -1318,7 +1356,7 @@ def test_a_run_needs_at_least_one_primary_annotator():
         )
 
 
-def test_secondary_annotators_never_become_the_active_annotator():
+def test_guard_rails_never_become_the_active_annotator():
     annotators = [_guard(GUARD_SCORES, cutoff=0.5), _primary(PRIMARY_SCORES)]
 
     summary, _ = hill_climb(

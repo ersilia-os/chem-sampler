@@ -19,7 +19,7 @@ RECORD_FILE = "inputs.json"
 #: The inputs as the run found them; `resume` reads these, not the project's,
 #: which may have changed since.
 INPUT_FOLDER = "input"
-INPUT_FILES = ("similarity.csv", "generators.csv", "annotators.csv")
+INPUT_FILES = ("similarity.csv", "generators.csv", "annotators.csv", "smiles.csv")
 
 #: Who is running the run right now: host, process and Slurm job.
 LOCK_FILE = "run.lock"

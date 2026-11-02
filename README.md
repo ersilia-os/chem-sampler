@@ -32,7 +32,8 @@ a **store** that every project on the machine shares.
 chemsampler init -p my-run && cd my-run   # a project: input/ and rounds/
 chemsampler fetch eos9p57 eos8nyg eos4zfy # get these models; writes input/generators.csv and similarity.csv
 $EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
-chemsampler run --mode sequential --seed-smiles "CCO"
+printf 'smiles\nCCO\n' > input/smiles.csv  # the seed
+chemsampler run --mode sequential
 ```
 
 `init` only creates a new folder; without `-p` it makes a dummy `chemsampler-test`.
@@ -91,8 +92,8 @@ repeat, and leaves every model current:
   line) cannot be compared and count as matching; `fetch` says how many. Don't
   fetch while a run uses the same models.
 - An environment left half-built by an interrupted run is removed and rebuilt.
-- With an RDKit annotator in the inputs, `fetch` also builds a small `rdkit`
-  environment, which a cluster run scores it with.
+- With an RDKit annotator in the inputs (`mw`, `qed`), `fetch` also builds a small
+  `rdkit` environment, which a cluster run scores it with.
 
 ## Inputs
 
@@ -103,9 +104,12 @@ Annotators are required, and so is at least one of similarity and generators.
 | similarity | `similarity.csv` | one similarity-search model: `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT) or `eos80al` (Enamine Hit Locator) |
 | generators | `generators.csv` | generative models |
 | annotators | `annotators.csv` | models or RDKit functions that score molecules, each with a cutoff, a direction and a priority |
+| seed | `smiles.csv` | the starting molecule, header `smiles` (optional; `run --seed-smiles` overrides it) |
 
-A **primary** annotator is optimized; a **secondary** one is a guard-rail that every
-candidate must satisfy. Every model is checked against a bundled catalog of what
+A **primary** annotator is optimized; a **guard-rail** is one every candidate must
+satisfy. Any annotator can be either, including the RDKit ones: `mw`, `qed` and
+`tanimoto`, the similarity to the seed (e.g. `rdkit,tanimoto,0.4,higher,guard-rail`
+keeps candidates near it). Every model is checked against a bundled catalog of what
 the Hub currently labels for each role, which works offline. The exact columns, the
 project file and the catalog are in [docs/inputs.md](docs/inputs.md); the four
 ways to combine primaries (`sequential`, `joint`, `weighted`, `incremental`) and the
@@ -115,7 +119,8 @@ Python API are in [docs/modes.md](docs/modes.md).
 
 `chemsampler run --hpc NAME` sends every model of a round to a Slurm cluster as its
 own job: the similarity and generative models side by side, then, once their
-candidates are put together, one job per annotator (RDKit ones included). The
+candidates are put together, one job per annotator (`mw` and `qed` included;
+`tanimoto` is computed by the run itself). The
 terminal waits and says how many jobs are pending, running and done; each round is
 ranked as a local run would rank it. Ctrl-C cancels the run's jobs and keeps the
 rounds already finished.
@@ -148,9 +153,10 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 
 ```bash
 chemsampler fetch eos9p57,eos8nyg qed -f        # set the project's samplers and fetch them
-chemsampler run -p my-run --mode joint --seed-smiles "CCO"   # from outside the project
-chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster   # models as Slurm jobs
-chemsampler run --mode weighted --seed-smiles "CCO" --hpc mycluster --detach   # the run is a job too
+chemsampler run -p my-run --mode joint            # from outside the project
+chemsampler run --mode joint --seed-smiles "CCO"   # another seed than input/smiles.csv
+chemsampler run --mode weighted --hpc mycluster    # models as Slurm jobs
+chemsampler run --mode weighted --hpc mycluster --detach   # the run is a job too
 chemsampler resume                               # continue the latest run where it stopped
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed

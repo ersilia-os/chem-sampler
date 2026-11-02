@@ -4,7 +4,7 @@ from typing import Literal
 
 Direction = Literal["higher", "lower"]
 AnnotatorDirection = Literal["higher", "lower", "range"]
-Priority = Literal["primary", "secondary"]
+Priority = Literal["primary", "guard-rail"]
 Cutoff = float | tuple[float, float]
 
 
@@ -14,8 +14,8 @@ class AnnotatorSpec:
     An annotator paired with the cutoff a candidate must clear.
 
     A *primary* annotator is optimized: `hill_climb`'s `mode` decides how the
-    primaries combine into a round's winner. A *secondary* annotator is a
-    guard-rail: a candidate that does not satisfy it is never eligible, in any
+    primaries combine into a round's winner. A *guard-rail* is a hard
+    constraint: a candidate that does not satisfy it is never eligible, in any
     mode, and it takes no part in the optimization.
 
     Parameters
@@ -31,14 +31,13 @@ class AnnotatorSpec:
         `(min, max)` pair, with `min < max`, when `direction="range"`.
     direction : {"higher", "lower", "range"}
         "higher" is satisfied by `value >= cutoff`; "lower" by `value <= cutoff`;
-        "range" by `min <= value <= max`. A range is only allowed on a secondary
-        annotator.
+        "range" by `min <= value <= max`. A range is only allowed on a guard-rail.
     weight : float, optional
         Relative importance in `hill_climb`'s `mode="weighted"`; ignored by
-        every other mode and by secondary annotators. Must be >= 0. By default
+        every other mode and by guard-rails. Must be >= 0. By default
         1.0.
-    priority : {"primary", "secondary"}, optional
-        "primary" annotators are optimized; "secondary" ones are guard-rails.
+    priority : {"primary", "guard-rail"}, optional
+        "primary" annotators are optimized; "guard-rail" ones are constraints.
         By default "primary".
     """
 
@@ -54,9 +53,9 @@ class AnnotatorSpec:
             raise ValueError(
                 f"direction must be 'higher', 'lower' or 'range', got {self.direction!r}"
             )
-        if self.priority not in ("primary", "secondary"):
+        if self.priority not in ("primary", "guard-rail"):
             raise ValueError(
-                f"{self.annotator_id}: priority must be 'primary' or 'secondary', "
+                f"{self.annotator_id}: priority must be 'primary' or 'guard-rail', "
                 f"got {self.priority!r}"
             )
         if self.direction == "range":
@@ -76,11 +75,10 @@ class AnnotatorSpec:
             )
 
     def _check_range(self) -> None:
-        if self.priority != "secondary":
+        if self.priority != "guard-rail":
             raise ValueError(
-                f"{self.annotator_id}: range is only allowed for secondary "
-                "annotators (guard-rails); a primary annotator is optimized "
-                "toward a one-sided cutoff"
+                f"{self.annotator_id}: range is only allowed for guard-rails; a "
+                "primary annotator is optimized toward a one-sided cutoff"
             )
         if not (isinstance(self.cutoff, tuple) and len(self.cutoff) == 2):
             raise ValueError(

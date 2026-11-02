@@ -2,6 +2,7 @@ import pandas as pd
 
 from .. import execution
 from ..utils.logging import logger
+from ..utils.similarity import tanimoto_to_seed
 
 
 class _RDKitAnnotator:
@@ -62,6 +63,69 @@ class QEDAnnotator(_RDKitAnnotator):
     name = "qed"
 
 
+class TanimotoAnnotator:
+    """
+    Similarity to the run's seed: Morgan-fingerprint Tanimoto, on a 0-1 scale.
+
+    Built without a seed; `hill_climb` binds the run's seed with `against`.
+    Scored in the run's own process, never as a cluster job, so it needs no
+    `rdkit` environment.
+
+    Parameters
+    ----------
+    seed_smiles : str, optional
+        The molecule candidates are compared with.
+    """
+
+    name = "tanimoto"
+
+    def __init__(self, seed_smiles: str | None = None) -> None:
+        self.seed_smiles = seed_smiles
+
+    def against(self, seed_smiles: str) -> "TanimotoAnnotator":
+        """A copy that compares candidates with `seed_smiles`."""
+        return TanimotoAnnotator(seed_smiles)
+
+    def score(self, smiles_list: list[str]) -> dict[str, float]:
+        """
+        Score a list of SMILES.
+
+        Parameters
+        ----------
+        smiles_list : list[str]
+            SMILES strings to score.
+
+        Returns
+        -------
+        dict[str, float]
+            Mapping from input SMILES to its similarity to the seed; SMILES RDKit
+            cannot parse are left out.
+
+        Raises
+        ------
+        ValueError
+            If no seed was bound.
+        """
+        if self.seed_smiles is None:
+            raise ValueError(NEEDS_SEED)
+        return tanimoto_to_seed(self.seed_smiles, smiles_list)
+
+
+#: Why a Tanimoto annotator cannot be scored without a seed.
+NEEDS_SEED = (
+    "tanimoto compares candidates with the seed: give one "
+    "(input/smiles.csv or --seed-smiles)"
+)
+
 #: In-house annotators computed with RDKit, by the `model` name used in the
 #: annotator inputs (`source: rdkit`).
-RDKIT_ANNOTATORS = {"mw": MolecularWeightAnnotator, "qed": QEDAnnotator}
+RDKIT_ANNOTATORS = {
+    "mw": MolecularWeightAnnotator,
+    "qed": QEDAnnotator,
+    "tanimoto": TanimotoAnnotator,
+}
+
+#: Those of them a cluster job scores, with the `rdkit` environment.
+RDKIT_ENV_ANNOTATORS = frozenset(
+    name for name, cls in RDKIT_ANNOTATORS.items() if issubclass(cls, _RDKitAnnotator)
+)

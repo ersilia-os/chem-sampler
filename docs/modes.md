@@ -2,10 +2,10 @@
 
 Generators and a similarity model propose molecules, and annotators score them.
 `hill_climb` alternates the two, promoting each round's best candidate to seed the
-next round. An annotator is either **primary** (optimized) or **secondary** (a
-guard-rail: a candidate that does not satisfy it never wins, in any mode). How the
+next round. An annotator is either **primary** (optimized) or a **guard-rail**
+(a candidate that does not satisfy it never wins, in any mode). How the
 primaries combine is chosen with `mode`, which has no default. A lighter
-`annotate(smiles, annotators)` scores one molecule with no generation or rounds,
+`annotate(smiles, annotators, seed_smiles)` scores one molecule with no generation or rounds,
 which is handy for checking a seed's baseline.
 
 ## Modes
@@ -43,18 +43,15 @@ which is handy for checking a seed's baseline.
 from chemsampler.config import load_inputs
 from chemsampler.optimize import hill_climb
 
-# reserpine, PubChem CID 5770
-seed = "CO[C@H]1[C@@H](C[C@@H]2CN3CCC4=C([C@H]3C[C@@H]2[C@@H]1C(=O)OC)NC5=C4C=CC(=C5)OC)OC(=O)C6=CC(=C(C(=C6)OC)OC)OC"
-
-# run from inside a project: its inputs and the store's models are found for you
+# run from inside a project: its inputs, its seed (input/smiles.csv) and the
+# store's models are found for you
 inputs = load_inputs()
 summary, candidates_by_round = hill_climb(
     inputs.generators,
     inputs.annotators,
     similarity=inputs.similarity,
     mode="sequential",
-    seed_smiles=seed,
-    tanimoto_cutoff=0.4,
+    seed_smiles=inputs.seed_smiles,
 )
 ```
 
@@ -63,12 +60,13 @@ summary, candidates_by_round = hill_climb(
 `mode="joint"`). `candidates_by_round[n]` has one row per candidate considered
 in round `n`, with its source model, every annotator's value,
 `cutoffs_satisfied` (primaries only), `guardrails_satisfied` (only candidates
-where it is true can win), `tanimoto_to_seed` (only if a seed was given), and
-`tanimoto_to_original_seed` (only if `original_seed_smiles` was given).
-`tanimoto_cutoff`/`tanimoto_direction` gate on `tanimoto_to_seed`:
-`direction="higher"` (default) keeps candidates at least this similar to the
-seed; `"lower"` pushes toward novelty instead.
-`seed_smiles` is optional; without one, round 1 is unconditionally the new
+where it is true can win) and `tanimoto_to_seed` (only if a seed was given).
+To limit similarity to the seed, add a Tanimoto annotator, e.g.
+`AnnotatorSpec("tanimoto", TanimotoAnnotator(), 0.4, "higher", priority="guard-rail")`
+(from `chemsampler.models.annotator`); `hill_climb` compares it with
+`seed_smiles`. `"lower"` pushes toward novelty instead, and as a primary it is
+optimized like any annotator.
+`seed_smiles` is optional (but required with a Tanimoto annotator); without one, round 1 is unconditionally the new
 best, but every Hub model needs a seed to run, so pass one in practice.
 
 `hill_climb`'s generator may be `None` when a similarity model is given. Models

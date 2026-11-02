@@ -9,7 +9,7 @@ from ..models.spec import Cutoff
 
 SOURCES = ("ersilia", "rdkit")
 DIRECTIONS = ("higher", "lower", "range")
-PRIORITIES = ("primary", "secondary")
+PRIORITIES = ("primary", "guard-rail")
 REQUIRED_FIELDS = ("source", "model", "cutoff", "direction", "priority")
 OPTIONAL_FIELDS = ("weight", "column")
 
@@ -152,7 +152,7 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     ValueError
         On an unknown or missing field, a source/model/direction/priority that is
         not allowed, a bad cutoff (see `parse_cutoff`), a range on a primary
-        annotator, a weight on a secondary one, or a column on an rdkit one.
+        annotator, a weight on a guard-rail, or a column on an rdkit one.
     """
     allowed = REQUIRED_FIELDS + OPTIONAL_FIELDS
     unknown = sorted(str(k) for k in row if k not in allowed)
@@ -185,24 +185,25 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
         raise ValueError(
             f"{where}: direction must be one of {list(DIRECTIONS)}, got {direction!r}"
         )
+    if priority == "secondary":
+        raise ValueError(f"{where}: priority 'secondary' is now called 'guard-rail'")
     if priority not in PRIORITIES:
         raise ValueError(
             f"{where}: priority must be one of {list(PRIORITIES)}, got {priority!r}"
         )
 
     cutoff = parse_cutoff(where, direction, values["cutoff"])
-    if direction == "range" and priority != "secondary":
+    if direction == "range" and priority != "guard-rail":
         raise ValueError(
-            f"{where}: range is only allowed for secondary annotators "
-            "(guard-rails); a primary annotator is optimized toward a "
-            "one-sided cutoff."
+            f"{where}: range is only allowed for guard-rails; a primary "
+            "annotator is optimized toward a one-sided cutoff."
         )
 
     weight = _parse_weight(where, values["weight"])
-    if priority == "secondary" and weight is not None:
+    if priority == "guard-rail" and weight is not None:
         raise ValueError(
-            f"{where}: weight only applies to primary annotators; a secondary "
-            "annotator is a guard-rail and is not weighted."
+            f"{where}: weight only applies to primary annotators; a guard-rail "
+            "is not weighted."
         )
 
     return AnnotatorRow(

@@ -77,12 +77,9 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
                 mode=options["mode"],
                 similarity=inputs.similarity,
                 seed_smiles=options["seed_smiles"],
-                original_seed_smiles=options["original_seed_smiles"],
                 n_rounds=options["n_rounds"],
                 n_steps=options["n_steps"],
                 tolerance=options["tolerance"],
-                tanimoto_cutoff=options["tanimoto_cutoff"],
-                tanimoto_direction=options["tanimoto_direction"],
                 checkpoint=run_dir,
             )
         elapsed = time.time() - start_time
@@ -200,12 +197,10 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
     required=True,
     help="How the primary annotators combine into a round's winner.",
 )
-@click.option("--seed-smiles", default=None, help="SMILES of the starting molecule.")
 @click.option(
-    "--original-seed-smiles",
+    "--seed-smiles",
     default=None,
-    help="Original molecule of a re-seeded chain of runs (adds "
-    "tanimoto_to_original_seed).",
+    help="SMILES of the starting molecule (default: input/smiles.csv).",
 )
 @click.option(
     "--n-rounds",
@@ -226,19 +221,6 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
     show_default=True,
     type=float,
     help="How much a round must improve on the best to count.",
-)
-@click.option(
-    "--tanimoto-cutoff",
-    default=None,
-    type=float,
-    help="Similarity to the seed that candidates must respect.",
-)
-@click.option(
-    "--tanimoto-direction",
-    type=click.Choice(["higher", "lower"]),
-    default="higher",
-    show_default=True,
-    help="higher: at least this similar; lower: at most.",
 )
 @click.option(
     "--hpc",
@@ -262,18 +244,16 @@ def run_cmd(
     path: str | None,
     mode: str,
     seed_smiles: str | None,
-    original_seed_smiles: str | None,
     n_rounds: int,
     n_steps: int | None,
     tolerance: float,
-    tanimoto_cutoff: float | None,
-    tanimoto_direction: str,
     hpc: str | None,
     detach: bool,
     verbose: bool,
 ) -> None:
     """Generate and score candidates around a seed, round by round."""
     from ...config import load_inputs
+    from ...models.annotator import NEEDS_SEED, TanimotoAnnotator
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger
 
@@ -286,6 +266,15 @@ def run_cmd(
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
+    if seed_smiles is None:
+        seed_smiles = inputs.seed_smiles
+    elif inputs.seed_smiles is not None:
+        click.secho("--seed-smiles given: ignoring input/smiles.csv", fg="yellow")
+    if seed_smiles is None and any(
+        isinstance(s.annotator, TanimotoAnnotator) for s in inputs.annotators
+    ):
+        click.secho(NEEDS_SEED, fg="red")
+        sys.exit(1)
     # the models it used and how it was launched: enough to run it again
     record = {
         **inputs.describe(),
@@ -293,12 +282,9 @@ def run_cmd(
             "chemsampler_version": _chemsampler_version(),
             "mode": mode,
             "seed_smiles": seed_smiles,
-            "original_seed_smiles": original_seed_smiles,
             "n_rounds": n_rounds,
             "n_steps": n_steps,
             "tolerance": tolerance,
-            "tanimoto_cutoff": tanimoto_cutoff,
-            "tanimoto_direction": tanimoto_direction,
             "hpc": hpc,
             "verbose": verbose,
             "status": "running",

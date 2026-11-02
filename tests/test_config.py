@@ -19,8 +19,8 @@ from chemsampler.project import create_project
 ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
 ANNOTATOR_ROWS = [
     ["ersilia", "eos4zfy", "0.5", "higher", "primary", "2"],
-    ["rdkit", "mw", "250-450", "range", "secondary", ""],
-    ["rdkit", "qed", "0.3", "higher", "secondary", ""],
+    ["rdkit", "mw", "250-450", "range", "guard-rail", ""],
+    ["rdkit", "qed", "0.3", "higher", "guard-rail", ""],
 ]
 
 
@@ -86,7 +86,7 @@ def test_loads_the_three_inputs_from_csvs(inputs_dir):
     assert isinstance(specs["mw"].annotator, MolecularWeightAnnotator)
     assert isinstance(specs["qed"].annotator, QEDAnnotator)
     assert (specs["mw"].cutoff, specs["mw"].direction) == ((250.0, 450.0), "range")
-    assert specs["mw"].priority == "secondary"
+    assert specs["mw"].priority == "guard-rail"
 
 
 def test_every_hub_model_is_checked_but_in_house_annotators_are_not(inputs_dir, hub):
@@ -262,7 +262,7 @@ def test_only_one_similarity_model_for_now(inputs_dir):
 
 
 def test_annotator_errors_say_the_file_and_row(inputs_dir):
-    rows = [ANNOTATOR_ROWS[0], ["rdkit", "mw", "250", "range", "secondary", ""]]
+    rows = [ANNOTATOR_ROWS[0], ["rdkit", "mw", "250", "range", "guard-rail", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
 
     with pytest.raises(ValueError, match=r"annotators\.csv row 2 \(mw\).*min-max"):
@@ -313,7 +313,7 @@ INLINE = {
             "model": "mw",
             "cutoff": "250-450",
             "direction": "range",
-            "priority": "secondary",
+            "priority": "guard-rail",
         },
     ],
 }
