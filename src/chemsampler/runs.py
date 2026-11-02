@@ -52,27 +52,27 @@ def set_status(run_dir, record: dict, status: str) -> None:
     write_record(run_dir, record)
 
 
-def find_run(rounds_dir, name: str | None = None) -> Path:
+def find_run(runs_dir, name: str | None = None) -> Path:
     """
-    A run's folder: `name` as a path or as a folder of `rounds_dir`, or the latest run.
+    A run's folder: `name` as a path or as a folder of `runs_dir`, or the latest run.
 
     Raises
     ------
     ValueError
         If there is no such run (or no run at all).
     """
-    rounds = Path(rounds_dir)
+    folder = Path(runs_dir)
     if name is None:
         runs = []
-        if rounds.is_dir():
-            runs = sorted(p for p in rounds.iterdir() if (p / RECORD_FILE).is_file())
+        if folder.is_dir():
+            runs = sorted(p for p in folder.iterdir() if (p / RECORD_FILE).is_file())
         if not runs:
-            raise ValueError(f"no runs in {rounds} yet")
+            raise ValueError(f"no runs in {folder} yet")
         return runs[-1]  # the folders are named by the time they started
-    for path in (Path(name), rounds / name):
+    for path in (Path(name), folder / name):
         if (path / RECORD_FILE).is_file():
             return Path(os.path.abspath(path))
-    raise ValueError(f"{name} is not a run (no {RECORD_FILE} in it, nor in {rounds})")
+    raise ValueError(f"{name} is not a run (no {RECORD_FILE} in it, nor in {folder})")
 
 
 def take_lock(run_dir, job_alive=None) -> None:

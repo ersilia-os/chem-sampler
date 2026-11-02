@@ -162,7 +162,7 @@ def test_a_project_marker_given_as_the_config_gets_the_project_folders(
     inputs = load_inputs(config=str(root / "chemsampler.json"))
 
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
-    assert inputs.rounds_dir == str(root.resolve() / "rounds")
+    assert inputs.runs_dir == str(root.resolve() / "runs")
 
 
 # --- flags and the working directory ------------------------------------------------
@@ -538,13 +538,13 @@ def test_inside_a_project_its_marker_file_is_the_config(
     tmp_path, store_root, monkeypatch
 ):
     create_project(tmp_path / "proj")
-    monkeypatch.chdir(tmp_path / "proj" / "rounds")  # any folder inside will do
+    monkeypatch.chdir(tmp_path / "proj" / "runs")  # any folder inside will do
 
     inputs = load_inputs()
 
     assert inputs.similarity.model_id == "eos8nyg"
     # results are the project's; the models are the machine's
-    assert inputs.rounds_dir == str((tmp_path / "proj" / "rounds").resolve())
+    assert inputs.runs_dir == str((tmp_path / "proj" / "runs").resolve())
     assert inputs.models_dir == str(store_root / "models")
     assert inputs.envs_dir == str(store_root / "envs")
 
@@ -558,7 +558,7 @@ def test_a_project_made_before_the_store_keeps_its_own_models(tmp_path, monkeypa
                 "path_to_models": "input",
                 "path_to_model_repositories": "models",
                 "path_to_envs": "envs",
-                "path_to_rounds": "rounds",
+                "path_to_runs": "runs",
             }
         )
     )
@@ -586,7 +586,7 @@ def test_an_explicit_config_ignores_the_project(tmp_path, store_root, monkeypatc
 
     inputs = load_inputs(config=path)
 
-    assert inputs.rounds_dir is None  # the project's results folder is not used
+    assert inputs.runs_dir is None  # the project's results folder is not used
     assert inputs.envs_dir == str(store_root / "envs")  # the machine's models still are
 
 

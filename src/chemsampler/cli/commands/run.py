@@ -290,7 +290,7 @@ def run_cmd(
             "status": "running",
         },
     }
-    run_dir, input_dir = inputs.new_round_dir(), Project.load(root).input
+    run_dir, input_dir = inputs.new_run_dir(), Project.load(root).input
     if detach:
         detach_run(inputs, record, run_dir, root, input_dir)
     else:

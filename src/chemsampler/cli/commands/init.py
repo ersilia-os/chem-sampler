@@ -55,7 +55,7 @@ def _model_folders(models: str | None, envs: str | None) -> tuple[Path, Path]:
     help="Where fetch builds their environments (default: the store).",
 )
 def init_cmd(path: str | None, models: str | None, envs: str | None) -> None:
-    """Create a new project folder (input/ and rounds/) for one analysis."""
+    """Create a new project folder (input/ and runs/) for one analysis."""
     from ...project import create_project, find_project
 
     # abspath, not resolve: a dangling symlink must count as taken, not be followed

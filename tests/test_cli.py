@@ -68,9 +68,9 @@ def _inputs(tmp_path, annotators=(QED,), fetched=True):
     return root
 
 
-def _round_dir(root):
-    """The one dated folder a run wrote under the project's rounds/."""
-    [folder] = list((root / "rounds").iterdir())
+def _run_dir(root):
+    """The one dated folder a run wrote under the project's runs/."""
+    [folder] = list((root / "runs").iterdir())
     return folder
 
 
@@ -102,8 +102,8 @@ def test_run_writes_results_and_merges_generator_and_similarity_candidates(tmp_p
 
     assert result.exit_code == 0, result.output
     assert "Best candidate" in result.output
-    assert (_round_dir(root) / "summary.csv").exists()
-    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
+    assert (_run_dir(root) / "summary.csv").exists()
+    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
 
 
@@ -113,7 +113,7 @@ def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
     assert round1["guardrails_satisfied"].tolist() == [False]  # CCN weighs about 45 Da
 
 
@@ -135,7 +135,7 @@ def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
 
     assert result.exit_code == 1
     assert "give at least one of similarity and generators" in result.output
-    assert not list((root / "rounds").iterdir())
+    assert not list((root / "runs").iterdir())
 
 
 def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
@@ -165,7 +165,7 @@ def test_a_run_records_how_it_was_launched(tmp_path):
     result = _run(root, "--tolerance", "0.1")
 
     assert result.exit_code == 0, result.output
-    saved = json.loads((_round_dir(root) / "inputs.json").read_text())
+    saved = json.loads((_run_dir(root) / "inputs.json").read_text())
     assert saved["similarity"] == "eos8nyg"  # the models are still there
     assert saved["run"] == {
         "chemsampler_version": importlib.metadata.version("chemsampler"),
@@ -195,9 +195,9 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
 
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
-    saved = json.loads((_round_dir(root) / "inputs.json").read_text())
+    saved = json.loads((_run_dir(root) / "inputs.json").read_text())
     assert saved["run"]["mode"] == "sequential"
-    assert (_round_dir(root) / "summary.csv").exists()
+    assert (_run_dir(root) / "summary.csv").exists()
 
 
 #: CCN (45.1 Da), the fake models' only candidate, beats the seed CCO (46.1 Da),
@@ -226,9 +226,9 @@ def test_ctrl_c_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
-    summary = pd.read_csv(_round_dir(root) / "summary.csv")
+    summary = pd.read_csv(_run_dir(root) / "summary.csv")
     assert summary["round"].tolist() == [0, 1]
-    assert (_round_dir(root) / "round1.csv").exists()
+    assert (_run_dir(root) / "round1.csv").exists()
 
 
 def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
@@ -239,8 +239,8 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
 
     assert result.exit_code == 1
     assert "eos9taz: run.sh failed (exit 1)" in result.output
-    assert f"Finished rounds written to {_round_dir(root)}" in result.output
-    summary = pd.read_csv(_round_dir(root) / "summary.csv")
+    assert f"Finished rounds written to {_run_dir(root)}" in result.output
+    summary = pd.read_csv(_run_dir(root) / "summary.csv")
     assert summary["round"].tolist() == [0, 1]
 
 
@@ -282,7 +282,7 @@ def _resume(root, *args):
 
 
 def _status(root):
-    return json.loads((_round_dir(root) / "inputs.json").read_text())["run"]["status"]
+    return json.loads((_run_dir(root) / "inputs.json").read_text())["run"]["status"]
 
 
 def _same_results(here, there):
@@ -308,10 +308,10 @@ def test_a_stopped_run_resumes_to_what_an_uninterrupted_run_gives(
     stopped = _three_rounds(root)
 
     assert stopped.exit_code == 0, stopped.output
-    name = _round_dir(root).name
+    name = _run_dir(root).name
     assert f"Continue it with `chemsampler resume {name}`" in stopped.output
     assert _status(root) == "stopped"
-    assert not (_round_dir(root) / "run.lock").exists()
+    assert not (_run_dir(root) / "run.lock").exists()
     left = _script(monkeypatch, HEAVIER[2])
 
     resumed = _resume(root)
@@ -320,7 +320,7 @@ def test_a_stopped_run_resumes_to_what_an_uninterrupted_run_gives(
     assert f"Resuming {name} (stopped)." in resumed.output
     assert left == []  # only round 3 ran a model
     assert _status(root) == "finished"
-    _same_results(_round_dir(whole), _round_dir(root))
+    _same_results(_run_dir(whole), _run_dir(root))
 
 
 def test_resume_uses_the_inputs_the_run_started_with(tmp_path, monkeypatch):
@@ -330,10 +330,10 @@ def test_resume_uses_the_inputs_the_run_started_with(tmp_path, monkeypatch):
     _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
     _script(monkeypatch, *HEAVIER[1:])
 
-    result = _resume(root, _round_dir(root).name)
+    result = _resume(root, _run_dir(root).name)
 
     assert result.exit_code == 0, result.output
-    assert "mw" in pd.read_csv(_round_dir(root) / "round3.csv").columns
+    assert "mw" in pd.read_csv(_run_dir(root) / "round3.csv").columns
 
 
 def test_sigterm_stops_a_run_as_ctrl_c_does(tmp_path, monkeypatch):
@@ -348,7 +348,7 @@ def test_sigterm_stops_a_run_as_ctrl_c_does(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
     assert _status(root) == "stopped"
-    assert pd.read_csv(_round_dir(root) / "summary.csv")["round"].tolist() == [0, 1]
+    assert pd.read_csv(_run_dir(root) / "summary.csv")["round"].tolist() == [0, 1]
 
 
 def test_a_failed_run_can_be_resumed_once_fixed(tmp_path, monkeypatch):
@@ -380,7 +380,7 @@ def test_a_finished_run_is_not_run_again(tmp_path, monkeypatch):
 def test_resume_explains_what_it_cannot_resume(tmp_path, monkeypatch):
     root = _generator_project(tmp_path)
     assert "no runs in" in _resume(root).output
-    old = root / "rounds" / "2026-01-01_00-00-00"
+    old = root / "runs" / "2026-01-01_00-00-00"
     old.mkdir()
     (old / "inputs.json").write_text(json.dumps({"run": {"mode": "weighted"}}))
 
@@ -397,7 +397,7 @@ def test_resume_refuses_a_run_still_going_here(tmp_path, monkeypatch):
     root = _generator_project(tmp_path)
     _script(monkeypatch, HEAVIER[0], KeyboardInterrupt())
     _three_rounds(root)
-    lock = _round_dir(root) / "run.lock"
+    lock = _run_dir(root) / "run.lock"
     held = {"host": socket.gethostname(), "pid": os.getpid(), "job": None}
     lock.write_text(json.dumps(held))
 
@@ -415,7 +415,7 @@ def test_run_can_use_a_similarity_model_without_generators(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos8nyg"]
 
 
@@ -426,7 +426,7 @@ def test_run_can_use_generators_without_a_similarity_model(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_round_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz"]
 
 
@@ -450,7 +450,7 @@ def _run_from_csv(root):
 
 
 def _record(root):
-    return json.loads((_round_dir(root) / "inputs.json").read_text())
+    return json.loads((_run_dir(root) / "inputs.json").read_text())
 
 
 def test_the_seed_comes_from_smiles_csv(tmp_path):
@@ -461,8 +461,8 @@ def test_the_seed_comes_from_smiles_csv(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert _record(root)["run"]["seed_smiles"] == "CCO"
-    assert (_round_dir(root) / "input" / "smiles.csv").read_text() == "smiles\nCCO\n"
-    assert pd.read_csv(_round_dir(root) / "round0.csv")["smiles"].tolist() == ["CCO"]
+    assert (_run_dir(root) / "input" / "smiles.csv").read_text() == "smiles\nCCO\n"
+    assert pd.read_csv(_run_dir(root) / "round0.csv")["smiles"].tolist() == ["CCO"]
 
 
 def test_seed_smiles_wins_over_smiles_csv(tmp_path):
@@ -493,7 +493,7 @@ def test_a_bad_smiles_csv_is_refused(tmp_path, text, message):
 
     assert result.exit_code == 1
     assert message in result.output
-    assert not (root / "rounds").exists() or not any((root / "rounds").iterdir())
+    assert not (root / "runs").exists() or not any((root / "runs").iterdir())
 
 
 def test_a_tanimoto_guard_rail_through_the_cli(tmp_path):
@@ -503,9 +503,9 @@ def test_a_tanimoto_guard_rail_through_the_cli(tmp_path):
     result = _run_from_csv(root)
 
     assert result.exit_code == 0, result.output
-    round0 = pd.read_csv(_round_dir(root) / "round0.csv")
+    round0 = pd.read_csv(_run_dir(root) / "round0.csv")
     assert round0["tanimoto"].tolist() == [1.0]
-    round1 = pd.read_csv(_round_dir(root) / "round1.csv")  # CCN, 0.333 to CCO
+    round1 = pd.read_csv(_run_dir(root) / "round1.csv")  # CCN, 0.333 to CCO
     assert round1["tanimoto"].tolist() == [round1["tanimoto_to_seed"][0]]
     assert round1["guardrails_satisfied"].tolist() == [False]
 
@@ -517,7 +517,7 @@ def test_a_tanimoto_annotator_needs_a_seed(tmp_path):
 
     assert result.exit_code == 1
     assert "tanimoto compares candidates with the seed" in result.output
-    assert not (root / "rounds").exists() or not any((root / "rounds").iterdir())
+    assert not (root / "runs").exists() or not any((root / "runs").iterdir())
 
 
 @pytest.mark.parametrize(
@@ -543,7 +543,7 @@ def test_a_stopped_run_with_a_tanimoto_annotator_resumes(tmp_path, monkeypatch):
     resumed = _resume(root)
 
     assert resumed.exit_code == 0, resumed.output
-    _same_results(_round_dir(whole), _round_dir(root))
+    _same_results(_run_dir(whole), _run_dir(root))
 
 
 @pytest.mark.parametrize(
@@ -557,7 +557,7 @@ def test_resume_refuses_a_run_made_with_the_removed_options(
     _three_rounds(root)
     record = _record(root)
     record["run"][key] = value
-    (_round_dir(root) / "inputs.json").write_text(json.dumps(record))
+    (_run_dir(root) / "inputs.json").write_text(json.dumps(record))
 
     result = _resume(root)
 
@@ -848,10 +848,10 @@ def test_a_run_in_a_project_writes_a_dated_round_folder(
     )
 
     assert result.exit_code == 0, result.output
-    rounds = list((root / "rounds").iterdir())
-    assert len(rounds) == 1
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", rounds[0].name)
-    assert (rounds[0] / "summary.csv").exists() and (rounds[0] / "round1.csv").exists()
+    runs = list((root / "runs").iterdir())
+    assert len(runs) == 1
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", runs[0].name)
+    assert (runs[0] / "summary.csv").exists() and (runs[0] / "round1.csv").exists()
 
 
 def test_a_run_saves_what_it_resolved_next_to_its_results(
@@ -865,7 +865,7 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
     )
 
     assert result.exit_code == 0, result.output
-    [round_dir] = list((root / "rounds").iterdir())
+    [round_dir] = list((root / "runs").iterdir())
     saved = json.loads((round_dir / "inputs.json").read_text())
     assert saved["similarity"] == "eos8nyg" and saved["generators"] == ["eos9taz"]
     assert saved["annotators"] == [
@@ -891,7 +891,7 @@ def test_two_runs_in_a_row_get_separate_folders(tmp_path, store_root, monkeypatc
     second = CliRunner().invoke(cli, command)
 
     assert first.exit_code == 0 and second.exit_code == 0, second.output
-    assert len(list((root / "rounds").iterdir())) == 2
+    assert len(list((root / "runs").iterdir())) == 2
 
 
 def test_a_model_without_a_built_environment_says_to_run_fetch(
@@ -1179,7 +1179,7 @@ def test_path_names_the_project_from_anywhere(
     assert result.exit_code == 0, result.output
     assert list(elsewhere.iterdir()) == []  # results go to the project, not here
     if command == "run":
-        assert (_round_dir(root) / "summary.csv").exists()
+        assert (_run_dir(root) / "summary.csv").exists()
 
 
 @pytest.mark.parametrize("command", [*NEEDS_A_PROJECT, "catalog"])

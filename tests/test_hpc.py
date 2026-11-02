@@ -165,7 +165,7 @@ def _run(root, *args):
 
 
 def _runs(root):
-    return sorted((root / "rounds").iterdir())
+    return sorted((root / "runs").iterdir())
 
 
 # --- a whole run on the "cluster" --------------------------------------------------------
@@ -452,7 +452,7 @@ def test_a_new_run_whose_job_is_refused_leaves_no_folder(
     result = _run(project, "--hpc", "test", "--detach")
 
     assert result.exit_code == 1 and "Time limit specification" in result.output
-    assert not list((project / "rounds").iterdir())
+    assert not list((project / "runs").iterdir())
 
 
 def test_detaching_needs_a_cluster_and_an_env(project, cluster, store_root):
@@ -461,7 +461,7 @@ def test_detaching_needs_a_cluster_and_an_env(project, cluster, store_root):
 
     assert without_hpc.exit_code == 1 and "it needs --hpc NAME" in without_hpc.output
     assert without_env.exit_code == 1 and "has no 'env'" in without_env.output
-    assert cluster.argvs == [] and not list((project / "rounds").iterdir())
+    assert cluster.argvs == [] and not list((project / "runs").iterdir())
 
 
 def test_problems_found_before_the_run_are_listed_and_nothing_is_sent(project, cluster):
@@ -474,8 +474,8 @@ def test_problems_found_before_the_run_are_listed_and_nothing_is_sent(project, c
     assert "no node node-b" in result.output
     assert "the cluster cannot see /somewhere" in result.output
     assert cluster.argvs == [] and _runs(project) == []
-    [folders] = cluster.preflights  # the rounds, models, envs and rdkit env
-    assert any(f.endswith("rounds") for f in folders)
+    [folders] = cluster.preflights  # the runs, models, envs and rdkit env
+    assert any(f.endswith("runs") for f in folders)
     assert any(f.endswith("rdkit") for f in folders)
 
 

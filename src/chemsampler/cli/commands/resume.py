@@ -30,7 +30,7 @@ def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
 
     try:
         root = locate_project(path)
-        run_dir = runs.find_run(Project.load(root).rounds, run)
+        run_dir = runs.find_run(Project.load(root).runs, run)
         record = runs.read_record(run_dir)
         if not (run_dir / runs.INPUT_FOLDER).is_dir() or "status" not in record.get(
             "run", {}

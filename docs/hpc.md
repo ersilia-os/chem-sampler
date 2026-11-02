@@ -104,7 +104,7 @@ returns, printing the job id and how to follow, stop and continue the run.
 Nothing then depends on the machine you started from or on your connection to
 it.
 
-- **Follow it:** `tail -f rounds/<run>/run.log`, from any machine that sees the
+- **Follow it:** `tail -f runs/<run>/run.log`, from any machine that sees the
   project. Each start of the job adds to the log, with a header line.
 - **Preemption:** the job is submitted with `--requeue`. Preempted, it receives
   SIGTERM, cancels the run's jobs and goes back to the queue; when it starts

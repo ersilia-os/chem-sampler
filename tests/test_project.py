@@ -21,15 +21,15 @@ def test_init_creates_only_what_a_project_owns(tmp_path):
 
     root = tmp_path / "run"
     # no .gitignore: a project is not a git repository, what to version is the user's
-    assert sorted(p.name for p in root.iterdir()) == [PROJECT_FILE, "input", "rounds"]
+    assert sorted(p.name for p in root.iterdir()) == [PROJECT_FILE, "input", "runs"]
     # absolute, so the file shows where everything is
     assert json.loads((root / PROJECT_FILE).read_text()) == {
         "path_to_models": str(root / "input"),
-        "path_to_rounds": str(root / "rounds"),
+        "path_to_runs": str(root / "runs"),
     }
     for name in TEMPLATES:
         assert (root / "input" / name).is_file()
-    assert PROJECT_FILE in created and "input/" in created and "rounds/" in created
+    assert PROJECT_FILE in created and "input/" in created and "runs/" in created
 
 
 def test_a_project_has_no_models_or_envs_of_its_own(tmp_path):
@@ -56,10 +56,10 @@ def test_init_is_safe_to_repeat_and_keeps_edited_inputs(tmp_path):
 
 def test_init_fills_in_only_what_is_missing(tmp_path):
     create_project(tmp_path)
-    (tmp_path / "rounds").rmdir()
+    (tmp_path / "runs").rmdir()
     (tmp_path / "input" / "similarity.csv").unlink()
 
-    assert sorted(create_project(tmp_path)) == ["input/similarity.csv", "rounds/"]
+    assert sorted(create_project(tmp_path)) == ["input/similarity.csv", "runs/"]
 
 
 def test_a_custom_layout_in_the_marker_file_is_respected(tmp_path):
@@ -70,7 +70,7 @@ def test_a_custom_layout_in_the_marker_file_is_respected(tmp_path):
 
     assert project.input == tmp_path / "csvs"
     assert (tmp_path / "csvs" / "annotators.csv").is_file()
-    assert project.rounds == tmp_path / "rounds"  # the default for a key it omits
+    assert project.runs == tmp_path / "runs"  # the default for a key it omits
 
 
 def test_a_marker_that_names_its_own_models_keeps_them_apart_from_the_store(tmp_path):
@@ -87,7 +87,7 @@ def test_a_marker_that_names_its_own_models_keeps_them_apart_from_the_store(tmp_
 
 def test_the_project_is_found_from_any_subfolder(tmp_path):
     create_project(tmp_path)
-    deep = tmp_path / "rounds" / "2026-10-29_16-51-01"
+    deep = tmp_path / "runs" / "2026-10-29_16-51-01"
     deep.mkdir(parents=True)
 
     assert find_project(deep) == tmp_path.resolve()
@@ -263,7 +263,7 @@ def test_init_records_every_location_and_says_where_the_models_go(here, store_ro
     assert result.exit_code == 0, result.output
     assert json.loads((here / "run" / PROJECT_FILE).read_text()) == {
         "path_to_models": str(here / "run" / "input"),
-        "path_to_rounds": str(here / "run" / "rounds"),
+        "path_to_runs": str(here / "run" / "runs"),
         "path_to_model_repositories": str(store_root / "models"),
         "path_to_envs": str(store_root / "envs"),
     }
@@ -317,7 +317,7 @@ def test_with_both_folders_given_an_old_store_config_does_not_matter(here, store
 def test_init_notes_a_project_inside_another(here):
     create_project(here / "outer")
 
-    inside = init("-p", "outer/rounds/inner")
+    inside = init("-p", "outer/runs/inner")
     alone = init("-p", "alone")
 
     assert inside.exit_code == 0, inside.output
@@ -349,7 +349,7 @@ def test_a_copied_project_is_refused_until_its_paths_are_fixed(here):
     marker = here / "copy" / PROJECT_FILE
     fixed = json.loads(marker.read_text())
     fixed["path_to_models"] = str(here / "copy" / "input")
-    fixed["path_to_rounds"] = str(here / "copy" / "rounds")
+    fixed["path_to_runs"] = str(here / "copy" / "runs")
     marker.write_text(json.dumps(fixed))
     accepted = annotate_in(here / "copy")
 
@@ -389,14 +389,14 @@ def test_inputs_kept_outside_any_project_are_allowed(here):
     assert result.exit_code == 0, result.output
 
 
-@pytest.mark.parametrize("stale", ["path_to_models", "path_to_rounds"])
+@pytest.mark.parametrize("stale", ["path_to_models", "path_to_runs"])
 def test_one_path_left_pointing_at_the_original_is_enough_to_refuse(here, stale):
     init("-p", "original")
     (here / "original" / "input" / "annotators.csv").write_text(QED_ONLY)
     shutil.copytree(here / "original", here / "copy")
     marker = here / "copy" / PROJECT_FILE
     paths = json.loads(marker.read_text())
-    for key, name in (("path_to_models", "input"), ("path_to_rounds", "rounds")):
+    for key, name in (("path_to_models", "input"), ("path_to_runs", "runs")):
         if key != stale:
             paths[key] = str(here / "copy" / name)
     marker.write_text(json.dumps(paths))
@@ -405,3 +405,17 @@ def test_one_path_left_pointing_at_the_original_is_enough_to_refuse(here, stale)
 
     assert result.exit_code == 1
     assert "points at the folders of another project" in result.output
+
+
+def test_a_project_still_naming_its_rounds_folder_is_refused(here):
+    init("-p", "old")
+    (here / "old" / "input" / "annotators.csv").write_text(QED_ONLY)
+    marker = here / "old" / PROJECT_FILE
+    paths = json.loads(marker.read_text())
+    paths["path_to_rounds"] = paths.pop("path_to_runs")
+    marker.write_text(json.dumps(paths))
+
+    result = annotate_in(here / "old")
+
+    assert result.exit_code == 1
+    assert "unknown key(s) ['path_to_rounds']" in result.output

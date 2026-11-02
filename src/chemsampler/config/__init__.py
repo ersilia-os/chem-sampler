@@ -37,7 +37,7 @@ PATH_KEYS = (
     "path_to_models",
     "path_to_model_repositories",
     "path_to_envs",
-    "path_to_rounds",
+    "path_to_runs",
 )
 CONFIG_KEYS = (*PATH_KEYS, *INPUT_NAMES)
 
@@ -51,7 +51,7 @@ class Inputs:
     annotators: list[AnnotatorSpec]
     models_dir: str | None
     envs_dir: str | None
-    rounds_dir: str | None
+    runs_dir: str | None
     seed_smiles: str | None = None
 
     def describe(self) -> dict:
@@ -79,16 +79,16 @@ class Inputs:
             "path_to_envs": self.envs_dir,
         }
 
-    def new_round_dir(self) -> Path | None:
-        """A fresh, dated folder under `rounds/` for one run's results."""
-        if self.rounds_dir is None:
+    def new_run_dir(self) -> Path | None:
+        """A fresh, dated folder under `runs/` for one run's results."""
+        if self.runs_dir is None:
             return None
         # Local time: the folder name is read by whoever started the run.
         stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
-        folder = Path(self.rounds_dir) / stamp
+        folder = Path(self.runs_dir) / stamp
         suffix = 2
         while folder.exists():
-            folder = Path(self.rounds_dir) / f"{stamp}_{suffix}"
+            folder = Path(self.runs_dir) / f"{stamp}_{suffix}"
             suffix += 1
         return folder
 
@@ -173,7 +173,7 @@ def load_inputs(
         annotators=loaded["annotators"],
         models_dir=loaded["models_dir"],
         envs_dir=loaded["envs_dir"],
-        rounds_dir=loaded["rounds_dir"],
+        runs_dir=loaded["runs_dir"],
         seed_smiles=loaded["seed_smiles"],
     )
 
@@ -473,7 +473,7 @@ _PROJECT_FOLDER = {
     "path_to_models": "input",
     "path_to_model_repositories": "models",
     "path_to_envs": "envs",
-    "path_to_rounds": "rounds",
+    "path_to_runs": "runs",
 }
 
 
@@ -485,7 +485,7 @@ class _Locations:
     models: Path | None
     repos: Path | None
     envs: Path | None
-    rounds: Path | None
+    runs: Path | None
     root: Path | None  # the project root, when the config is a project marker
     from_store: (
         bool  # the model repositories are the store's, not a folder the user named
@@ -542,10 +542,10 @@ def _locations(
         repos = shared.models
         envs = envs if envs is not None else shared.envs
     inputs = folder(path_to_models, "path_to_models")
-    rounds = folder(None, "path_to_rounds")
+    runs = folder(None, "path_to_runs")
     if root is not None:
-        _check_own_folders(root, (inputs, rounds))
-    return _Locations(data, inputs, repos, envs, rounds, root, from_store)
+        _check_own_folders(root, (inputs, runs))
+    return _Locations(data, inputs, repos, envs, runs, root, from_store)
 
 
 def _check_own_folders(root: Path, folders) -> None:
@@ -553,7 +553,7 @@ def _check_own_folders(root: Path, folders) -> None:
     A project's inputs and results must not be another project's.
 
     The marker records absolute paths, so a copied project still names the
-    original's folders and would read its inputs and write into its rounds.
+    original's folders and would read its inputs and write into its runs.
     """
     for path in folders:
         owner = None if path is None else find_project(path)
@@ -661,7 +661,7 @@ def _load(
     loaded = {
         "models_dir": models_dir,
         "envs_dir": envs_dir,
-        "rounds_dir": _as_text(loc.rounds),
+        "runs_dir": _as_text(loc.runs),
         "seed_smiles": seed_smiles,
         "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,

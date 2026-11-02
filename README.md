@@ -29,7 +29,7 @@ where its models are. The models are expensive to fetch, so by default they live
 a **store** that every project on the machine shares.
 
 ```bash
-chemsampler init -p my-run && cd my-run   # a project: input/ and rounds/
+chemsampler init -p my-run && cd my-run   # a project: input/ and runs/
 chemsampler fetch eos9p57 eos8nyg eos4zfy # get these models; writes input/generators.csv and similarity.csv
 $EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
 printf 'smiles\nCCO\n' > input/smiles.csv  # the seed
@@ -42,16 +42,16 @@ chemsampler run --mode sequential
 my-run/                       ~/.chemsampler/        the store ($CHEMSAMPLER_HOME)
   chemsampler.json              models/              one git clone per model
   input/                        envs/                one conda environment per model
-  rounds/                       logs/                what fetch ran, per model
+  runs/                         logs/                what fetch ran, per model
                                 hpc.json             cluster profiles, if any
 ```
 
 Every location is set once, by `init`, and written to the project's
 `chemsampler.json`; the other commands need only the project. They work anywhere
 inside it, or on any project with `-p PATH`. Each run writes a dated folder under
-`rounds/` with its `summary.csv`, one `round<n>.csv` per round and an `inputs.json`
+`runs/` with its `summary.csv`, one `round<n>.csv` per round and an `inputs.json`
 of the models and the options it ran with. The paths are absolute: a copied project is refused until its
-`chemsampler.json` names its own `input/` and `rounds/`.
+`chemsampler.json` names its own `input/` and `runs/`.
 
 Rounds are saved as they finish, with a copy of the inputs. A run stopped in any
 way (Ctrl-C, a failed model, a closed terminal, a cancelled job) continues with

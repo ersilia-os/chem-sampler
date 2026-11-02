@@ -18,7 +18,7 @@ PROJECT_FILE = "chemsampler.json"
 
 #: The folders a project owns, and the key that can move each one. A marker that
 #: leaves a key out gets the folder of this name inside the project.
-FOLDER_KEYS = {"path_to_models": "input", "path_to_rounds": "rounds"}
+FOLDER_KEYS = {"path_to_models": "input", "path_to_runs": "runs"}
 
 #: The folders of the models and their environments. `chemsampler init` always
 #: writes them (the store's, unless told otherwise); without them, the store's.
@@ -40,7 +40,7 @@ class Project:
 
     root: Path
     input: Path
-    rounds: Path
+    runs: Path
     #: Only when the marker file names them; otherwise the store's are used.
     models: Path | None
     envs: Path | None
@@ -61,7 +61,7 @@ class Project:
         return cls(
             root=root,
             input=folder("path_to_models", FOLDER_KEYS["path_to_models"]),
-            rounds=folder("path_to_rounds", FOLDER_KEYS["path_to_rounds"]),
+            runs=folder("path_to_runs", FOLDER_KEYS["path_to_runs"]),
             models=folder("path_to_model_repositories"),
             envs=folder("path_to_envs"),
         )
@@ -138,7 +138,7 @@ def create_project(root, models=None, envs=None) -> list[str]:
     root.mkdir(parents=True, exist_ok=True)
     write_if_absent(root / PROJECT_FILE, json.dumps(marker, indent=2) + "\n")
     project = Project.load(root)
-    for folder in (project.input, project.rounds):
+    for folder in (project.input, project.runs):
         if not folder.exists():
             folder.mkdir(parents=True)
             created.append(f"{folder.relative_to(root)}/")

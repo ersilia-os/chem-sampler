@@ -272,7 +272,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 9. **Where the run lives.** Every run needs a project: if there is none,
    propose `chemsampler init -p <name>` (one per analysis; it refuses a folder
    that exists, and records where the models go). Write the CSVs (and
-   `smiles.csv` with the seed) into its `input/` folder and let `run` pick its own dated folder under `rounds/`,
+   `smiles.csv` with the seed) into its `input/` folder and let `run` pick its own dated folder under `runs/`,
    which also stores an `inputs.json` of what was resolved — no output folder
    to choose and nothing stale to inherit. Give `-p <project>` to every command
    unless the working directory is inside the project.

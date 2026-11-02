@@ -43,22 +43,22 @@ as absolute paths:
 
 ```json
 {
-  "path_to_models": "/home/you/runs/my-run/input",
-  "path_to_rounds": "/home/you/runs/my-run/rounds",
+  "path_to_models": "/home/you/projects/my-run/input",
+  "path_to_runs": "/home/you/projects/my-run/runs",
   "path_to_model_repositories": "/home/you/.chemsampler/models",
   "path_to_envs": "/home/you/.chemsampler/envs"
 }
 ```
 
-`path_to_models` is the folder with the three CSVs, `path_to_rounds` where runs
-write their results, and the last two where `fetch` puts the model clones and
+`path_to_models` is the folder with the input CSVs, `path_to_runs` where each run
+writes its dated folder, and the last two where `fetch` puts the model clones and
 their conda environments: this machine's store unless `init --models DIR
 --envs DIR` named others. To change a location later, edit the file (a relative
 path there is relative to the project folder); never move model or environment
 folders after `fetch`.
 
 A copied or moved project still names the old folders. Commands refuse a project
-whose input or rounds folder belongs to another project, so a copy never reads the
+whose input or runs folder belongs to another project, so a copy never reads the
 original's inputs or writes into its results: fix the two paths in the copy's
 `chemsampler.json`.
 
