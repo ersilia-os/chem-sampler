@@ -143,12 +143,19 @@ def run_cmd(
         elapsed = time.time() - start_time
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
+        # a model that failed midway: the rounds before it are still results
+        if hasattr(e, "partial"):
+            _save(output_dir, *e.partial, record)
+            click.secho(f"Finished rounds written to {output_dir}", fg="yellow")
         sys.exit(1)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as e:
         if output_dir is None:
             click.secho("\nInterrupted before the first round.", fg="yellow")
             sys.exit(0)
         click.secho("\nInterrupted! Saving partial results...", fg="yellow")
+        summary, candidates_by_round = getattr(
+            e, "partial", (summary, candidates_by_round)
+        )
         _save(output_dir, summary, candidates_by_round, record)
         click.secho(f"Partial results written to {output_dir}", fg="yellow")
         sys.exit(0)

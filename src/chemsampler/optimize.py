@@ -21,6 +21,19 @@ _RESERVED_COLUMNS = {
     "tanimoto_to_original_seed",
 }
 
+#: What stops a run midway: Ctrl-C, or a model that fails. The rounds finished
+#: before it travel on the exception, so the caller can still save them.
+_STOPS = (KeyboardInterrupt, RuntimeError, ValueError)
+
+
+def _keep_finished(error: BaseException, history: list, candidates_by_round: dict):
+    """Put the rounds a caller finished before those its callee put on `error`."""
+    later_history, later_candidates = getattr(error, "_finished_rounds", ([], {}))
+    error._finished_rounds = (
+        [*history, *later_history],
+        {**candidates_by_round, **later_candidates},
+    )
+
 
 def hill_climb(
     generator,
@@ -174,6 +187,13 @@ def hill_climb(
         cutoff or can't score the seed.
     TypeError
         If `generator` is a `HubSimilarity`: pass it as `similarity` instead.
+
+    Notes
+    -----
+    A run stopped midway by Ctrl-C (`KeyboardInterrupt`) or a failing model
+    (`RuntimeError`, `ValueError`) re-raises that exception with the rounds
+    finished before it as `partial`: the `(summary, candidates_by_round)` pair
+    this function would have returned. It is absent when no round finished.
     """
     if isinstance(generator, HubSimilarity):
         raise TypeError(
@@ -212,127 +232,135 @@ def hill_climb(
     best_row: dict[str, float] = {}
     best_score = float("-inf")
 
-    if seed_smiles is not None:
-        seed_scores = _score_candidates([seed_smiles], annotators)
-        original_seed_tanimoto = (
-            tanimoto_to_seed(original_seed_smiles, [seed_smiles])
-            if original_seed_smiles is not None
-            else None
-        )
-        round0_table = _round_table(
-            {seed_smiles: "seed"},
-            seed_scores,
-            annotators,
-            {seed_smiles: 1.0},
-            original_seed_tanimoto,
-            include_weighted_score=(mode == "weighted"),
-        )
-        candidates_by_round[0] = round0_table
-        seed_row = round0_table.iloc[0]
-        failing = [
-            spec.annotator_id
-            for spec in _guards(annotators)
-            if not _cutoff_satisfied(seed_row[spec.annotator_id], spec)
-        ]
-        if failing:
-            logger.warning(
-                f"The seed does not satisfy the guard-rail(s) {', '.join(failing)}; "
-                "its candidates must."
+    try:
+        if seed_smiles is not None:
+            seed_scores = _score_candidates([seed_smiles], annotators)
+            original_seed_tanimoto = (
+                tanimoto_to_seed(original_seed_smiles, [seed_smiles])
+                if original_seed_smiles is not None
+                else None
             )
-        best_row = {
-            spec.annotator_id: seed_row[spec.annotator_id] for spec in annotators
-        }
-        if mode == "incremental":
-            for spec in _primaries(annotators):
-                if not math.isfinite(spec.cutoff):
-                    raise ValueError(
-                        f"mode='incremental' requires a finite cutoff for every "
-                        f"annotator; {spec.annotator_id!r} has cutoff {spec.cutoff!r}"
-                    )
-                if math.isnan(best_row[spec.annotator_id]):
-                    raise ValueError(
-                        f"{seed_smiles!r} could not be scored by "
-                        f"{spec.annotator_id!r}, required to anchor the "
-                        "mode='incremental' schedule"
-                    )
-        active_id = (
-            None
-            if mode in ("joint", "weighted")
-            else _primaries(annotators)[0].annotator_id
-        )
-        if mode == "joint":
-            best_score = seed_row["cutoffs_satisfied"]
-        elif mode == "weighted":
-            best_score = seed_row["weighted_score"]
-        else:
-            best_score = seed_row[active_id]
-        round0_history = {
-            "round": 0,
-            "smiles": seed_smiles,
-            "score": best_score,
-            "is_new_best": True,
-            "active_annotator_id": active_id,
-        }
-        if mode == "incremental":
-            round0_history["step_level"] = 0
-        history.append(round0_history)
-        logger.info(f"Round 0: seed score = {best_score}")
+            round0_table = _round_table(
+                {seed_smiles: "seed"},
+                seed_scores,
+                annotators,
+                {seed_smiles: 1.0},
+                original_seed_tanimoto,
+                include_weighted_score=(mode == "weighted"),
+            )
+            candidates_by_round[0] = round0_table
+            seed_row = round0_table.iloc[0]
+            failing = [
+                spec.annotator_id
+                for spec in _guards(annotators)
+                if not _cutoff_satisfied(seed_row[spec.annotator_id], spec)
+            ]
+            if failing:
+                logger.warning(
+                    f"The seed does not satisfy the guard-rail(s) {', '.join(failing)}; "
+                    "its candidates must."
+                )
+            best_row = {
+                spec.annotator_id: seed_row[spec.annotator_id] for spec in annotators
+            }
+            if mode == "incremental":
+                for spec in _primaries(annotators):
+                    if not math.isfinite(spec.cutoff):
+                        raise ValueError(
+                            f"mode='incremental' requires a finite cutoff for every "
+                            f"annotator; {spec.annotator_id!r} has cutoff {spec.cutoff!r}"
+                        )
+                    if math.isnan(best_row[spec.annotator_id]):
+                        raise ValueError(
+                            f"{seed_smiles!r} could not be scored by "
+                            f"{spec.annotator_id!r}, required to anchor the "
+                            "mode='incremental' schedule"
+                        )
+            active_id = (
+                None
+                if mode in ("joint", "weighted")
+                else _primaries(annotators)[0].annotator_id
+            )
+            if mode == "joint":
+                best_score = seed_row["cutoffs_satisfied"]
+            elif mode == "weighted":
+                best_score = seed_row["weighted_score"]
+            else:
+                best_score = seed_row[active_id]
+            round0_history = {
+                "round": 0,
+                "smiles": seed_smiles,
+                "score": best_score,
+                "is_new_best": True,
+                "active_annotator_id": active_id,
+            }
+            if mode == "incremental":
+                round0_history["step_level"] = 0
+            history.append(round0_history)
+            logger.info(f"Round 0: seed score = {best_score}")
 
-    if mode == "joint":
-        stage_history, stage_candidates = _run_joint(
-            generator,
-            annotators,
-            seed_smiles,
-            original_seed_smiles,
-            n_rounds,
-            tolerance,
-            tanimoto_cutoff,
-            tanimoto_direction,
-            best_smiles=seed_smiles,
-            best_score=best_score,
-            best_row=best_row,
-        )
-    elif mode == "weighted":
-        stage_history, stage_candidates = _run_weighted(
-            generator,
-            annotators,
-            seed_smiles,
-            original_seed_smiles,
-            n_rounds,
-            tolerance,
-            tanimoto_cutoff,
-            tanimoto_direction,
-            best_smiles=seed_smiles,
-            best_score=best_score,
-            best_row=best_row,
-        )
-    elif mode == "incremental":
-        stage_history, stage_candidates = _run_incremental(
-            generator,
-            annotators,
-            seed_smiles,
-            original_seed_smiles,
-            n_rounds,
-            tolerance,
-            tanimoto_cutoff,
-            tanimoto_direction,
-            best_smiles=seed_smiles,
-            best_row=best_row,
-            n_steps=n_steps,
-        )
-    else:
-        stage_history, stage_candidates = _run_sequential(
-            generator,
-            annotators,
-            seed_smiles,
-            original_seed_smiles,
-            n_rounds,
-            tolerance,
-            tanimoto_cutoff,
-            tanimoto_direction,
-            best_smiles=seed_smiles,
-            best_row=best_row,
-        )
+        if mode == "joint":
+            stage_history, stage_candidates = _run_joint(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                tanimoto_cutoff,
+                tanimoto_direction,
+                best_smiles=seed_smiles,
+                best_score=best_score,
+                best_row=best_row,
+            )
+        elif mode == "weighted":
+            stage_history, stage_candidates = _run_weighted(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                tanimoto_cutoff,
+                tanimoto_direction,
+                best_smiles=seed_smiles,
+                best_score=best_score,
+                best_row=best_row,
+            )
+        elif mode == "incremental":
+            stage_history, stage_candidates = _run_incremental(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                tanimoto_cutoff,
+                tanimoto_direction,
+                best_smiles=seed_smiles,
+                best_row=best_row,
+                n_steps=n_steps,
+            )
+        else:
+            stage_history, stage_candidates = _run_sequential(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                tanimoto_cutoff,
+                tanimoto_direction,
+                best_smiles=seed_smiles,
+                best_row=best_row,
+            )
+
+    except _STOPS as error:
+        _keep_finished(error, history, candidates_by_round)
+        finished_history, finished_candidates = error._finished_rounds
+        if finished_history:
+            error.partial = (pd.DataFrame(finished_history), finished_candidates)
+        raise
 
     history.extend(stage_history)
     candidates_by_round.update(stage_candidates)
@@ -687,115 +715,120 @@ def _run_rounds(
     history = []
     candidates_by_round: dict[int, pd.DataFrame] = {}
 
-    for offset in range(n_rounds):
-        round_num = start_round + offset
+    try:
+        for offset in range(n_rounds):
+            round_num = start_round + offset
 
-        if logger._quiet_mode:
-            logger.logger.setLevel(logging.ERROR)
-        by_model = generator.generate_by_model(best_smiles)
-        if logger._quiet_mode:
-            logger.logger.setLevel(logging.INFO)
-            logger.info(f"Round {round_num}: running...")
-        else:
-            if hasattr(generator, "generators"):
-                gen_ids = [g.model_id for g in generator.generators]
-            else:
-                gen_ids = list(by_model.keys()) if by_model else ["unknown"]
-            gen_str = ", ".join(gen_ids)
-            ann_ids = [spec.annotator_id for spec in annotators]
-            ann_str = ", ".join(ann_ids)
-            logger.info(
-                f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running..."
-            )
-
-        source_by_smiles: dict[str, list[str]] = {}
-        for model_id, smiles_list in by_model.items():
-            for smi in smiles_list:
-                source_by_smiles.setdefault(smi, []).append(model_id)
-        joined_source = {
-            smi: "|".join(sources) for smi, sources in source_by_smiles.items()
-        }
-
-        scores = _score_candidates(list(joined_source), annotators)
-        tanimoto = (
-            tanimoto_to_seed(seed_smiles, list(joined_source))
-            if seed_smiles is not None
-            else None
-        )
-        original_seed_tanimoto = (
-            tanimoto_to_seed(original_seed_smiles, list(joined_source))
-            if original_seed_smiles is not None
-            else None
-        )
-        round_table = _round_table(
-            joined_source,
-            scores,
-            annotators,
-            tanimoto,
-            original_seed_tanimoto,
-            include_weighted_score,
-        )
-        round_table = _sort_round_table(
-            round_table, active_annotator_id, winner_direction, sort_column
-        )
-        candidates_by_round[round_num] = round_table
-
-        if round_table.empty:
-            logger.warning(f"Round {round_num}: no candidates generated, stopping.")
-            break
-
-        winner = pick_winner(round_table)
-        if winner is None:
-            logger.warning(f"Round {round_num}: no eligible candidate, stopping.")
-            break
-        round_best_smiles, round_best_score, round_best_row = winner
-
-        is_new_best = _improved(
-            round_best_score, best_score, winner_direction, tolerance
-        )
-        history.append(
-            {
-                "round": round_num,
-                "smiles": round_best_smiles,
-                "score": round_best_score,
-                "is_new_best": is_new_best,
-                "active_annotator_id": active_annotator_id,
-            }
-        )
-
-        if is_new_best:
-            n_candidates = len(round_table)
             if logger._quiet_mode:
-                logger.success(
-                    f"Round {round_num}: improved to {round_best_score:.2f} ({n_candidates} candidates)"
-                )
+                logger.logger.setLevel(logging.ERROR)
+            by_model = generator.generate_by_model(best_smiles)
+            if logger._quiet_mode:
+                logger.logger.setLevel(logging.INFO)
+                logger.info(f"Round {round_num}: running...")
             else:
-                logger.success(f"Round {round_num}: improved to {round_best_score}")
-            best_smiles, best_score, best_row = (
-                round_best_smiles,
-                round_best_score,
-                round_best_row,
+                if hasattr(generator, "generators"):
+                    gen_ids = [g.model_id for g in generator.generators]
+                else:
+                    gen_ids = list(by_model.keys()) if by_model else ["unknown"]
+                gen_str = ", ".join(gen_ids)
+                ann_ids = [spec.annotator_id for spec in annotators]
+                ann_str = ", ".join(ann_ids)
+                logger.info(
+                    f"Round {round_num}: Generators: {gen_str}. Annotators: {ann_str}. Running..."
+                )
+
+            source_by_smiles: dict[str, list[str]] = {}
+            for model_id, smiles_list in by_model.items():
+                for smi in smiles_list:
+                    source_by_smiles.setdefault(smi, []).append(model_id)
+            joined_source = {
+                smi: "|".join(sources) for smi, sources in source_by_smiles.items()
+            }
+
+            scores = _score_candidates(list(joined_source), annotators)
+            tanimoto = (
+                tanimoto_to_seed(seed_smiles, list(joined_source))
+                if seed_smiles is not None
+                else None
+            )
+            original_seed_tanimoto = (
+                tanimoto_to_seed(original_seed_smiles, list(joined_source))
+                if original_seed_smiles is not None
+                else None
+            )
+            round_table = _round_table(
+                joined_source,
+                scores,
+                annotators,
+                tanimoto,
+                original_seed_tanimoto,
+                include_weighted_score,
+            )
+            round_table = _sort_round_table(
+                round_table, active_annotator_id, winner_direction, sort_column
+            )
+            candidates_by_round[round_num] = round_table
+
+            if round_table.empty:
+                logger.warning(f"Round {round_num}: no candidates generated, stopping.")
+                break
+
+            winner = pick_winner(round_table)
+            if winner is None:
+                logger.warning(f"Round {round_num}: no eligible candidate, stopping.")
+                break
+            round_best_smiles, round_best_score, round_best_row = winner
+
+            is_new_best = _improved(
+                round_best_score, best_score, winner_direction, tolerance
+            )
+            history.append(
+                {
+                    "round": round_num,
+                    "smiles": round_best_smiles,
+                    "score": round_best_score,
+                    "is_new_best": is_new_best,
+                    "active_annotator_id": active_annotator_id,
+                }
             )
 
-            if (
-                active_cutoff is not None
-                and winner_direction is not None
-                and math.isfinite(active_cutoff)
-            ):
-                cutoff_met = (
-                    round_best_score >= active_cutoff
-                    if winner_direction == "higher"
-                    else round_best_score <= active_cutoff
-                )
-                if cutoff_met:
-                    logger.info(
-                        f"{active_annotator_id}: cutoff {active_cutoff} satisfied, "
-                        "stopping this stage."
+            if is_new_best:
+                n_candidates = len(round_table)
+                if logger._quiet_mode:
+                    logger.success(
+                        f"Round {round_num}: improved to {round_best_score:.2f} ({n_candidates} candidates)"
                     )
-                    break
-        else:
-            logger.info(f"Round {round_num}: no improvement, stopping.")
-            break
+                else:
+                    logger.success(f"Round {round_num}: improved to {round_best_score}")
+                best_smiles, best_score, best_row = (
+                    round_best_smiles,
+                    round_best_score,
+                    round_best_row,
+                )
+
+                if (
+                    active_cutoff is not None
+                    and winner_direction is not None
+                    and math.isfinite(active_cutoff)
+                ):
+                    cutoff_met = (
+                        round_best_score >= active_cutoff
+                        if winner_direction == "higher"
+                        else round_best_score <= active_cutoff
+                    )
+                    if cutoff_met:
+                        logger.info(
+                            f"{active_annotator_id}: cutoff {active_cutoff} satisfied, "
+                            "stopping this stage."
+                        )
+                        break
+            else:
+                logger.info(f"Round {round_num}: no improvement, stopping.")
+                break
+
+    except _STOPS as error:
+        _keep_finished(error, history, candidates_by_round)
+        raise
 
     return history, candidates_by_round, best_smiles, best_score, best_row
 
@@ -906,123 +939,136 @@ def _run_sequential(
     floors: list[tuple[str, float, Direction]] = []
     next_round = 1
 
-    for spec in _primaries(annotators):
-        if best_smiles is None:
-            best_score = float("-inf") if spec.direction == "higher" else float("inf")
-            entry_ok = True  # no entry candidate to check; the "no candidates" path handles failure
-        else:
-            entry_value = best_row.get(spec.annotator_id, float("nan"))
-            if math.isnan(entry_value):
-                raise ValueError(
-                    f"{best_smiles!r} could not be scored by {spec.annotator_id!r} "
-                    "entering its stage"
+    try:
+        for spec in _primaries(annotators):
+            if best_smiles is None:
+                best_score = (
+                    float("-inf") if spec.direction == "higher" else float("inf")
                 )
-            best_score = entry_value
-            entry_ok = _cutoff_satisfied(entry_value, spec)
+                entry_ok = True  # no entry candidate to check; the "no candidates" path handles failure
+            else:
+                entry_value = best_row.get(spec.annotator_id, float("nan"))
+                if math.isnan(entry_value):
+                    raise ValueError(
+                        f"{best_smiles!r} could not be scored by {spec.annotator_id!r} "
+                        "entering its stage"
+                    )
+                best_score = entry_value
+                entry_ok = _cutoff_satisfied(entry_value, spec)
 
-        floors_snapshot = list(floors)
+            floors_snapshot = list(floors)
 
-        def pick_winner(
-            round_table: pd.DataFrame, spec=spec, floors_snapshot=floors_snapshot
-        ):
-            mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
-            mask &= _cutoff_satisfied_mask(
-                round_table[spec.annotator_id], spec.cutoff, spec.direction
-            )
-            for floor_id, floor_value, floor_direction in floors_snapshot:
+            def pick_winner(
+                round_table: pd.DataFrame, spec=spec, floors_snapshot=floors_snapshot
+            ):
+                mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
                 mask &= _cutoff_satisfied_mask(
-                    round_table[floor_id], floor_value, floor_direction
+                    round_table[spec.annotator_id], spec.cutoff, spec.direction
                 )
-            eligible = round_table[mask]
-            if eligible.empty:
-                # No candidate clears this stage's own cutoff even with floors
-                # intact. Still report an improvement if one exists that respects
-                # every prior floor - floors are a hard invariant and are never
-                # dropped, even in this fallback (own cutoff is still excluded;
-                # that's the whole point of the fallback).
-                floor_mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
                 for floor_id, floor_value, floor_direction in floors_snapshot:
-                    floor_mask &= _cutoff_satisfied_mask(
+                    mask &= _cutoff_satisfied_mask(
                         round_table[floor_id], floor_value, floor_direction
                     )
-                if floor_mask.any():
-                    best_overall = round_table[floor_mask]
-                    idx = (
-                        best_overall[spec.annotator_id].idxmax()
-                        if spec.direction == "higher"
-                        else best_overall[spec.annotator_id].idxmin()
+                eligible = round_table[mask]
+                if eligible.empty:
+                    # No candidate clears this stage's own cutoff even with floors
+                    # intact. Still report an improvement if one exists that respects
+                    # every prior floor - floors are a hard invariant and are never
+                    # dropped, even in this fallback (own cutoff is still excluded;
+                    # that's the whole point of the fallback).
+                    floor_mask = _eligible(
+                        round_table, tanimoto_cutoff, tanimoto_direction
                     )
-                    row = best_overall.loc[idx]
-                    if logger._quiet_mode:
-                        logger.warning(
-                            f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} (cutoff {spec.cutoff} not met)"
+                    for floor_id, floor_value, floor_direction in floors_snapshot:
+                        floor_mask &= _cutoff_satisfied_mask(
+                            round_table[floor_id], floor_value, floor_direction
                         )
-                    else:
-                        logger.warning(
-                            f"{spec.annotator_id}: improved to {row[spec.annotator_id]}, "
-                            f"but did not satisfy cutoff of {spec.cutoff} (direction: {spec.direction}). "
-                            "Continuing to next round."
+                    if floor_mask.any():
+                        best_overall = round_table[floor_mask]
+                        idx = (
+                            best_overall[spec.annotator_id].idxmax()
+                            if spec.direction == "higher"
+                            else best_overall[spec.annotator_id].idxmin()
                         )
-                    return (
-                        row["smiles"],
-                        row[spec.annotator_id],
-                        _row_values(row, annotators),
-                    )
-                return None
-            idx = (
-                eligible[spec.annotator_id].idxmax()
-                if spec.direction == "higher"
-                else eligible[spec.annotator_id].idxmin()
+                        row = best_overall.loc[idx]
+                        if logger._quiet_mode:
+                            logger.warning(
+                                f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} (cutoff {spec.cutoff} not met)"
+                            )
+                        else:
+                            logger.warning(
+                                f"{spec.annotator_id}: improved to {row[spec.annotator_id]}, "
+                                f"but did not satisfy cutoff of {spec.cutoff} (direction: {spec.direction}). "
+                                "Continuing to next round."
+                            )
+                        return (
+                            row["smiles"],
+                            row[spec.annotator_id],
+                            _row_values(row, annotators),
+                        )
+                    return None
+                idx = (
+                    eligible[spec.annotator_id].idxmax()
+                    if spec.direction == "higher"
+                    else eligible[spec.annotator_id].idxmin()
+                )
+                row = eligible.loc[idx]
+                return (
+                    row["smiles"],
+                    row[spec.annotator_id],
+                    _row_values(row, annotators),
+                )
+
+            (
+                stage_history,
+                stage_candidates,
+                new_best_smiles,
+                new_best_score,
+                new_best_row,
+            ) = _run_rounds(
+                generator,
+                annotators,
+                seed_smiles,
+                original_seed_smiles,
+                n_rounds,
+                tolerance,
+                start_round=next_round,
+                best_smiles=best_smiles,
+                best_score=best_score,
+                best_row=best_row,
+                pick_winner=pick_winner,
+                winner_direction=spec.direction,
+                active_annotator_id=spec.annotator_id,
+                active_cutoff=spec.cutoff,
             )
-            row = eligible.loc[idx]
-            return row["smiles"], row[spec.annotator_id], _row_values(row, annotators)
+            history.extend(stage_history)
+            candidates_by_round.update(stage_candidates)
+            next_round += len(stage_candidates)
 
-        (
-            stage_history,
-            stage_candidates,
-            new_best_smiles,
-            new_best_score,
-            new_best_row,
-        ) = _run_rounds(
-            generator,
-            annotators,
-            seed_smiles,
-            original_seed_smiles,
-            n_rounds,
-            tolerance,
-            start_round=next_round,
-            best_smiles=best_smiles,
-            best_score=best_score,
-            best_row=best_row,
-            pick_winner=pick_winner,
-            winner_direction=spec.direction,
-            active_annotator_id=spec.annotator_id,
-            active_cutoff=spec.cutoff,
-        )
-        history.extend(stage_history)
-        candidates_by_round.update(stage_candidates)
-        next_round += len(stage_candidates)
-
-        if new_best_smiles is None:
-            logger.warning(
-                f"{spec.annotator_id}: no candidate found, stopping the whole run."
-            )
-            break
-
-        if new_best_smiles == best_smiles:
-            if not entry_ok:
+            if new_best_smiles is None:
                 logger.warning(
-                    f"{spec.annotator_id}: no candidate satisfies its cutoff, "
-                    "stopping the whole run."
+                    f"{spec.annotator_id}: no candidate found, stopping the whole run."
                 )
                 break
-            achieved = best_score
-        else:
-            achieved = new_best_score
-            best_smiles, best_row = new_best_smiles, new_best_row
 
-        floor_value = spec.cutoff if _cutoff_satisfied(achieved, spec) else achieved
-        floors.append((spec.annotator_id, floor_value, spec.direction))
+            if new_best_smiles == best_smiles:
+                if not entry_ok:
+                    logger.warning(
+                        f"{spec.annotator_id}: no candidate satisfies its cutoff, "
+                        "stopping the whole run."
+                    )
+                    break
+                achieved = best_score
+            else:
+                achieved = new_best_score
+                best_smiles, best_row = new_best_smiles, new_best_row
+
+            floor_value = spec.cutoff if _cutoff_satisfied(achieved, spec) else achieved
+            floors.append((spec.annotator_id, floor_value, spec.direction))
+
+    except _STOPS as error:
+        _keep_finished(error, history, candidates_by_round)
+        raise
 
     return history, candidates_by_round
 
@@ -1048,144 +1094,153 @@ def _run_incremental(
     floors: dict[str, tuple[float, Direction]] = {}
     next_round = 1
 
-    for level in range(1, n_steps + 1):
-        for spec in _primaries(annotators):
-            target = _incremental_target(
-                seed_value[spec.annotator_id], spec.cutoff, level, n_steps
-            )
-
-            entry_value = best_row.get(spec.annotator_id, float("nan"))
-            if math.isnan(entry_value):
-                raise ValueError(
-                    f"{best_smiles!r} could not be scored by {spec.annotator_id!r} "
-                    "entering its step"
+    level = None
+    try:
+        for level in range(1, n_steps + 1):
+            for spec in _primaries(annotators):
+                target = _incremental_target(
+                    seed_value[spec.annotator_id], spec.cutoff, level, n_steps
                 )
-            best_score = entry_value
-            entry_ok = _value_satisfies(entry_value, target, spec.direction)
 
-            floors_snapshot = [
-                (aid, floor_value, floor_direction)
-                for aid, (floor_value, floor_direction) in floors.items()
-                if aid != spec.annotator_id
-            ]
-
-            def pick_winner(
-                round_table: pd.DataFrame,
-                spec=spec,
-                target=target,
-                floors_snapshot=floors_snapshot,
-            ):
-                mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
-                mask &= _cutoff_satisfied_mask(
-                    round_table[spec.annotator_id], target, spec.direction
-                )
-                for floor_id, floor_value, floor_direction in floors_snapshot:
-                    mask &= _cutoff_satisfied_mask(
-                        round_table[floor_id], floor_value, floor_direction
+                entry_value = best_row.get(spec.annotator_id, float("nan"))
+                if math.isnan(entry_value):
+                    raise ValueError(
+                        f"{best_smiles!r} could not be scored by {spec.annotator_id!r} "
+                        "entering its step"
                     )
-                eligible = round_table[mask]
-                if eligible.empty:
-                    # No candidate clears this step's own target even with floors
-                    # intact. Still report an improvement if one exists that
-                    # respects every prior floor - floors are a hard invariant and
-                    # are never dropped, even in this fallback (own target is
-                    # still excluded; that's the whole point of the fallback).
-                    floor_mask = _eligible(
-                        round_table, tanimoto_cutoff, tanimoto_direction
+                best_score = entry_value
+                entry_ok = _value_satisfies(entry_value, target, spec.direction)
+
+                floors_snapshot = [
+                    (aid, floor_value, floor_direction)
+                    for aid, (floor_value, floor_direction) in floors.items()
+                    if aid != spec.annotator_id
+                ]
+
+                def pick_winner(
+                    round_table: pd.DataFrame,
+                    spec=spec,
+                    target=target,
+                    floors_snapshot=floors_snapshot,
+                ):
+                    mask = _eligible(round_table, tanimoto_cutoff, tanimoto_direction)
+                    mask &= _cutoff_satisfied_mask(
+                        round_table[spec.annotator_id], target, spec.direction
                     )
                     for floor_id, floor_value, floor_direction in floors_snapshot:
-                        floor_mask &= _cutoff_satisfied_mask(
+                        mask &= _cutoff_satisfied_mask(
                             round_table[floor_id], floor_value, floor_direction
                         )
-                    if floor_mask.any():
-                        best_overall = round_table[floor_mask]
-                        idx = (
-                            best_overall[spec.annotator_id].idxmax()
-                            if spec.direction == "higher"
-                            else best_overall[spec.annotator_id].idxmin()
+                    eligible = round_table[mask]
+                    if eligible.empty:
+                        # No candidate clears this step's own target even with floors
+                        # intact. Still report an improvement if one exists that
+                        # respects every prior floor - floors are a hard invariant and
+                        # are never dropped, even in this fallback (own target is
+                        # still excluded; that's the whole point of the fallback).
+                        floor_mask = _eligible(
+                            round_table, tanimoto_cutoff, tanimoto_direction
                         )
-                        row = best_overall.loc[idx]
-                        if logger._quiet_mode:
-                            logger.warning(
-                                f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} "
-                                f"(step target {target} not met)"
+                        for floor_id, floor_value, floor_direction in floors_snapshot:
+                            floor_mask &= _cutoff_satisfied_mask(
+                                round_table[floor_id], floor_value, floor_direction
                             )
-                        else:
-                            logger.warning(
-                                f"{spec.annotator_id}: improved to "
-                                f"{row[spec.annotator_id]}, but did not satisfy "
-                                f"this step's target of {target} (direction: "
-                                f"{spec.direction}). Continuing to next round."
+                        if floor_mask.any():
+                            best_overall = round_table[floor_mask]
+                            idx = (
+                                best_overall[spec.annotator_id].idxmax()
+                                if spec.direction == "higher"
+                                else best_overall[spec.annotator_id].idxmin()
                             )
-                        return (
-                            row["smiles"],
-                            row[spec.annotator_id],
-                            _row_values(row, annotators),
-                        )
-                    return None
-                idx = (
-                    eligible[spec.annotator_id].idxmax()
-                    if spec.direction == "higher"
-                    else eligible[spec.annotator_id].idxmin()
-                )
-                row = eligible.loc[idx]
-                return (
-                    row["smiles"],
-                    row[spec.annotator_id],
-                    _row_values(row, annotators),
-                )
+                            row = best_overall.loc[idx]
+                            if logger._quiet_mode:
+                                logger.warning(
+                                    f"{spec.annotator_id}: {row[spec.annotator_id]:.2f} "
+                                    f"(step target {target} not met)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"{spec.annotator_id}: improved to "
+                                    f"{row[spec.annotator_id]}, but did not satisfy "
+                                    f"this step's target of {target} (direction: "
+                                    f"{spec.direction}). Continuing to next round."
+                                )
+                            return (
+                                row["smiles"],
+                                row[spec.annotator_id],
+                                _row_values(row, annotators),
+                            )
+                        return None
+                    idx = (
+                        eligible[spec.annotator_id].idxmax()
+                        if spec.direction == "higher"
+                        else eligible[spec.annotator_id].idxmin()
+                    )
+                    row = eligible.loc[idx]
+                    return (
+                        row["smiles"],
+                        row[spec.annotator_id],
+                        _row_values(row, annotators),
+                    )
 
-            (
-                step_history,
-                step_candidates,
-                new_best_smiles,
-                new_best_score,
-                new_best_row,
-            ) = _run_rounds(
-                generator,
-                annotators,
-                seed_smiles,
-                original_seed_smiles,
-                n_rounds,
-                tolerance,
-                start_round=next_round,
-                best_smiles=best_smiles,
-                best_score=best_score,
-                best_row=best_row,
-                pick_winner=pick_winner,
-                winner_direction=spec.direction,
-                active_annotator_id=spec.annotator_id,
-                active_cutoff=target,
-            )
-            for row in step_history:
-                row["step_level"] = level
-            history.extend(step_history)
-            candidates_by_round.update(step_candidates)
-            next_round += len(step_candidates)
-
-            if new_best_smiles is None:
-                logger.warning(
-                    f"{spec.annotator_id}: no candidate found, stopping the whole run."
+                (
+                    step_history,
+                    step_candidates,
+                    new_best_smiles,
+                    new_best_score,
+                    new_best_row,
+                ) = _run_rounds(
+                    generator,
+                    annotators,
+                    seed_smiles,
+                    original_seed_smiles,
+                    n_rounds,
+                    tolerance,
+                    start_round=next_round,
+                    best_smiles=best_smiles,
+                    best_score=best_score,
+                    best_row=best_row,
+                    pick_winner=pick_winner,
+                    winner_direction=spec.direction,
+                    active_annotator_id=spec.annotator_id,
+                    active_cutoff=target,
                 )
-                return history, candidates_by_round
+                for row in step_history:
+                    row["step_level"] = level
+                history.extend(step_history)
+                candidates_by_round.update(step_candidates)
+                next_round += len(step_candidates)
 
-            if new_best_smiles == best_smiles:
-                if not entry_ok:
+                if new_best_smiles is None:
                     logger.warning(
-                        f"{spec.annotator_id}: no candidate satisfies this step's "
-                        "target, stopping the whole run."
+                        f"{spec.annotator_id}: no candidate found, stopping the whole run."
                     )
                     return history, candidates_by_round
-                achieved = best_score
-            else:
-                achieved = new_best_score
-                best_smiles, best_row = new_best_smiles, new_best_row
 
-            floor_value = (
-                target
-                if _value_satisfies(achieved, target, spec.direction)
-                else achieved
-            )
-            floors[spec.annotator_id] = (floor_value, spec.direction)
+                if new_best_smiles == best_smiles:
+                    if not entry_ok:
+                        logger.warning(
+                            f"{spec.annotator_id}: no candidate satisfies this step's "
+                            "target, stopping the whole run."
+                        )
+                        return history, candidates_by_round
+                    achieved = best_score
+                else:
+                    achieved = new_best_score
+                    best_smiles, best_row = new_best_smiles, new_best_row
+
+                floor_value = (
+                    target
+                    if _value_satisfies(achieved, target, spec.direction)
+                    else achieved
+                )
+                floors[spec.annotator_id] = (floor_value, spec.direction)
+
+    except _STOPS as error:
+        if level is not None:  # rounds of the interrupted step lack their level
+            for row in getattr(error, "_finished_rounds", ([], {}))[0]:
+                row.setdefault("step_level", level)
+        _keep_finished(error, history, candidates_by_round)
+        raise
 
     return history, candidates_by_round

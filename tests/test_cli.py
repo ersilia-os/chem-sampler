@@ -199,6 +199,50 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
     assert (_round_dir(root) / "summary.csv").exists()
 
 
+#: CCN (45.1 Da), the fake models' only candidate, beats the seed CCO (46.1 Da),
+#: so a weighted run goes on to round 2.
+MW_LOWER = ["rdkit", "mw", "1000", "lower", "primary"]
+
+
+def _stop_in_round_2(monkeypatch, error):
+    """Make the fake models raise `error` once round 1 has run both of them."""
+    calls = []
+
+    def run(self, smiles_list):
+        calls.append(self.model_id)
+        if len(calls) > 2:
+            raise error
+        return pd.DataFrame({"smi_0": ["CCN"]})
+
+    monkeypatch.setattr(FakeHubModel, "run", run)
+
+
+def test_ctrl_c_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
+    _stop_in_round_2(monkeypatch, KeyboardInterrupt())
+    root = _inputs(tmp_path, [MW_LOWER])
+
+    result = _run(root, "--mode", "weighted", "--n-rounds", "3")
+
+    assert result.exit_code == 0, result.output
+    assert "Partial results written" in result.output
+    summary = pd.read_csv(_round_dir(root) / "summary.csv")
+    assert summary["round"].tolist() == [0, 1]
+    assert (_round_dir(root) / "round1.csv").exists()
+
+
+def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
+    _stop_in_round_2(monkeypatch, RuntimeError("eos9taz: run.sh failed (exit 1)"))
+    root = _inputs(tmp_path, [MW_LOWER])
+
+    result = _run(root, "--mode", "weighted", "--n-rounds", "3")
+
+    assert result.exit_code == 1
+    assert "eos9taz: run.sh failed (exit 1)" in result.output
+    assert f"Finished rounds written to {_round_dir(root)}" in result.output
+    summary = pd.read_csv(_round_dir(root) / "summary.csv")
+    assert summary["round"].tolist() == [0, 1]
+
+
 def test_run_can_use_a_similarity_model_without_generators(tmp_path):
     root = _inputs(tmp_path)
     (root / "input" / "generators.csv").unlink()

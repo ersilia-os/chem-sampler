@@ -1383,3 +1383,103 @@ def test_a_similarity_model_can_drive_a_run_alone():
 def test_a_run_needs_a_generator_or_a_similarity_model():
     with pytest.raises(ValueError, match="generator, a similarity model"):
         hill_climb(None, _score_only({"CCO": 1.0}), mode="joint", seed_smiles="CCO")
+
+
+# --- a run stopped midway keeps its finished rounds -------------------------------
+
+
+class StoppingGenerator(StubGenerator):
+    """Like StubGenerator, but raises `error` once its rounds of candidates run out."""
+
+    def __init__(self, candidates_by_round, error):
+        super().__init__(candidates_by_round)
+        self._error = error
+
+    def generate_by_model(self, seed_smiles):
+        if self._call_count == len(self._candidates_by_round):
+            raise self._error
+        return super().generate_by_model(seed_smiles)
+
+
+def _higher(annotator_id, scores, cutoff=float("-inf")):
+    return AnnotatorSpec(
+        annotator_id, StubAnnotator(scores), cutoff=cutoff, direction="higher"
+    )
+
+
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), RuntimeError("stub: run.sh failed")]
+)
+def test_a_run_stopped_midway_keeps_the_rounds_it_finished(error):
+    generator = StoppingGenerator([["CCC"]], error)
+
+    with pytest.raises(type(error)) as raised:
+        hill_climb(
+            generator,
+            [_higher("score", {"CCO": 1.0, "CCC": 2.0})],
+            mode="weighted",
+            seed_smiles="CCO",
+            n_rounds=5,
+        )
+
+    summary, candidates_by_round = raised.value.partial
+    assert list(summary["round"]) == [0, 1]
+    assert summary.iloc[-1]["smiles"] == "CCC"
+    assert set(candidates_by_round) == {0, 1}
+
+
+def test_a_stop_in_a_later_stage_keeps_the_earlier_stages():
+    # stage a meets its cutoff in round 1; stage b stops in round 2
+    annotators = [
+        _higher("a", {"CCO": 0.0, "CCC": 2.0}, cutoff=1.0),
+        _higher("b", {"CCO": 0.0, "CCC": 0.0}, cutoff=1.0),
+    ]
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        hill_climb(
+            StoppingGenerator([["CCC"]], KeyboardInterrupt()),
+            annotators,
+            mode="sequential",
+            seed_smiles="CCO",
+        )
+
+    summary, candidates_by_round = raised.value.partial
+    assert list(summary["round"]) == [0, 1]
+    assert list(summary["active_annotator_id"]) == ["a", "a"]
+    assert set(candidates_by_round) == {0, 1}
+
+
+def test_a_stop_within_an_incremental_step_keeps_its_rounds_and_their_level():
+    # targets 1.0 then 2.0: round 1 clears step 1, round 2 falls short in step 2
+    scores = {"CCO": 0.0, "CCC": 1.0, "CCN": 1.5}
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        hill_climb(
+            StoppingGenerator([["CCC"], ["CCN"]], KeyboardInterrupt()),
+            [_higher("score", scores, cutoff=2.0)],
+            mode="incremental",
+            seed_smiles="CCO",
+            n_steps=2,
+            n_rounds=5,
+        )
+
+    summary, _ = raised.value.partial
+    assert list(summary["round"]) == [0, 1, 2]
+    assert list(summary["step_level"]) == [0, 1, 2]
+
+
+def test_a_stop_while_scoring_the_seed_has_no_rounds_to_keep():
+    class InterruptedAnnotator:
+        def score(self, smiles_list):
+            raise KeyboardInterrupt
+
+    annotators = [
+        AnnotatorSpec("score", InterruptedAnnotator(), cutoff=0.0, direction="higher")
+    ]
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        hill_climb(
+            StubGenerator([["CCC"]]), annotators, mode="joint", seed_smiles="CCO"
+        )
+
+    assert not hasattr(raised.value, "partial")
