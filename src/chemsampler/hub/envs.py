@@ -3,6 +3,10 @@
 import json
 from pathlib import Path
 
+#: The environment cluster jobs score the in-house RDKit annotators with: no model,
+#: only RDKit. `chemsampler fetch` builds it when the inputs list one.
+RDKIT_ENV = "rdkit"
+
 #: Written inside an environment when `chemsampler fetch` has built it completely.
 #: An environment without it was interrupted or failed and is not to be trusted.
 ENV_MARKER = ".chemsampler-env.json"

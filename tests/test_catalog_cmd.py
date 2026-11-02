@@ -329,3 +329,32 @@ def test_a_listing_prints_only_the_listing(
     assert any("eos9taz" in line for line in result.output.splitlines())  # it did look
     assert not [r for r in caplog.records if r.levelname == "INFO"]
     assert "Checking models against the catalog" not in result.output
+
+
+def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
+    tmp_path, store_root, monkeypatch, fake_fetch
+):
+    create_project(tmp_path / "proj")
+    (tmp_path / "proj" / "input" / "annotators.csv").write_text(
+        "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n"
+    )
+    fake_fetch("eos9taz", "eos8nyg")
+    monkeypatch.chdir(tmp_path / "proj")
+
+    missing = _catalog()
+    fake_fetch("rdkit")
+    ready = _catalog()
+
+    line = "The rdkit environment (RDKit annotators on a cluster):"
+    assert f"{line} missing; run `chemsampler fetch`" in missing.output
+    assert f"{line} ok" in ready.output
+
+
+def test_a_project_without_rdkit_annotators_does_not_mention_it(
+    tmp_path, store_root, monkeypatch, fake_fetch
+):
+    create_project(tmp_path / "proj")  # the template annotates with eos4zfy only
+    fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
+    monkeypatch.chdir(tmp_path / "proj")
+
+    assert "rdkit environment" not in _catalog().output

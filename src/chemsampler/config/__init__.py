@@ -655,7 +655,8 @@ def plan_fetch(
     appear in several inputs are listed once.
 
     The clones go to the model repositories folder and the environments to the
-    envs folder: the flags, the config, or else the machine's store. Logs go in
+    envs folder: the flags, the config, or else the machine's store. An RDKit
+    annotator adds the `rdkit` environment, which cluster jobs score it with. Logs go in
     the store's `logs` folder, or in a `logs` folder beside the clones when the
     user named the folder for them.
 
@@ -685,6 +686,7 @@ def plan_fetch(
         models_dir=loc.repos,
         envs_dir=envs_dir,
         logs_dir=shared.logs if loc.from_store else loc.repos.parent / "logs",
+        rdkit=any(row.source == "rdkit" for row in rows),
     )
 
 

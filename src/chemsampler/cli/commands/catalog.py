@@ -90,13 +90,15 @@ def _read_catalog():
 
 def _show_local(models_dir, envs_dir, role, config) -> None:
     from ...config import plan_fetch
-    from ...hub.listing import list_local
+    from ...hub.envs import RDKIT_ENV
+    from ...hub.listing import env_state, list_local
 
-    needed = ()
+    needed, rdkit_needed = (), False
     if config is not None:  # outside a project there are no inputs to mark
         try:
             with _quiet():
-                needed = plan_fetch(config).model_ids
+                plan = plan_fetch(config)
+            needed, rdkit_needed = plan.model_ids, plan.rdkit
         except ValueError as e:
             click.secho(f"(this project's inputs could not be read: {e})", fg="yellow")
 
@@ -128,6 +130,14 @@ def _show_local(models_dir, envs_dir, role, config) -> None:
         )
     if any(m.needed for m in models):
         click.echo("* needed by this project")
+    rdkit_state = "-" if envs_dir is None else env_state(envs_dir, RDKIT_ENV)
+    if rdkit_needed or rdkit_state not in ("-", "missing"):
+        hint = (
+            "; run `chemsampler fetch`" if rdkit_needed and rdkit_state != "ok" else ""
+        )
+        click.echo(
+            f"The rdkit environment (RDKit annotators on a cluster): {rdkit_state}{hint}"
+        )
     lacking = [m.model_id for m in models if m.needed and not m.cloned]
     unbuilt = [
         m.model_id

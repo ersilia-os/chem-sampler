@@ -632,6 +632,16 @@ def test_fetch_uses_the_folders_the_project_names(tmp_path, monkeypatch, fetched
     assert fetched["plan"].envs_dir == tmp_path / "shared" / "envs"
 
 
+def test_fetch_says_when_it_builds_the_rdkit_environment(tmp_path, fetched):
+    root = _inputs(tmp_path)  # qed is an RDKit annotator
+
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert "2 model(s): eos9taz, eos8nyg, and the rdkit environment" in result.output
+    assert fetched["plan"].rdkit
+
+
 @pytest.mark.parametrize("update", [True, False])
 def test_fetch_update_pulls_and_rebuilds_together(tmp_path, fetched, update):
     root = _inputs(tmp_path)

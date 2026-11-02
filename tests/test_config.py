@@ -712,3 +712,11 @@ def test_plan_fetch_puts_logs_beside_clones_the_user_named(inputs_dir, tmp_path)
     )
 
     assert plan.logs_dir == tmp_path / "mine" / "logs"
+
+
+def test_plan_fetch_adds_the_rdkit_environment_only_for_rdkit_annotators(inputs_dir):
+    assert config.plan_fetch(path_to_models=str(inputs_dir)).rdkit  # mw and qed
+
+    rows = [["ersilia", "eos4zfy", "0.5", "higher", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+    assert not config.plan_fetch(path_to_models=str(inputs_dir)).rdkit

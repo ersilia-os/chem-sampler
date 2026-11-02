@@ -6,6 +6,7 @@ one seam the tests replace.
 
 import datetime
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -20,7 +21,7 @@ from pathlib import Path
 import yaml
 
 from ..store import state_path
-from .envs import is_complete, write_marker
+from .envs import RDKIT_ENV, is_complete, write_marker
 
 #: Models are cloned from here; the clone folder must be named exactly like the
 #: model, because `eosvc` derives the S3 path from the folder name.
@@ -75,6 +76,9 @@ class FetchPlan:
     models_dir: Path
     envs_dir: Path
     logs_dir: Path
+    #: Whether to build the `rdkit` environment too: the inputs list an RDKit
+    #: annotator, which a cluster job scores with it.
+    rdkit: bool = False
 
 
 @dataclass(frozen=True)
@@ -607,25 +611,70 @@ def _fetch_one(
     # 3. the environment: built if absent, otherwise checked against the recipe
     recipe = read_recipe(model_dir)
     result.unchecked = recipe.unchecked
+    _ensure_env(result, env_dir, recipe, log, state_now.commit, rebuild, say)
+    return result
+
+
+def _ensure_env(
+    result: ModelResult,
+    env_dir: Path,
+    recipe: Recipe,
+    log: _Log,
+    commit: str | None,
+    rebuild: bool,
+    say: Callable[[str], None],
+) -> None:
+    """Build an environment if absent, otherwise check it against its recipe."""
+    name = result.model_id
     if env_dir.exists() and not is_complete(env_dir):
-        say(f"{model_id}: removing an unfinished environment")
+        say(f"{name}: removing an unfinished environment")
         shutil.rmtree(env_dir)
     if not env_dir.exists():
-        say(f"{model_id}: building the environment (python {recipe.python})")
-        build_env(env_dir, recipe, log, state_now.commit, model_id)
+        say(f"{name}: building the environment (python {recipe.python})")
+        build_env(env_dir, recipe, log, commit, name)
         result.env = "built"
-        return result
+        return
     check = check_env(env_dir, recipe, log)
     if check.matches:
         result.env = "ok"
     elif rebuild:
-        say(f"{model_id}: the environment differs from its recipe, rebuilding")
+        say(f"{name}: the environment differs from its recipe, rebuilding")
         shutil.rmtree(env_dir)
-        build_env(env_dir, recipe, log, state_now.commit, model_id)
+        build_env(env_dir, recipe, log, commit, name)
         result.env = "rebuilt"
     else:
         result.env = "differs"
         result.differences = check.differences
+
+
+def rdkit_recipe() -> Recipe:
+    """
+    The `rdkit` environment: this Python's version and the RDKit chemsampler runs
+    with, so a cluster job scores exactly as a local run does.
+    """
+    python = f"{sys.version_info.major}.{sys.version_info.minor}"
+    version = importlib.metadata.version("rdkit")
+    text = f"python {python}\nrdkit=={version}\n"
+    return Recipe(
+        source="chemsampler",
+        python=python,
+        steps=(("pip", ["install", f"rdkit=={version}"]),),
+        pip_pins={"rdkit": version},
+        conda_pins={},
+        unchecked=0,
+        digest=hashlib.sha256(text.encode()).hexdigest(),
+    )
+
+
+def _fetch_rdkit(
+    plan: FetchPlan, rebuild: bool, say: Callable[[str], None]
+) -> ModelResult:
+    """The `rdkit` environment, built or checked like a model's; it has no clone."""
+    result = ModelResult(RDKIT_ENV, clone="not needed", checkpoints="none needed")
+    log = _Log(plan.logs_dir / f"{RDKIT_ENV}.log")
+    _ensure_env(
+        result, plan.envs_dir / RDKIT_ENV, rdkit_recipe(), log, None, rebuild, say
+    )
     return result
 
 
@@ -659,6 +708,13 @@ def fetch_models(
             say(f"{model_id}: FAILED - {e}")
         results.append(result)
         _save_state(plan.models_dir, state)
+    if plan.rdkit:
+        try:
+            result = _fetch_rdkit(plan, rebuild, say)
+        except (BuildError, OSError) as e:
+            result = ModelResult(RDKIT_ENV, error=str(e))
+            say(f"{RDKIT_ENV}: FAILED - {e}")
+        results.append(result)
     return results
 
 

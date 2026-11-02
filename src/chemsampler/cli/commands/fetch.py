@@ -33,7 +33,10 @@ def fetch_cmd(path: str | None, update: bool) -> None:
         click.secho(str(e), fg="red")
         sys.exit(1)
 
-    click.echo(f"Fetching {len(plan.model_ids)} model(s): {', '.join(plan.model_ids)}")
+    also = ", and the rdkit environment" if plan.rdkit else ""
+    click.echo(
+        f"Fetching {len(plan.model_ids)} model(s): {', '.join(plan.model_ids)}{also}"
+    )
     click.echo(f"  clones:       {plan.models_dir}")
     click.echo(f"  environments: {plan.envs_dir}")
     click.echo(f"  logs:         {plan.logs_dir}")

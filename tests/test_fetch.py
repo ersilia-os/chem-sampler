@@ -677,3 +677,52 @@ def test_missing_tools_are_all_named(monkeypatch):
 
     with pytest.raises(RuntimeError, match="conda, git, eosvc"):
         check_prerequisites()
+
+
+# --- the rdkit environment ----------------------------------------------------------------
+
+
+def test_the_rdkit_recipe_is_this_python_and_the_rdkit_chemsampler_runs_with():
+    import importlib.metadata
+    import sys
+
+    recipe = fetch.rdkit_recipe()
+
+    version = importlib.metadata.version("rdkit")
+    assert recipe.python == f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert recipe.steps == (("pip", ["install", f"rdkit=={version}"]),)
+    assert recipe.pip_pins == {"rdkit": version}
+
+
+def test_the_rdkit_environment_is_built_after_the_models(system, plan):
+    from dataclasses import replace
+
+    results = fetch_models(replace(plan, rdkit=True), say=_say([]))
+
+    assert [r.model_id for r in results] == ["eos1aaa", "rdkit"]
+    rdkit = results[1]
+    assert rdkit.ok and rdkit.env == "built" and rdkit.clone == "not needed"
+    env = env_path(plan.envs_dir, "rdkit")
+    assert is_complete(env)
+    pip = [c for c in system.commands(str(env / "bin" / "python"), "-m", "pip")]
+    assert pip and pip[-1][-1].startswith("rdkit==")  # through its own python
+
+
+def test_a_ready_rdkit_environment_is_only_checked(system, plan):
+    import importlib.metadata
+    import sys
+    from dataclasses import replace
+
+    python = f"{sys.version_info.major}.{sys.version_info.minor}"
+    _built_env(
+        system,
+        plan,
+        {"rdkit": importlib.metadata.version("rdkit")},
+        python=python,
+        model="rdkit",
+    )
+
+    results = fetch_models(replace(plan, model_ids=(), rdkit=True), say=_say([]))
+
+    assert [(r.model_id, r.env) for r in results] == [("rdkit", "ok")]
+    assert not system.commands("conda", "create")
