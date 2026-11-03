@@ -7,8 +7,12 @@ job: the models of one step of a round (`stage`) are called in parallel through
 """
 
 import contextlib
+import shutil
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
@@ -34,12 +38,43 @@ class LocalExecutor:
         table = model.run_here(smiles_list)
         return Ran(table, time.monotonic() - start)
 
-    def run_rdkit(self, name: str, smiles_list: list[str]) -> Ran:
-        """Score the SMILES with an in-house RDKit annotator (column `value`)."""
+    def run_rdkit(self, annotator, smiles_list: list[str]) -> Ran:
+        """
+        Score the SMILES with an in-house RDKit annotator (column `value`): a
+        copy of `_rdkit_scores.py` run by the `rdkit` environment's Python, as a
+        cluster job runs it, or, without an environments folder, in this process.
+        """
+        from .hub.envs import process_env
         from .models import _rdkit_scores
 
+        args, env_dir = annotator.args(), annotator.env_dir()
         start = time.monotonic()
-        values = _rdkit_scores.score(name, smiles_list)
+        if env_dir is None:
+            values = _rdkit_scores.score(annotator.name, smiles_list, *args)
+        else:
+            with tempfile.TemporaryDirectory(prefix="chemsampler-") as tmp:
+                folder = Path(tmp)
+                # its own folder: nothing beside the script can shadow an import
+                shutil.copy(_rdkit_scores.__file__, folder / "_rdkit_scores.py")
+                pd.DataFrame({"smiles": smiles_list}).to_csv(
+                    folder / "input.csv", index=False
+                )
+                command = [str(env_dir / "bin" / "python"), "_rdkit_scores.py"]
+                command += [annotator.name, "input.csv", "output.csv", *args]
+                ran = subprocess.run(
+                    command,
+                    cwd=folder,
+                    env=process_env(env_dir),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if ran.returncode != 0:
+                    raise RuntimeError(
+                        f"{annotator.name}: the rdkit environment failed (exit "
+                        f"{ran.returncode})\nstderr: {ran.stderr}"
+                    )
+                values = _rdkit_scores.read(folder / "output.csv")
         table = pd.DataFrame({"smiles": smiles_list, "value": values}, dtype=object)
         return Ran(table, time.monotonic() - start)
 

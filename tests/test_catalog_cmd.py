@@ -345,8 +345,8 @@ def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
     fake_fetch("rdkit")
     ready = _catalog()
 
-    line = "The rdkit environment (RDKit annotators on a cluster):"
-    assert f"{line} missing; run `chemsampler fetch`" in missing.output
+    line = "The rdkit environment (mw, qed and tanimoto):"
+    assert f"{line} missing; run `chemsampler fetch rdkit`" in missing.output
     assert f"{line} ok" in ready.output
 
 

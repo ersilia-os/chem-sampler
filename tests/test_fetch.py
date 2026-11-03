@@ -425,7 +425,7 @@ def test_an_environment_that_differs_is_reported_not_rebuilt(system, plan):
     assert result.differences == ("torch: installed 2.8.0, recipe 2.9.1+cpu",)
     assert not system.commands("conda") and env.exists()
     report = "\n".join(summarize([result]))
-    assert "chemsampler fetch --update" in report
+    assert "run `chemsampler fetch` to rebuild them" in report
 
 
 @pytest.mark.parametrize(

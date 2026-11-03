@@ -1012,13 +1012,17 @@ def test_a_higher_tanimoto_first_primary_warns(caplog, verbose_logger):
     assert any("is the first primary" in r.message for r in caplog.records)
 
 
-def test_a_tanimoto_annotator_never_runs_as_a_model_call(monkeypatch):
+def test_a_tanimoto_annotator_is_scored_against_the_run_s_seed(monkeypatch):
     from chemsampler import execution
 
-    calls = []
-    monkeypatch.setattr(
-        execution.LocalExecutor, "run_rdkit", lambda self, *a: calls.append(a)
-    )
+    seen = []
+    real = execution.LocalExecutor.run_rdkit
+
+    def run_rdkit(self, annotator, smiles_list):
+        seen.append(annotator.args())
+        return real(self, annotator, smiles_list)
+
+    monkeypatch.setattr(execution.LocalExecutor, "run_rdkit", run_rdkit)
     annotators = [
         AnnotatorSpec("score", StubAnnotator({"CCO": 1.0, "CO": 2.0}), 0.0, "higher"),
         AnnotatorSpec(
@@ -1026,11 +1030,14 @@ def test_a_tanimoto_annotator_never_runs_as_a_model_call(monkeypatch):
         ),
     ]
 
-    hill_climb(
-        StubGenerator([["CO"]]), annotators, mode="joint", seed_smiles="CCO", n_rounds=1
+    _, candidates = hill_climb(
+        StubGenerator([["CO"]]), annotators, seed_smiles="CCO", n_rounds=1
     )
 
-    assert calls == []
+    assert seen == [["CCO"], ["CCO"]]  # the seed, then round 1
+    assert (
+        candidates[1]["tanimoto"].tolist() == candidates[1]["tanimoto_to_seed"].tolist()
+    )
 
 
 # --- annotate ------------------------------------------------------------

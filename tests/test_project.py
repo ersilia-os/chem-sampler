@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from chemsampler import store
 from chemsampler.cli import cli
 from chemsampler.config import load_inputs
 from chemsampler.project import (
@@ -14,6 +15,8 @@ from chemsampler.project import (
     create_project,
     find_project,
 )
+
+from .conftest import make_rdkit_env
 
 
 def test_init_creates_only_what_a_project_owns(tmp_path):
@@ -337,6 +340,7 @@ QED_ONLY = "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n
 
 
 def annotate_in(project):
+    make_rdkit_env(store.home() / "envs")  # qed runs in it
     return CliRunner().invoke(cli, ["annotate", "-p", str(project), "--smiles", "CCO"])
 
 

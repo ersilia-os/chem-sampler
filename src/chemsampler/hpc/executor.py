@@ -69,8 +69,6 @@ class SlurmExecutor:
         The cluster profile.
     run_dir : str or Path
         The run's folder; the jobs' folders go in its `jobs/`.
-    rdkit_env : Path, optional
-        The `rdkit` environment, needed when RDKit annotators are used.
     cluster : Cluster, optional
         What submits and checks the jobs (by default, the profile's).
     say : callable, optional
@@ -82,13 +80,11 @@ class SlurmExecutor:
         profile: Profile,
         run_dir,
         *,
-        rdkit_env=None,
         cluster=None,
         say=click.echo,
     ):
         self.profile = profile
         self.run_dir = Path(run_dir)
-        self.rdkit_env = rdkit_env
         self.cluster = cluster or Cluster(profile)
         self.say = say
         self._lock = threading.Condition()
@@ -124,14 +120,17 @@ class SlurmExecutor:
         self._run(job)
         return Ran(pd.read_csv(job.folder / "output.csv"), job.state.elapsed or 0.0)
 
-    def run_rdkit(self, name: str, smiles_list: list[str]) -> Ran:
+    def run_rdkit(self, annotator, smiles_list: list[str]) -> Ran:
         """Score with an RDKit annotator as one job, with the `rdkit` environment."""
+        args, env_dir = annotator.args(), annotator.env_dir()
         if not smiles_list:
             return Ran(pd.DataFrame({"smiles": [], "value": []}, dtype=object), 0.0)
-        if self.rdkit_env is None:
-            raise RuntimeError(f"{name}: no rdkit environment to run it on the cluster")
-        job = self._new_job(name)
-        write_rdkit_job(job, name, smiles_list, self.rdkit_env)
+        if env_dir is None:
+            raise RuntimeError(
+                f"{annotator.name}: no rdkit environment to run it on the cluster"
+            )
+        job = self._new_job(annotator.name)
+        write_rdkit_job(job, annotator.name, smiles_list, env_dir, args)
         self._run(job)
         values = _rdkit_scores.read(job.folder / "output.csv")
         table = pd.DataFrame({"smiles": smiles_list, "value": values}, dtype=object)
@@ -437,8 +436,8 @@ def prepare(name: str, inputs, run_dir, *, say=click.echo) -> SlurmExecutor:
         rdkit_env = env_path(envs, RDKIT_ENV)
         if not is_complete(rdkit_env):
             problems.append(
-                f"no complete rdkit environment at {rdkit_env}, which RDKit "
-                "annotators run with on a cluster; run `chemsampler fetch`"
+                f"no complete rdkit environment at {rdkit_env}, which mw, qed "
+                "and tanimoto run in; run `chemsampler fetch rdkit`"
             )
     cluster = Cluster(profile)
     if not problems:
@@ -453,6 +452,4 @@ def prepare(name: str, inputs, run_dir, *, say=click.echo) -> SlurmExecutor:
             f"cannot run on the cluster of profile {name!r}:\n  - "
             + "\n  - ".join(problems)
         )
-    return SlurmExecutor(
-        profile, run_dir, rdkit_env=rdkit_env, cluster=cluster, say=say
-    )
+    return SlurmExecutor(profile, run_dir, cluster=cluster, say=say)

@@ -1,7 +1,6 @@
 import json
 import signal
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -28,6 +27,8 @@ from chemsampler.hpc.slurm import (
 )
 from chemsampler.hub.envs import write_marker
 from chemsampler.project import create_project
+
+from .conftest import make_rdkit_env
 
 # --- fake models that a "node" (bash) can run -----------------------------------------
 
@@ -57,13 +58,7 @@ def _fake_models(store_root, run_sh=RUN_SH):
         env = store_root / "envs" / model
         (env / "bin").mkdir(parents=True)
         write_marker(env, model=model)
-    # the rdkit environment: its python is the one running these tests
-    rdkit = store_root / "envs" / "rdkit"
-    (rdkit / "bin").mkdir(parents=True)
-    python = rdkit / "bin" / "python"
-    python.write_text(f'#!/bin/bash\nexec {sys.executable} "$@"\n')
-    python.chmod(0o755)
-    write_marker(rdkit, model="rdkit")
+    make_rdkit_env(store_root / "envs")
 
 
 @pytest.fixture
@@ -589,30 +584,42 @@ def test_a_missing_rdkit_environment_is_found_before_asking_the_cluster(
     result = _run(project, "--hpc", "test")
 
     assert result.exit_code == 1
-    assert "no complete rdkit environment" in result.output
-    assert "chemsampler fetch" in result.output
+    assert "qed run in the rdkit environment, which is not built" in result.output
+    assert "`chemsampler fetch rdkit`" in result.output
     assert cluster.preflights == [] and cluster.argvs == []
 
 
-def test_a_tanimoto_annotator_is_scored_here_and_needs_no_rdkit_environment(
+def test_a_tanimoto_annotator_is_a_job_given_the_seed_with_local_values(
     project, cluster, store_root
 ):
-    (store_root / "envs" / "rdkit" / ".chemsampler-env.json").unlink()
     (project / "input" / "annotators.csv").write_text(
         "source,model,cutoff,direction,priority\n"
         "ersilia,eos4zfy,1000,higher,primary\n"
         "rdkit,tanimoto,0-1,range,guard-rail\n"
     )
 
+    local = _run(project)
     result = _run(project, "--hpc", "test")
 
-    assert result.exit_code == 0, result.output
-    jobs = [Path(argv[-1]).parent.name for argv in cluster.argvs]
-    assert "tanimoto" not in jobs and "eos4zfy" in jobs
-    [folders] = cluster.preflights
-    assert not any(f.endswith("rdkit") for f in folders)
-    round1 = pd.read_csv(_runs(project)[0] / "round1.csv")
-    assert round1["tanimoto"].notna().all()
+    assert local.exit_code == 0 and result.exit_code == 0, result.output
+    folders = [Path(argv[-1]).parent for argv in cluster.argvs]
+    tanimoto = [f for f in folders if f.name == "tanimoto"]
+    assert tanimoto and all(
+        (f / "job.sh")
+        .read_text()
+        .rstrip()
+        .endswith("output.partial.csv CCO\nmv output.partial.csv output.csv")
+        for f in tanimoto
+    )
+    [preflight] = cluster.preflights
+    assert str(store_root / "envs" / "rdkit") in preflight
+    here, there = _runs(project)
+    for name in ("round1.csv", "round2.csv"):
+        pd.testing.assert_frame_equal(
+            pd.read_csv(here / name, float_precision="round_trip"),
+            pd.read_csv(there / name, float_precision="round_trip"),
+            check_exact=True,
+        )
 
 
 def test_an_unknown_profile_says_which_ones_exist(project, cluster):

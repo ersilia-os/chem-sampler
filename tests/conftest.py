@@ -1,7 +1,25 @@
+import sys
+
 import pytest
 
 from chemsampler import store
-from chemsampler.hub.envs import write_marker
+from chemsampler.hub.envs import RDKIT_ENV, write_marker
+
+
+def make_rdkit_env(envs_dir):
+    """
+    A finished `rdkit` environment in `envs_dir`, as `fetch rdkit` leaves it.
+
+    Its `python` is the one running the tests, which has RDKit, so the RDKit
+    annotators really run in a process of their own, with this environment.
+    """
+    env = envs_dir / RDKIT_ENV
+    (env / "bin").mkdir(parents=True, exist_ok=True)
+    python = env / "bin" / "python"
+    python.write_text(f'#!/bin/bash\nexec {sys.executable} "$@"\n')
+    python.chmod(0o755)
+    write_marker(env, model=RDKIT_ENV)
+    return env
 
 
 @pytest.fixture(autouse=True)

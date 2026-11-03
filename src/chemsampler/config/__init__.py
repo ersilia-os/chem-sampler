@@ -7,9 +7,9 @@ from pathlib import Path
 
 from .. import store
 from ..hub.catalog import validate_models
-from ..hub.envs import env_path, is_complete
+from ..hub.envs import RDKIT_ENV, env_path, is_complete
 from ..hub.fetch import FetchPlan
-from ..models.annotator import RDKIT_ANNOTATORS, RDKIT_ENV_ANNOTATORS
+from ..models.annotator import RDKIT_ANNOTATORS
 from ..models.generator import GeneratorPool, HubGenerator
 from ..models.hub_annotator import HubAnnotator
 from ..models.similarity import HubSimilarity
@@ -245,7 +245,7 @@ def load_annotator(
 
     An Ersilia model gets the same checks as in `load_annotators` (repositories
     folder, catalog label, model folder and environment); an rdkit one needs
-    none.
+    the `rdkit` environment (`chemsampler fetch rdkit`).
 
     Parameters
     ----------
@@ -265,13 +265,15 @@ def load_annotator(
     MolecularWeightAnnotator, QEDAnnotator, TanimotoAnnotator or HubAnnotator
         An object with a `score(smiles_list)` method.
     """
-    models_dir = envs_dir = None
+    models_dir = None
+    loc = _locations(config, None, path_to_model_repositories, path_to_envs)
+    envs_dir = _as_text(loc.envs)
     if source == "ersilia":
-        loc = _locations(config, None, path_to_model_repositories, path_to_envs)
-        envs_dir = _as_text(loc.envs)
         models_dir = _check_repositories(loc.repos)
         validate_models(annotators=[model])
         _check_model_folders(models_dir, envs_dir, [model])
+    elif source == "rdkit" and model in RDKIT_ANNOTATORS:
+        _check_rdkit_env(envs_dir, [model])
     return build_annotator(source, model, None, models_dir, envs_dir)
 
 
@@ -298,7 +300,7 @@ def build_annotator(
     models_dir : str, optional
         Folder with the model repositories, passed to `HubAnnotator`.
     envs_dir : str, optional
-        Folder with the models' conda environments, passed to `HubAnnotator`.
+        Folder with the conda environments: the models' and `rdkit`.
 
     Returns
     -------
@@ -317,7 +319,7 @@ def build_annotator(
             raise ValueError(
                 f"unknown rdkit model {model!r}; choose from {sorted(RDKIT_ANNOTATORS)}"
             )
-        return RDKIT_ANNOTATORS[model]()
+        return RDKIT_ANNOTATORS[model](envs_dir=envs_dir)
     if source == "ersilia":
         return HubAnnotator(
             model,
@@ -657,6 +659,7 @@ def _load(
     )
     if hub_ids:
         _check_model_folders(models_dir, envs_dir, hub_ids)
+    _check_rdkit_env(envs_dir, [row.model for row in rows if row.source == "rdkit"])
 
     loaded = {
         "models_dir": models_dir,
@@ -720,8 +723,9 @@ def plan_fetch(
     appear in several inputs are listed once.
 
     The clones go to the model repositories folder and the environments to the
-    envs folder: the flags, the config, or else the machine's store. An RDKit
-    annotator scored by cluster jobs (`mw`, `qed`) adds the `rdkit` environment. Logs go in
+    envs folder: the flags, the config, or else the machine's store. The
+    `rdkit` environment is not in the plan: `chemsampler fetch rdkit` asks for
+    it. Logs go in
     the store's `logs` folder, or in a `logs` folder beside the clones when the
     user named the folder for them.
 
@@ -743,18 +747,31 @@ def plan_fetch(
         similarity=similarity_ids or [],
         annotators=ersilia_annotators,
     )
-    shared = store.resolve()
-    envs_dir = loc.envs if loc.envs is not None else shared.envs
     wanted = [*(generators_ids or []), *(similarity_ids or []), *ersilia_annotators]
     return FetchPlan(
         model_ids=tuple(dict.fromkeys(wanted)),
-        models_dir=loc.repos,
-        envs_dir=envs_dir,
-        logs_dir=shared.logs if loc.from_store else loc.repos.parent / "logs",
-        rdkit=any(
-            row.source == "rdkit" and row.model in RDKIT_ENV_ANNOTATORS for row in rows
-        ),
+        **_fetch_folders(loc),
+        rdkit_annotators=tuple(row.model for row in rows if row.source == "rdkit"),
     )
+
+
+def plan_rdkit(config: str | None = None) -> FetchPlan:
+    """
+    A plan that builds only the `rdkit` environment (`chemsampler fetch rdkit`),
+    in the folders `plan_fetch` would use; the inputs are not read.
+    """
+    loc = _locations(config, None, None, None)
+    return FetchPlan(model_ids=(), **_fetch_folders(loc), rdkit=True)
+
+
+def _fetch_folders(loc: _Locations) -> dict:
+    """Where `fetch` puts clones, environments and logs (see `plan_fetch`)."""
+    shared = store.resolve()
+    return {
+        "models_dir": loc.repos,
+        "envs_dir": loc.envs if loc.envs is not None else shared.envs,
+        "logs_dir": shared.logs if loc.from_store else loc.repos.parent / "logs",
+    }
 
 
 def _check_annotator_rows(rows: list[AnnotatorRow]) -> None:
@@ -802,6 +819,23 @@ def _check_model_folders(
                 f"no complete environment for {unbuilt} in {envs_dir}; run "
                 "`chemsampler fetch` to build them"
             )
+
+
+def _check_rdkit_env(envs_dir: str | None, names: list[str]) -> None:
+    """RDKit annotators (`names`) need the `rdkit` environment, built by fetch."""
+    if not names:
+        return
+    which = ", ".join(names)
+    if envs_dir is None:
+        raise ValueError(
+            f"{which} run in the rdkit environment, which needs an environments "
+            "folder (`chemsampler init --envs`)"
+        )
+    if not is_complete(env_path(envs_dir, RDKIT_ENV)):
+        raise ValueError(
+            f"{which} run in the rdkit environment, which is not built in "
+            f"{envs_dir}: run `chemsampler fetch rdkit`"
+        )
 
 
 def _to_spec(row: AnnotatorRow, models_dir: str | None, envs_dir: str | None):

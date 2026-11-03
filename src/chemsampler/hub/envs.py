@@ -1,10 +1,12 @@
 """Where a model's conda environment lives and whether its build finished."""
 
 import json
+import os
 from pathlib import Path
 
-#: The environment cluster jobs score the in-house RDKit annotators with: no model,
-#: only RDKit. `chemsampler fetch` builds it when the inputs list one.
+#: The environment the in-house RDKit annotators (`mw`, `qed`, `tanimoto`) run
+#: in, here and on a cluster: no model, only RDKit. `chemsampler fetch rdkit`
+#: builds it.
 RDKIT_ENV = "rdkit"
 
 #: Written inside an environment when `chemsampler fetch` has built it completely.
@@ -33,3 +35,24 @@ def read_marker(env: Path) -> dict | None:
         return json.loads((Path(env) / ENV_MARKER).read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def process_env(env_dir: Path) -> dict[str, str]:
+    """
+    The environment variables of a process run as if `env_dir` were active.
+
+    A model cloned and built by `chemsampler fetch` has a plain `run.sh`
+    (`python main.py ...`): the env's `bin` goes first on PATH and its own
+    libraries first on the loader path (otherwise the system's older libstdc++
+    is loaded), the user site is off, and nothing of chemsampler's own
+    PYTHONPATH is kept. A cluster job sets the same (`chemsampler.hpc.jobs`).
+    """
+    env = {**os.environ}
+    env.pop("PYTHONPATH", None)
+    env["PATH"] = os.pathsep.join(filter(None, [str(env_dir / "bin"), env.get("PATH")]))
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(
+        filter(None, [str(env_dir / "lib"), env.get("LD_LIBRARY_PATH")])
+    )
+    env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    return env

@@ -76,9 +76,12 @@ class FetchPlan:
     models_dir: Path
     envs_dir: Path
     logs_dir: Path
-    #: Whether to build the `rdkit` environment too: the inputs list an RDKit
-    #: annotator, which a cluster job scores with it.
+    #: Whether to build the `rdkit` environment too (`chemsampler fetch rdkit`),
+    #: which the RDKit annotators run in.
     rdkit: bool = False
+    #: The RDKit annotators the inputs list (`mw`, `qed`, `tanimoto`): they need
+    #: that environment.
+    rdkit_annotators: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -650,7 +653,7 @@ def _ensure_env(
 def rdkit_recipe() -> Recipe:
     """
     The `rdkit` environment: this Python's version and the RDKit chemsampler runs
-    with, so a cluster job scores exactly as a local run does.
+    with, so its scores equal those chemsampler computes itself.
     """
     python = f"{sys.version_info.major}.{sys.version_info.minor}"
     version = importlib.metadata.version("rdkit")
@@ -738,7 +741,7 @@ def summarize(results: list[ModelResult]) -> list[str]:
     if differing:
         rows.append(
             f"{len(differing)} environment(s) differ from their recipe ({', '.join(differing)}); "
-            "run `chemsampler fetch --update` to rebuild them."
+            "run `chemsampler fetch` to rebuild them."
         )
     unchecked = sum(r.unchecked for r in results if r.env in ("ok", "differs"))
     if unchecked:

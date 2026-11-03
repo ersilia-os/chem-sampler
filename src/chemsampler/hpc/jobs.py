@@ -37,7 +37,7 @@ class Job:
     """A model call sent to the cluster, and what Slurm last said about it."""
 
     stage: str  # e.g. "Round 1 · sampling"
-    model_id: str  # a Hub model id, or `mw` / `qed`
+    model_id: str  # a Hub model id, or `mw` / `qed` / `tanimoto`
     folder: Path
     job_id: str | None = None
     state: JobState | None = None
@@ -97,7 +97,9 @@ def write_model_job(job: Job, model, smiles_list: list[str]) -> None:
     _finish_script(job, script)
 
 
-def write_rdkit_job(job: Job, name: str, smiles_list: list[str], rdkit_env) -> None:
+def write_rdkit_job(
+    job: Job, name: str, smiles_list: list[str], rdkit_env, args=()
+) -> None:
     """The input, scorer and `job.sh` of an in-house RDKit annotator's job."""
     _write_input(job, smiles_list)
     shutil.copy(_rdkit_scores.__file__, job.folder / "_rdkit_scores.py")
@@ -108,7 +110,8 @@ def write_rdkit_job(job: Job, name: str, smiles_list: list[str], rdkit_env) -> N
         env=q(str(rdkit_env)),
         folder=q(str(job.folder)),
     )
-    script += f"python _rdkit_scores.py {q(name)} input.csv output.partial.csv\n"
+    extra = "".join(f" {q(arg)}" for arg in args)  # the seed, for tanimoto
+    script += f"python _rdkit_scores.py {q(name)} input.csv output.partial.csv{extra}\n"
     _finish_script(job, script)
 
 

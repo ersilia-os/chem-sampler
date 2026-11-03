@@ -399,9 +399,10 @@ def sort_by_role(
     Parameters
     ----------
     model_ids : Sequence[str]
-        Hub ids, and names of in-house annotators.
+        Hub ids, and in-house names.
     in_house : Sequence[str]
-        Names of in-house annotators (`mw`, `qed`), which are not Hub models.
+        Names that are not Hub models but count as annotators (`rdkit`, the
+        environment `mw`, `qed` and `tanimoto` run in).
     catalog : Catalog, optional
         Defaults to the catalog file shipped with the package.
 
@@ -442,7 +443,10 @@ def sort_by_role(
             f"a run takes one similarity model; got {', '.join(roles['similarity'])}"
         )
     if not roles["annotators"]:
-        problems.append("no annotator: name at least one (a Hub model, mw or qed)")
+        problems.append(
+            "no annotator: name at least one (a Hub model, or rdkit for mw, qed "
+            "and tanimoto)"
+        )
     if not (roles["generators"] or roles["similarity"]):
         problems.append("no generator nor similarity model: name at least one")
     if problems:

@@ -6,7 +6,7 @@ import pandas as pd
 
 from .. import execution
 from ..utils.logging import logger
-from .envs import env_path, is_complete
+from .envs import env_path, is_complete, process_env
 
 #: Hub models that look up a seed's nearest neighbours in a reference library
 #: instead of generating molecules. Only these can back a `HubSimilarity`, and
@@ -112,29 +112,11 @@ class HubModel:
 
     def _process_env(self) -> dict[str, str] | None:
         """
-        The environment variables for the model's process, or None to inherit ours.
-
-        A model cloned and built by `chemsampler fetch` has a plain `run.sh`
-        (`python main.py ...`), so it must run as if its conda env were active:
-        that env's `bin` first on PATH and its own libraries first on the loader
-        path (otherwise the system's older libstdc++ is loaded), the user site off,
-        and nothing of chemsampler's own PYTHONPATH. A cluster job sets the same
-        (`chemsampler.hpc.jobs`).
+        The environment variables for the model's process (see `process_env`),
+        or None to inherit ours.
         """
         env_dir = self.env_dir()
-        if env_dir is None:
-            return None
-        env = {**os.environ}
-        env.pop("PYTHONPATH", None)
-        env["PATH"] = os.pathsep.join(
-            filter(None, [str(env_dir / "bin"), env.get("PATH")])
-        )
-        env["LD_LIBRARY_PATH"] = os.pathsep.join(
-            filter(None, [str(env_dir / "lib"), env.get("LD_LIBRARY_PATH")])
-        )
-        env["PYTHONNOUSERSITE"] = "1"
-        env["PYTHONUNBUFFERED"] = "1"
-        return env
+        return None if env_dir is None else process_env(env_dir)
 
     def files(self) -> tuple[str, str, str]:
         """

@@ -1,14 +1,12 @@
-from rdkit import Chem
-from rdkit.Chem import DataStructs, rdFingerprintGenerator
-
-_MORGAN_GENERATOR = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+from ..models import _rdkit_scores
 
 
 def tanimoto_to_seed(seed_smiles: str, smiles_list: list[str]) -> dict[str, float]:
     """
     Morgan-fingerprint Tanimoto similarity of each candidate to a seed molecule.
 
-    Uses radius-2, 2048-bit fingerprints (ECFP4-equivalent).
+    Uses radius-2, 2048-bit fingerprints (ECFP4-equivalent): the same values as
+    the `tanimoto` annotator, computed here with chemsampler's own RDKit.
 
     Parameters
     ----------
@@ -28,16 +26,5 @@ def tanimoto_to_seed(seed_smiles: str, smiles_list: list[str]) -> dict[str, floa
     ValueError
         If `seed_smiles` cannot be parsed by RDKit.
     """
-    seed_mol = Chem.MolFromSmiles(seed_smiles)
-    if seed_mol is None:
-        raise ValueError(f"Could not parse seed SMILES: {seed_smiles!r}")
-    seed_fp = _MORGAN_GENERATOR.GetFingerprint(seed_mol)
-
-    similarities = {}
-    for smi in smiles_list:
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            continue
-        fp = _MORGAN_GENERATOR.GetFingerprint(mol)
-        similarities[smi] = DataStructs.TanimotoSimilarity(seed_fp, fp)
-    return similarities
+    values = _rdkit_scores.tanimoto(seed_smiles, smiles_list)
+    return {smi: v for smi, v in zip(smiles_list, values) if v is not None}

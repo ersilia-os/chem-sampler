@@ -2,6 +2,7 @@ import csv
 import importlib.metadata
 import json
 import re
+import shutil
 
 import pandas as pd
 import pytest
@@ -12,6 +13,8 @@ from chemsampler.cli import cli
 from chemsampler.hub import catalog
 from chemsampler.hub.envs import write_marker
 from chemsampler.project import create_project
+
+from .conftest import make_rdkit_env
 
 
 class FakeHubModel:
@@ -55,7 +58,7 @@ def _fetch(models_dir, envs_dir, *model_ids):
 def _inputs(tmp_path, annotators=(QED,), fetched=True):
     """
     A project with these inputs and, unless `fetched` is False, its two Hub
-    models fetched into its own folders (rdkit annotators need nothing).
+    models and the rdkit environment fetched into its own folders.
     """
     root = tmp_path / "proj"
     create_project(root, tmp_path / "models", tmp_path / "envs")
@@ -65,6 +68,7 @@ def _inputs(tmp_path, annotators=(QED,), fetched=True):
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, list(annotators))
     if fetched:
         _fetch(tmp_path / "models", tmp_path / "envs", "eos8nyg", "eos9taz")
+        make_rdkit_env(tmp_path / "envs")
     return root
 
 
@@ -655,11 +659,16 @@ def test_annotate_needs_only_the_annotators(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_annotate_a_single_in_house_model_needs_no_project(tmp_path, monkeypatch):
+def test_annotate_a_single_in_house_model_needs_no_project(
+    tmp_path, store_root, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
 
+    missing = _annotate("--source", "rdkit", "--model", "mw", "--smiles", "CCO")
+    make_rdkit_env(store_root / "envs")  # the store's, as no project names one
     result = _annotate("--source", "rdkit", "--model", "mw", "--smiles", "CCO")
 
+    assert missing.exit_code == 1 and "`chemsampler fetch rdkit`" in missing.output
     assert result.exit_code == 0, result.output
     assert "mw: 46.069" in result.output
     assert "cutoff" not in result.output
@@ -853,6 +862,7 @@ def _project(tmp_path, store_root, built=("eos9taz", "eos8nyg")):
     create_project(root)
     _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
     _fetch(store_root / "models", store_root / "envs", *built)
+    make_rdkit_env(store_root / "envs")
     return root
 
 
@@ -978,24 +988,49 @@ def test_fetch_uses_the_folders_the_project_names(tmp_path, monkeypatch, fetched
     assert fetched["plan"].envs_dir == tmp_path / "shared" / "envs"
 
 
-def test_fetch_says_when_it_builds_the_rdkit_environment(tmp_path, fetched):
-    root = _inputs(tmp_path)  # qed is an RDKit annotator
+def test_plain_fetch_never_builds_the_rdkit_environment_but_says_it_is_missing(
+    tmp_path, fetched
+):
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "tanimoto", "0.4", "higher", "guard-rail"]]
+    )
 
-    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    built = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    shutil.rmtree(tmp_path / "envs" / "rdkit")
+    missing = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
 
-    assert result.exit_code == 0, result.output
-    assert "2 model(s): eos9taz, eos8nyg, and the rdkit environment" in result.output
-    assert fetched["plan"].rdkit
-
-
-def test_a_tanimoto_annotator_needs_no_rdkit_environment(tmp_path, fetched):
-    root = _inputs(tmp_path, [["rdkit", "tanimoto", "0.5", "lower", "primary"]])
-
-    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
-
-    assert result.exit_code == 0, result.output
-    assert "rdkit environment" not in result.output
+    assert built.exit_code == 0 and missing.exit_code == 0, missing.output
     assert not fetched["plan"].rdkit
+    assert "Fetching 2 model(s): eos9taz, eos8nyg\n" in missing.output
+    note = "uses qed, tanimoto, which run in the rdkit environment: build it with"
+    assert note in missing.output and "`chemsampler fetch rdkit`" in missing.output
+    assert note not in built.output
+
+
+def test_fetch_rdkit_alone_builds_only_its_environment(tmp_path, fetched):
+    root = _inputs(tmp_path)
+    (root / "input" / "generators.csv").unlink()  # inputs it does not read
+    (root / "input" / "similarity.csv").unlink()
+
+    result = _fetch_ids(root, "rdkit")
+
+    assert result.exit_code == 0, result.output
+    assert "Fetching the rdkit environment" in result.output
+    assert fetched["plan"].model_ids == () and fetched["plan"].rdkit
+    assert fetched["plan"].envs_dir == tmp_path / "envs"
+    assert sorted(p.name for p in (root / "input").iterdir()) == ["annotators.csv"]
+
+
+@pytest.mark.parametrize("name", ["mw", "qed", "tanimoto"])
+def test_fetch_refuses_rdkit_annotators_as_ids(tmp_path, fetched, name):
+    root = _inputs(tmp_path)
+
+    result = _fetch_ids(root, "eos9p57", name, "-f")
+
+    assert result.exit_code == 1
+    assert f"{name}: not models but RDKit annotators" in result.output
+    assert "use `chemsampler fetch rdkit`" in result.output
+    assert "plan" not in fetched
 
 
 def test_fetch_pulls_and_rebuilds_by_default(tmp_path, fetched):
@@ -1028,33 +1063,21 @@ def _ids(root, name):
 def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
     root = _inputs(tmp_path, [QED, ["ersilia", "eos4zfy", "0.5", "higher", "primary"]])
 
-    result = _fetch_ids(root, "eos9p57,eos1bgt", "eos4zfy", "qed", "-f")
+    result = _fetch_ids(root, "eos9p57,eos1bgt", "eos4zfy", "rdkit", "-f")
 
     assert result.exit_code == 0, result.output
     assert _ids(root, "generators") == ["eos9p57"]
     assert _ids(root, "similarity") == ["eos1bgt"]
     assert fetched["plan"].model_ids == ("eos9p57", "eos1bgt", "eos4zfy")
-    assert fetched["plan"].rdkit  # qed
+    assert fetched["plan"].rdkit
+    assert "eos9p57, eos1bgt, eos4zfy, and the rdkit environment" in result.output
     assert "annotators.csv" not in result.output  # it agrees with the ids
-
-
-def test_fetch_ids_with_tanimoto_need_no_rdkit_environment(tmp_path, fetched):
-    tanimoto = ["rdkit", "tanimoto", "0.5", "higher", "guard-rail"]
-    root = _inputs(
-        tmp_path, [["ersilia", "eos4zfy", "0.5", "higher", "primary"], tanimoto]
-    )
-
-    result = _fetch_ids(root, "eos9p57", "eos4zfy", "tanimoto", "-f")
-
-    assert result.exit_code == 0, result.output
-    assert fetched["plan"].model_ids == ("eos9p57", "eos4zfy")
-    assert not fetched["plan"].rdkit
 
 
 def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
     root = _inputs(tmp_path)
 
-    result = _fetch_ids(root, "eos9p57", "qed", "-f")
+    result = _fetch_ids(root, "eos9p57", "rdkit", "-f")
 
     assert result.exit_code == 0, result.output
     assert "similarity.csv: eos8nyg -> none (file removed)" in result.output
@@ -1067,11 +1090,11 @@ def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
 @pytest.mark.parametrize(
     "ids, message",
     [
-        (["eos9p57", "eos0xxx", "qed"], "eos0xxx is not a generator, similarity"),
+        (["eos9p57", "eos0xxx", "rdkit"], "eos0xxx is not a generator, similarity"),
         (["eos9p57", "eos8nyg"], "no annotator"),
-        (["eos4zfy", "qed"], "no generator nor similarity model"),
-        (["eos8nyg", "eos1bgt", "qed"], "a run takes one similarity model"),
-        (["eos9p57", "eos1d7r", "qed"], "not meant to be used in chemsampler"),
+        (["eos4zfy", "rdkit"], "no generator nor similarity model"),
+        (["eos8nyg", "eos1bgt", "rdkit"], "a run takes one similarity model"),
+        (["eos9p57", "eos1d7r", "rdkit"], "not meant to be used in chemsampler"),
     ],
 )
 def test_fetch_ids_that_cannot_make_a_run_are_refused(tmp_path, fetched, ids, message):
@@ -1093,7 +1116,7 @@ def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
         root,
         "eos9p57",
         "eos8nyg",
-        "qed",
+        "rdkit",
         can_ask=True,
         answer="n\n",
         monkeypatch=monkeypatch,
@@ -1108,7 +1131,7 @@ def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
         root,
         "eos9p57",
         "eos8nyg",
-        "qed",
+        "rdkit",
         can_ask=True,
         answer="y\n",
         monkeypatch=monkeypatch,
@@ -1120,7 +1143,7 @@ def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
 def test_fetch_cannot_ask_without_a_terminal(tmp_path, fetched, monkeypatch):
     root = _inputs(tmp_path)
 
-    result = _fetch_ids(root, "eos9p57", "qed", monkeypatch=monkeypatch)
+    result = _fetch_ids(root, "eos9p57", "rdkit", monkeypatch=monkeypatch)
 
     assert result.exit_code == 1
     assert "run it with -f" in result.output

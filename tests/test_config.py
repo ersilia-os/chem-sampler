@@ -16,6 +16,8 @@ from chemsampler.models.hub_annotator import HubAnnotator
 from chemsampler.models.similarity import HubSimilarity
 from chemsampler.project import create_project
 
+from .conftest import make_rdkit_env
+
 ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
 ANNOTATOR_ROWS = [
     ["ersilia", "eos4zfy", "0.5", "higher", "primary", "2"],
@@ -35,13 +37,15 @@ def hub(monkeypatch):
 @pytest.fixture(autouse=True)
 def models_fetched(request, monkeypatch):
     """
-    Take every Hub model as fetched, wherever it is looked for, so the tests of
-    the inputs need no clones. The tests of that check ask for `real_fetch_check`.
+    Take every Hub model and the rdkit environment as fetched, wherever they are
+    looked for, so the tests of the inputs need no clones. The tests of those
+    checks ask for `real_fetch_check`.
     """
     if "real_fetch_check" in request.fixturenames:
         return
     monkeypatch.setattr(config, "_check_repositories", str)
     monkeypatch.setattr(config, "_check_model_folders", lambda *args: None)
+    monkeypatch.setattr(config, "_check_rdkit_env", lambda *args: None)
 
 
 @pytest.fixture
@@ -423,6 +427,7 @@ def test_models_are_looked_for_in_the_store_when_no_folder_is_named(
     inputs_dir, store_root, fake_fetch, real_fetch_check
 ):
     fake_fetch("eos9taz", "eos80sj", "eos8nyg", "eos4zfy")
+    make_rdkit_env(store_root / "envs")
 
     inputs = _load(inputs_dir)
 
@@ -436,6 +441,8 @@ def test_a_folder_named_alone_is_models_without_environments(
     repos = tmp_path / "bundles"
     for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
         (repos / model).mkdir(parents=True)
+    # no environments folder, so no rdkit environment: Hub annotators only
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS[:1])
 
     inputs = _load(inputs_dir, path_to_model_repositories=str(repos))
 
@@ -466,6 +473,7 @@ def test_loads_when_every_model_folder_is_there(inputs_dir, tmp_path, real_fetch
     repos = tmp_path / "repos"
     for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
         (repos / model).mkdir(parents=True)
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS[:1])
 
     inputs = _load(inputs_dir, path_to_model_repositories=str(repos))
 
@@ -505,9 +513,12 @@ def test_load_annotators_reads_nothing_else(inputs_dir, hub):
     assert hub == [{"generators": [], "similarity": [], "annotators": ["eos4zfy"]}]
 
 
-def test_in_house_annotators_need_no_repositories(inputs_dir, real_fetch_check):
+def test_in_house_annotators_need_no_repositories(
+    inputs_dir, store_root, real_fetch_check
+):
     rows = [["rdkit", "mw", "250", "higher", "primary", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+    make_rdkit_env(store_root / "envs")
 
     specs = load_annotators(path_to_models=str(inputs_dir))
 
@@ -621,6 +632,7 @@ def test_complete_environments_pass_the_check(inputs_dir, tmp_path, real_fetch_c
     repos, envs = _repositories(
         tmp_path, built=["eos9taz", "eos80sj", "eos8nyg", "eos4zfy"]
     )
+    make_rdkit_env(envs)
 
     inputs = _load(
         inputs_dir,
@@ -711,9 +723,39 @@ def test_plan_fetch_puts_logs_beside_clones_the_user_named(inputs_dir, tmp_path)
     assert plan.logs_dir == tmp_path / "mine" / "logs"
 
 
-def test_plan_fetch_adds_the_rdkit_environment_only_for_rdkit_annotators(inputs_dir):
-    assert config.plan_fetch(path_to_models=str(inputs_dir)).rdkit  # mw and qed
+def test_plan_fetch_lists_the_rdkit_annotators_but_never_builds_their_env(inputs_dir):
+    plan = config.plan_fetch(path_to_models=str(inputs_dir))
+    assert plan.rdkit_annotators == ("mw", "qed") and not plan.rdkit
 
     rows = [["ersilia", "eos4zfy", "0.5", "higher", "primary", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
-    assert not config.plan_fetch(path_to_models=str(inputs_dir)).rdkit
+    assert config.plan_fetch(path_to_models=str(inputs_dir)).rdkit_annotators == ()
+
+
+def test_rdkit_annotators_need_the_rdkit_environment(
+    inputs_dir, store_root, fake_fetch, real_fetch_check
+):
+    fake_fetch("eos9taz", "eos80sj", "eos8nyg", "eos4zfy")
+
+    with pytest.raises(
+        ValueError,
+        match=r"mw, qed run in the rdkit environment.*"
+        r"run `chemsampler fetch rdkit`",
+    ):
+        load_inputs(path_to_models=str(inputs_dir))
+    make_rdkit_env(store_root / "envs")
+    [_, mw, _qed] = load_inputs(path_to_models=str(inputs_dir)).annotators
+    assert mw.annotator.env_dir() == store_root / "envs" / "rdkit"
+
+
+def test_rdkit_annotators_without_an_environments_folder_are_refused(
+    inputs_dir, tmp_path, real_fetch_check
+):
+    for model in ("eos9taz", "eos80sj", "eos8nyg", "eos4zfy"):
+        (tmp_path / "repos" / model).mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="needs an environments folder"):
+        load_inputs(
+            path_to_models=str(inputs_dir),
+            path_to_model_repositories=str(tmp_path / "repos"),
+        )

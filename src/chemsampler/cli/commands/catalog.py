@@ -92,7 +92,7 @@ def _show_local(models_dir, envs_dir, role, config) -> None:
         try:
             with _quiet():
                 plan = plan_fetch(config)
-            needed, rdkit_needed = plan.model_ids, plan.rdkit
+            needed, rdkit_needed = plan.model_ids, bool(plan.rdkit_annotators)
         except ValueError as e:
             click.secho(f"(this project's inputs could not be read: {e})", fg="yellow")
 
@@ -127,11 +127,11 @@ def _show_local(models_dir, envs_dir, role, config) -> None:
     rdkit_state = "-" if envs_dir is None else env_state(envs_dir, RDKIT_ENV)
     if rdkit_needed or rdkit_state not in ("-", "missing"):
         hint = (
-            "; run `chemsampler fetch`" if rdkit_needed and rdkit_state != "ok" else ""
+            "; run `chemsampler fetch rdkit`"
+            if rdkit_needed and rdkit_state != "ok"
+            else ""
         )
-        click.echo(
-            f"The rdkit environment (RDKit annotators on a cluster): {rdkit_state}{hint}"
-        )
+        click.echo(f"The rdkit environment (mw, qed and tanimoto): {rdkit_state}{hint}")
     lacking = [m.model_id for m in models if m.needed and not m.cloned]
     unbuilt = [
         m.model_id
