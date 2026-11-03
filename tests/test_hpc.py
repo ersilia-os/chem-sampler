@@ -43,9 +43,9 @@ RUN_SH = {
     ),
 }
 ANNOTATORS = (
-    "source,model,cutoff,direction,priority\n"
-    "ersilia,eos4zfy,1000,higher,primary\n"
-    "rdkit,qed,0-1,range,guard-rail\n"
+    "source,model,version,cutoff,direction,priority\n"
+    "ersilia,eos4zfy,v1.0.0,1000,higher,primary\n"
+    "rdkit,qed,,0-1,range,guard-rail\n"
 )
 PROFILES = {"test": {"partition": "fake", "nodes": ["node-a", "node-b"]}}
 
@@ -68,7 +68,7 @@ def project(tmp_path, store_root, monkeypatch):
     _fake_models(store_root)
     root = tmp_path / "proj"
     create_project(root)
-    (root / "input" / "generators.csv").write_text("generators\neos9taz\n")
+    (root / "input" / "generators.csv").write_text("model,version\neos9taz,v1.0.0\n")
     (root / "input" / "annotators.csv").write_text(ANNOTATORS)
     (store_root / "hpc.json").write_text(json.dumps(PROFILES))
     monkeypatch.setattr(executor_module, "_FAST_CHECK_SECONDS", 0.01)
@@ -333,6 +333,28 @@ def test_ctrl_c_cancels_and_counts_only_the_jobs_slurm_still_runs(
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert states[round2["eos9taz"]] == "COMPLETED"
     assert states[round2["eos8nyg"]] == "CANCELLED"
+
+
+def test_ctrl_c_after_every_job_finished_cancels_nothing(project, cluster, monkeypatch):
+    pressed, released = [], []
+    cluster.hold = lambda f: "round2" in str(f) and not released
+
+    def interrupt_then_finish_all(fake, ids):
+        if pressed:  # the check before cancelling: both jobs finished meanwhile
+            released.append(True)
+        elif any(fake.hold(fake.folders[i]) for i in ids):
+            monkeypatch.setattr(executor_module, "_FAST_CHECK_SECONDS", 60)
+            monkeypatch.setattr(executor_module, "_SLOW_CHECK_SECONDS", 60)
+            pressed.append(True)
+            signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+
+    cluster.on_check = interrupt_then_finish_all
+
+    result = _run(project, "--hpc", "test")
+
+    assert result.exit_code == 0, result.output
+    assert cluster.cancelled == []
+    assert "Cancelled" not in result.output and "Asked Slurm" not in result.output
 
 
 def test_when_slurm_cannot_say_what_still_runs_every_unfinished_job_is_cancelled(
@@ -612,9 +634,9 @@ def test_a_tanimoto_annotator_is_a_job_given_the_seed_with_local_values(
     project, cluster, store_root
 ):
     (project / "input" / "annotators.csv").write_text(
-        "source,model,cutoff,direction,priority\n"
-        "ersilia,eos4zfy,1000,higher,primary\n"
-        "rdkit,tanimoto,0-1,range,guard-rail\n"
+        "source,model,version,cutoff,direction,priority\n"
+        "ersilia,eos4zfy,v1.0.0,1000,higher,primary\n"
+        "rdkit,tanimoto,,0-1,range,guard-rail\n"
     )
 
     local = _run(project)

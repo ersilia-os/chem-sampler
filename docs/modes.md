@@ -5,8 +5,8 @@ Generators and a similarity model propose molecules, and annotators score them.
 next round. An annotator is either **primary** (optimized) or a **guard-rail**
 (a candidate that does not satisfy it never wins, in any mode). How several
 primaries combine is chosen with `mode`. With one primary a run is
-`sequential`, which optimizes it until its cutoff is met (`chemsampler run`
-refuses `--mode` then; `hill_climb` still takes any mode). A lighter
+`sequential`, which optimizes it until its cutoff is met: `chemsampler run`
+refuses `--mode` then, and `hill_climb` any other mode. A lighter
 `annotate(smiles, annotators, seed_smiles)` scores one molecule with no generation or rounds,
 which is handy for checking a seed's baseline.
 

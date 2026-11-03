@@ -16,7 +16,7 @@ _EPILOG = """\b
 Typical use:
   chemsampler init -p my-run && cd my-run
   (edit input/*.csv; the seeds go in input/smiles.csv)
-  chemsampler fetch          (and `fetch rdkit` for mw, qed, tanimoto)
+  chemsampler fetch          (asks, then fetches what input/*.csv lists)
   chemsampler run"""
 
 

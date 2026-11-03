@@ -18,11 +18,19 @@ from chemsampler.project import create_project
 
 from .conftest import make_rdkit_env
 
-ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority", "weight"]
+ANNOTATOR_HEADER = [
+    "source",
+    "model",
+    "version",
+    "cutoff",
+    "direction",
+    "priority",
+    "weight",
+]
 ANNOTATOR_ROWS = [
-    ["ersilia", "eos4zfy", "0.5", "higher", "primary", "2"],
-    ["rdkit", "mw", "250-450", "range", "guard-rail", ""],
-    ["rdkit", "qed", "0.3", "higher", "guard-rail", ""],
+    ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", "2"],
+    ["rdkit", "mw", "", "250-450", "range", "guard-rail", ""],
+    ["rdkit", "qed", "", "0.3", "higher", "guard-rail", ""],
 ]
 
 
@@ -64,8 +72,12 @@ def _write_csv(path, header, rows):
 def inputs_dir(tmp_path):
     folder = tmp_path / "inputs"
     folder.mkdir()
-    _write_csv(folder / "similarity.csv", ["similarity"], [["eos8nyg"]])
-    _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"], ["eos80sj"]])
+    _write_csv(folder / "similarity.csv", ["model", "version"], [["eos8nyg", "v1.0.0"]])
+    _write_csv(
+        folder / "generators.csv",
+        ["model", "version"],
+        [["eos9taz", "v1.0.0"], ["eos80sj", "v1.0.0"]],
+    )
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS)
     return folder
 
@@ -119,7 +131,7 @@ def test_annotators_are_required_and_the_error_says_where(inputs_dir):
 def test_similarity_and_generators_are_each_optional(inputs_dir, hub):
     (inputs_dir / "similarity.csv").unlink()
     without_similarity = _load(inputs_dir)
-    (inputs_dir / "similarity.csv").write_text("similarity\neos8nyg\n")
+    (inputs_dir / "similarity.csv").write_text("model,version\neos8nyg,v1.0.0\n")
     (inputs_dir / "generators.csv").unlink()
     without_generators = _load(inputs_dir)
 
@@ -155,8 +167,8 @@ def test_a_project_marker_given_as_the_config_gets_the_project_folders(
     (root / "chemsampler.json").write_text("{}")  # names no folder at all
     _write_csv(
         root / "input" / "annotators.csv",
-        ["source", "model", "cutoff"] + ["direction", "priority"],
-        [["rdkit", "qed", "0", "higher", "primary"]],
+        ["source", "model", "version", "cutoff"] + ["direction", "priority"],
+        [["rdkit", "qed", "", "0", "higher", "primary"]],
     )
     (root / "input" / "similarity.csv").unlink()
     elsewhere = tmp_path / "elsewhere"
@@ -174,7 +186,7 @@ def test_a_project_marker_given_as_the_config_gets_the_project_folders(
 
 def test_a_flag_overrides_the_config_and_the_folder(inputs_dir, tmp_path):
     other = tmp_path / "other.csv"
-    _write_csv(other, ["generators"], [["eos8vud"]])
+    _write_csv(other, ["model", "version"], [["eos8vud", "v1.0.0"]])
 
     inputs = _load(inputs_dir, generators=str(other))
 
@@ -229,28 +241,103 @@ def test_path_to_models_must_be_a_folder(tmp_path):
         load_inputs(path_to_models=str(tmp_path / "nowhere"))
 
 
-def test_csv_headers_must_be_the_input_names(inputs_dir):
+def test_csv_headers_must_be_model_and_version(inputs_dir):
     _write_csv(inputs_dir / "generators.csv", ["generator_id"], [["eos9taz"]])
 
     with pytest.raises(ValueError, match="bad header"):
         _load(inputs_dir)
 
 
+@pytest.mark.parametrize("name", ["generators", "similarity"])
+def test_an_old_one_column_list_is_refused_with_the_new_header(inputs_dir, name):
+    _write_csv(inputs_dir / f"{name}.csv", [name], [["eos9taz"]])
+
+    with pytest.raises(ValueError, match="the header is now model,version"):
+        _load(inputs_dir)
+
+
+def test_an_old_annotators_csv_without_versions_is_refused(inputs_dir):
+    header = [c for c in ANNOTATOR_HEADER if c != "version"]
+    _write_csv(
+        inputs_dir / "annotators.csv",
+        header,
+        [["rdkit", "mw", "0", "higher", "primary", ""]],
+    )
+
+    with pytest.raises(ValueError, match="the header now needs a version column"):
+        _load(inputs_dir)
+
+
+def test_a_hub_model_without_a_version_is_refused_with_where_to_find_one(inputs_dir):
+    _write_csv(
+        inputs_dir / "generators.csv",
+        ["model", "version"],
+        [["eos9taz", "v1.0.0"], ["eos80sj", " "]],
+    )
+
+    with pytest.raises(
+        ValueError, match=r"generators.csv row 2: eos80sj has no version"
+    ):
+        _load(inputs_dir)
+    with pytest.raises(ValueError, match=r"github.com/ersilia-os/eos80sj/releases"):
+        _load(inputs_dir)
+
+
+def test_an_annotator_s_version_rules_depend_on_its_source(inputs_dir):
+    rows = [["ersilia", "eos4zfy", "", "0.5", "higher", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+    with pytest.raises(ValueError, match="row 1: eos4zfy has no version"):
+        _load(inputs_dir)
+
+    rows = [
+        ANNOTATOR_ROWS[0],
+        ["rdkit", "mw", "v1.0.0", "0", "higher", "guard-rail", ""],
+    ]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+    with pytest.raises(ValueError, match=r"\(mw\): an rdkit annotator has no version"):
+        _load(inputs_dir)
+
+
+def test_one_model_with_two_versions_is_refused(inputs_dir):
+    rows = [["ersilia", "eos9taz", "v2.0.0", "0.5", "higher", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    with pytest.raises(
+        ValueError,
+        match=r"eos9taz is listed with two versions: v1.0.0 \(generators\) and "
+        r"v2.0.0 \(annotators\)",
+    ):
+        _load(inputs_dir)
+
+
+def test_versions_are_recorded_with_each_model(inputs_dir):
+    described = _load(inputs_dir).describe()
+
+    assert described["similarity"] == {"model": "eos8nyg", "version": "v1.0.0"}
+    assert described["generators"][1] == {"model": "eos80sj", "version": "v1.0.0"}
+    by_model = {a["model"]: a["version"] for a in described["annotators"]}
+    assert by_model == {"eos4zfy": "v1.0.0", "mw": None, "qed": None}
+
+
 def test_blank_rows_are_skipped_and_repeats_rejected(inputs_dir):
     _write_csv(
-        inputs_dir / "generators.csv", ["generators"], [["eos9taz"], [""], [" "]]
+        inputs_dir / "generators.csv",
+        ["model", "version"],
+        [["eos9taz", "v1.0.0"], ["", ""], [" ", " "]],
     )
     assert [g.model_id for g in _load(inputs_dir).generators.generators] == ["eos9taz"]
 
     _write_csv(
-        inputs_dir / "generators.csv", ["generators"], [["eos9taz"], ["eos9taz"]]
+        inputs_dir / "generators.csv",
+        ["model", "version"],
+        [["eos9taz", "v1.0.0"], ["eos9taz", "v1.0.0"]],
     )
     with pytest.raises(ValueError, match="more than once"):
         _load(inputs_dir)
 
 
 def test_an_empty_list_is_rejected(inputs_dir):
-    _write_csv(inputs_dir / "generators.csv", ["generators"], [])
+    _write_csv(inputs_dir / "generators.csv", ["model", "version"], [])
 
     with pytest.raises(ValueError, match="at least one model"):
         _load(inputs_dir)
@@ -258,7 +345,9 @@ def test_an_empty_list_is_rejected(inputs_dir):
 
 def test_only_one_similarity_model_for_now(inputs_dir):
     _write_csv(
-        inputs_dir / "similarity.csv", ["similarity"], [["eos8nyg"], ["eos2a9n"]]
+        inputs_dir / "similarity.csv",
+        ["model", "version"],
+        [["eos8nyg", "v1.0.0"], ["eos2a9n", "v1.0.0"]],
     )
 
     with pytest.raises(ValueError, match="only one similarity model"):
@@ -266,7 +355,7 @@ def test_only_one_similarity_model_for_now(inputs_dir):
 
 
 def test_annotator_errors_say_the_file_and_row(inputs_dir):
-    rows = [ANNOTATOR_ROWS[0], ["rdkit", "mw", "250", "range", "guard-rail", ""]]
+    rows = [ANNOTATOR_ROWS[0], ["rdkit", "mw", "", "250", "range", "guard-rail", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
 
     with pytest.raises(ValueError, match=r"annotators\.csv row 2 \(mw\).*min-max"):
@@ -289,8 +378,8 @@ def test_an_annotator_cannot_be_listed_twice(inputs_dir):
 
 
 def test_weight_defaults_to_one_and_column_reaches_the_hub_annotator(inputs_dir):
-    header = ["source", "model", "cutoff", "direction", "priority", "column"]
-    rows = [["ersilia", "eos4zfy", "0.5", "higher", "primary", "score"]]
+    header = ["source", "model", "version", "cutoff", "direction", "priority", "column"]
+    rows = [["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", "score"]]
     _write_csv(inputs_dir / "annotators.csv", header, rows)
 
     spec = _load(inputs_dir).annotators[0]
@@ -302,12 +391,13 @@ def test_weight_defaults_to_one_and_column_reaches_the_hub_annotator(inputs_dir)
 # --- the config file ----------------------------------------------------------------
 
 INLINE = {
-    "similarity": ["eos8nyg"],
-    "generators": ["eos9taz"],
+    "similarity": [{"model": "eos8nyg", "version": "v1.0.0"}],
+    "generators": [{"model": "eos9taz", "version": "v1.0.0"}],
     "annotators": [
         {
             "source": "ersilia",
             "model": "eos4zfy",
+            "version": "v1.0.0",
             "cutoff": 0.5,
             "direction": "higher",
             "priority": "primary",
@@ -344,7 +434,11 @@ def test_config_paths_are_relative_to_the_config_file_not_the_cwd(
     config_dir = tmp_path / "project"
     config_dir.mkdir()
     (config_dir / "models").mkdir()
-    _write_csv(config_dir / "models" / "generators.csv", ["generators"], [["eos9taz"]])
+    _write_csv(
+        config_dir / "models" / "generators.csv",
+        ["model", "version"],
+        [["eos9taz", "v1.0.0"]],
+    )
     path = _write_config(
         config_dir / "config.json",
         path_to_models="models",
@@ -368,7 +462,9 @@ def test_flags_override_the_config_paths(tmp_path, inputs_dir):
 
 def test_an_input_in_both_the_config_and_a_csv_is_rejected(tmp_path, inputs_dir):
     path = _write_config(
-        tmp_path / "config.json", path_to_models=str(inputs_dir), generators=["eos9taz"]
+        tmp_path / "config.json",
+        path_to_models=str(inputs_dir),
+        generators=INLINE["generators"],
     )
 
     with pytest.raises(ValueError, match="generators is given twice"):
@@ -380,7 +476,9 @@ def test_an_input_in_both_the_config_and_a_csv_is_rejected(tmp_path, inputs_dir)
     [
         ({"colour": 1}, "unknown key"),
         ({"path_to_models": 3}, "must be a path"),
-        ({"generators": "eos9taz"}, "list of model ids"),
+        ({"generators": "eos9taz"}, "list of objects with 'model' and 'version'"),
+        ({"generators": ["eos9taz"]}, "list of objects with 'model' and 'version'"),
+        ({"generators": [{"model": "eos9taz"}]}, "eos9taz has no version"),
         ({"annotators": ["mw"]}, "list of objects"),
     ],
 )
@@ -516,7 +614,7 @@ def test_load_annotators_reads_nothing_else(inputs_dir, hub):
 def test_in_house_annotators_need_no_repositories(
     inputs_dir, store_root, real_fetch_check
 ):
-    rows = [["rdkit", "mw", "250", "higher", "primary", ""]]
+    rows = [["rdkit", "mw", "", "250", "higher", "primary", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
     make_rdkit_env(store_root / "envs")
 
@@ -669,13 +767,15 @@ def test_plan_fetch_lists_each_hub_model_once_and_targets_the_store(
     monkeypatch.chdir(tmp_path / "proj")
     _write_csv(
         tmp_path / "proj" / "input" / "generators.csv",
-        ["generators"],
-        [["eos9taz"], ["eos8nyg"]],
+        ["model", "version"],
+        [["eos9taz", "v5.0.0"], ["eos8nyg", "live"]],
     )
 
     plan = plan_fetch()
 
     assert plan.model_ids == ("eos9taz", "eos8nyg", "eos4zfy")  # eos8nyg only once
+    # a tag where generators.csv gives one; live from init's templates
+    assert plan.versions == {"eos9taz": "v5.0.0", "eos8nyg": "live", "eos4zfy": "live"}
     assert plan.models_dir == store_root / "models"
     assert plan.envs_dir == store_root / "envs"
     assert plan.logs_dir == store_root / "logs"
@@ -727,7 +827,7 @@ def test_plan_fetch_lists_the_rdkit_annotators_but_never_builds_their_env(inputs
     plan = config.plan_fetch(path_to_models=str(inputs_dir))
     assert plan.rdkit_annotators == ("mw", "qed") and not plan.rdkit
 
-    rows = [["ersilia", "eos4zfy", "0.5", "higher", "primary", ""]]
+    rows = [["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", ""]]
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
     assert config.plan_fetch(path_to_models=str(inputs_dir)).rdkit_annotators == ()
 
@@ -759,3 +859,62 @@ def test_rdkit_annotators_without_an_environments_folder_are_refused(
             path_to_models=str(inputs_dir),
             path_to_model_repositories=str(tmp_path / "repos"),
         )
+
+
+def test_a_clone_not_at_its_listed_release_is_refused(inputs_dir, tmp_path):
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(clone), *args], env=env, check=True, capture_output=True
+        )
+
+    clone = tmp_path / "repos" / "eos9taz"
+    clone.mkdir(parents=True)
+    git("init", "--quiet")
+    for tag in ("v1.0.0", "v1.1.0"):
+        (clone / "run.sh").write_text(tag)
+        git("add", "-A")
+        git("commit", "--quiet", "-m", tag)
+        git("tag", tag)
+    git("checkout", "--quiet", "v1.0.0")
+    repos = str(tmp_path / "repos")
+
+    assert (
+        _load(inputs_dir, path_to_model_repositories=repos).versions["eos9taz"]
+        == "v1.0.0"
+    )
+    _write_csv(
+        inputs_dir / "generators.csv", ["model", "version"], [["eos9taz", "v1.1.0"]]
+    )
+    with pytest.raises(
+        ValueError, match=r"eos9taz is not at v1.1.0: run `chemsampler fetch`"
+    ):
+        _load(inputs_dir, path_to_model_repositories=repos)
+    _write_csv(
+        inputs_dir / "generators.csv", ["model", "version"], [["eos9taz", "v3.0.0"]]
+    )
+    with pytest.raises(ValueError, match="eos9taz: its clone has no release v3.0.0"):
+        _load(inputs_dir, path_to_model_repositories=repos)
+
+
+def test_live_is_a_version_inline_too(tmp_path):
+    inline = {
+        **INLINE,
+        "generators": [{"model": "eos9taz", "version": "live"}],
+        "annotators": [{**INLINE["annotators"][0], "version": "live"}],
+    }
+    path = _write_config(tmp_path / "config.json", **inline)
+
+    versions = load_inputs(config=path).versions
+
+    assert versions == {"eos9taz": "live", "eos8nyg": "v1.0.0", "eos4zfy": "live"}

@@ -24,12 +24,13 @@ FOLDER_KEYS = {"path_to_models": "input", "path_to_runs": "runs"}
 #: writes them (the store's, unless told otherwise); without them, the store's.
 STORE_KEYS = ("path_to_model_repositories", "path_to_envs")
 
-#: A first set of inputs, one model of each kind (same as `examples/inputs/csv`).
+#: A first set of inputs, one model of each kind, each following its main branch.
 TEMPLATES = {
-    "similarity.csv": "similarity\neos8nyg\n",
-    "generators.csv": "generators\neos9taz\n",
+    "similarity.csv": "model,version\neos8nyg,live\n",
+    "generators.csv": "model,version\neos9taz,live\n",
     "annotators.csv": (
-        "source,model,cutoff,direction,priority\nersilia,eos4zfy,0.0,higher,primary\n"
+        "source,model,version,cutoff,direction,priority\n"
+        "ersilia,eos4zfy,live,0.0,higher,primary\n"
     ),
 }
 

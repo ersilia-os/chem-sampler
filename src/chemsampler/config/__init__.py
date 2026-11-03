@@ -2,7 +2,7 @@
 
 import csv
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import store
@@ -23,13 +23,14 @@ from .schema import (
     SOURCES,
     AnnotatorRow,
     check_header,
+    no_version,
     parse_annotator,
 )
 
 #: The three model lists. Each comes from its argument (a CSV file), a key of the config
 #: file, or a CSV of the same name in the `path_to_models` folder (or, failing
-#: all of those, in the working directory). The CSVs' single column has the same
-#: name; annotators.csv has the columns of `schema.REQUIRED_FIELDS`.
+#: all of those, in the working directory). similarity.csv and generators.csv
+#: have the columns `model,version`; annotators.csv those of `schema.REQUIRED_FIELDS`.
 INPUT_NAMES = ("similarity", "generators", "annotators")
 #: The seeds: `smiles.csv`, found the same way, with a single column `smiles`.
 SEED_NAME = "smiles"
@@ -53,19 +54,28 @@ class Inputs:
     envs_dir: str | None
     runs_dir: str | None
     seeds: tuple[str, ...] = ()
+    #: Each Hub model's release tag, as the inputs list it.
+    versions: dict = field(default_factory=dict)
 
     def describe(self) -> dict:
         """What was resolved, to save next to a run's results."""
+
+        def model(model_id):
+            return {"model": model_id, "version": self.versions.get(model_id)}
+
         return {
-            "similarity": None if self.similarity is None else self.similarity.model_id,
+            "similarity": (
+                None if self.similarity is None else model(self.similarity.model_id)
+            ),
             "generators": (
                 None
                 if self.generators is None
-                else [g.model_id for g in self.generators.generators]
+                else [model(g.model_id) for g in self.generators.generators]
             ),
             "annotators": [
                 {
                     "model": spec.annotator_id,
+                    "version": self.versions.get(spec.annotator_id),
                     "cutoff": list(spec.cutoff)
                     if isinstance(spec.cutoff, tuple)
                     else spec.cutoff,
@@ -175,6 +185,7 @@ def load_inputs(
         envs_dir=loaded["envs_dir"],
         runs_dir=loaded["runs_dir"],
         seeds=loaded["seeds"],
+        versions=loaded["versions"],
     )
 
 
@@ -345,41 +356,79 @@ def _read_config(path: Path) -> dict:
         if key in data and not is_text(data[key]):
             raise ValueError(f"{path}: '{key}' must be a path (text)")
     for key in ("similarity", "generators"):
-        if key in data and not is_list_of(data[key], str):
-            raise ValueError(f"{path}: '{key}' must be a list of model ids")
+        if key in data and not is_list_of(data[key], dict):
+            raise ValueError(
+                f"{path}: '{key}' must be a list of objects with 'model' and 'version'"
+            )
     if "annotators" in data and not is_list_of(data["annotators"], dict):
         raise ValueError(f"{path}: 'annotators' must be a list of objects")
     return data
 
 
-def _unique_ids(ids: list[str], where: str) -> list[str]:
-    """Strip the ids and require at least one, with no blanks or repeats."""
-    ids = [i.strip() for i in ids]
-    if not ids:
+#: The columns of similarity.csv and generators.csv.
+MODEL_COLUMNS = ("model", "version")
+
+
+def _unique_models(pairs: list[tuple[str, str | None]], where: str) -> list[tuple]:
+    """Strip the (model, version) pairs; at least one, all versioned, no repeats."""
+    pairs = [(m.strip(), (v or "").strip() or None) for m, v in pairs]
+    if not pairs:
         raise ValueError(f"{where}: at least one model is required")
-    if "" in ids:
-        raise ValueError(f"{where}: empty model id")
+    for number, (model, version) in enumerate(pairs, start=1):
+        if not model:
+            raise ValueError(f"{where} row {number}: empty model id")
+        if version is None:
+            raise no_version(f"{where} row {number}", model)
+    ids = [m for m, _ in pairs]
     repeated = sorted({i for i in ids if ids.count(i) > 1})
     if repeated:
         raise ValueError(f"{where}: listed more than once: {repeated}")
-    return ids
+    return pairs
 
 
-def _read_ids_csv(path: Path, column: str) -> list[str]:
-    """A one-column CSV whose header is the input's name; blank rows are skipped."""
+def _read_models_csv(path: Path, name: str) -> list[tuple]:
+    """similarity.csv or generators.csv: `model,version`; blank rows are skipped."""
     with open(path, newline="") as f:
         reader = csv.reader(f)
-        check_header(path, next(reader, None), [column])
-        ids = []
+        header = next(reader, None)
+        if [c.strip() for c in header or []] == [name]:
+            raise ValueError(
+                f"{path.name}: the header is now {','.join(MODEL_COLUMNS)}, one row "
+                "per model with its release tag (see docs/inputs.md)"
+            )
+        check_header(path, header, MODEL_COLUMNS)
+        order = [c.strip() for c in header]
+        pairs = []
         for number, row in enumerate(reader, start=1):
             if not any(cell.strip() for cell in row):
                 continue
-            if len(row) != 1:
+            if len(row) != len(order):
                 raise ValueError(
-                    f"{path.name} row {number}: expected one value, got {len(row)}"
+                    f"{path.name} row {number}: expected {len(order)} values, got "
+                    f"{len(row)}"
                 )
-            ids.append(row[0])
-    return _unique_ids(ids, path.name)
+            cells = dict(zip(order, row))
+            pairs.append((cells["model"], cells["version"]))
+    return _unique_models(pairs, path.name)
+
+
+def _inline_models(items, name: str) -> list[tuple]:
+    """A config file's list of {"model": ..., "version": ...} objects."""
+    if not is_list_of(items, dict):
+        raise ValueError(
+            f"config file '{name}': give a list of objects with 'model' and "
+            "'version' (see docs/inputs.md)"
+        )
+    for item in items:
+        extra = sorted(set(item) - set(MODEL_COLUMNS))
+        if extra or not is_text(item.get("model")):
+            raise ValueError(
+                f"config file '{name}': each entry needs 'model' (and 'version'), "
+                f"nothing else; got {sorted(item)}"
+            )
+    return _unique_models(
+        [(item["model"], item.get("version")) for item in items], name
+    )
 
 
 def _read_seed_csv(path: Path) -> tuple[str, ...]:
@@ -422,6 +471,11 @@ def _read_seed_csv(path: Path) -> tuple[str, ...]:
 def _read_annotators_csv(path: Path) -> list[AnnotatorRow]:
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
+        if "version" not in [c.strip() for c in reader.fieldnames or []]:
+            raise ValueError(
+                f"{path.name}: the header now needs a version column (a Hub "
+                "model's release tag; empty for rdkit), see docs/inputs.md"
+            )
         check_header(path, reader.fieldnames, REQUIRED_FIELDS, OPTIONAL_FIELDS)
         reader.fieldnames = [c.strip() for c in reader.fieldnames]
         rows = []
@@ -586,16 +640,31 @@ def _read_inputs(names, loc: _Locations, files):
     if loc.models is not None and not loc.models.is_dir():
         raise ValueError(f"the input folder {loc.models} does not exist")
 
+    versions, listed_in = {}, {}
+
+    def note_version(model, version, where):
+        if versions.setdefault(model, version) != version:
+            raise ValueError(
+                f"{model} is listed with two versions: {versions[model]} "
+                f"({listed_in[model]}) and {version} ({where})"
+            )
+        listed_in.setdefault(model, where)
+
     def ids(name):
-        return _find_source(
+        pairs = _find_source(
             name,
             files.get(name),
             loc.data,
             loc.models,
-            lambda p: _read_ids_csv(p, name),
-            lambda values: _unique_ids(values, name),
+            lambda p: _read_models_csv(p, name),
+            lambda items: _inline_models(items, name),
             required=False,
         )
+        if pairs is None:
+            return None
+        for model, version in pairs:
+            note_version(model, version, name)
+        return [model for model, _ in pairs]
 
     generators = similarity = None
     if "generators" in names:
@@ -629,7 +698,10 @@ def _read_inputs(names, loc: _Locations, files):
         required=True,
     )
     _check_annotator_rows(rows)
-    return generators, similarity, rows
+    for row in rows:
+        if row.source == "ersilia":
+            note_version(row.model, row.version, "annotators")
+    return generators, similarity, rows, versions
 
 
 def _read_seed(loc: _Locations) -> tuple[str, ...]:
@@ -656,7 +728,7 @@ def _load(
     folder, then the catalog, then each model's own folder and environment.
     """
     loc = _locations(config, path_to_models, path_to_model_repositories, path_to_envs)
-    generators, similarity, rows = _read_inputs(names, loc, files)
+    generators, similarity, rows, versions = _read_inputs(names, loc, files)
     seeds = _read_seed(loc) if "generators" in names else ()
 
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
@@ -672,6 +744,7 @@ def _load(
     )
     if hub_ids:
         _check_model_folders(models_dir, envs_dir, hub_ids)
+        _check_versions(models_dir, versions)
     _check_rdkit_env(envs_dir, [row.model for row in rows if row.source == "rdkit"])
 
     loaded = {
@@ -679,6 +752,7 @@ def _load(
         "envs_dir": envs_dir,
         "runs_dir": _as_text(loc.runs),
         "seeds": seeds,
+        "versions": versions,
         "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,
         "similarity": None,
@@ -753,7 +827,9 @@ def plan_fetch(
         "generators": generators,
         "annotators": annotators,
     }
-    generators_ids, similarity_ids, rows = _read_inputs(INPUT_NAMES, loc, files)
+    generators_ids, similarity_ids, rows, versions = _read_inputs(
+        INPUT_NAMES, loc, files
+    )
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
     validate_models(
         generators=generators_ids or [],
@@ -765,6 +841,7 @@ def plan_fetch(
         model_ids=tuple(dict.fromkeys(wanted)),
         **_fetch_folders(loc),
         rdkit_annotators=tuple(row.model for row in rows if row.source == "rdkit"),
+        versions=versions,
     )
 
 
@@ -832,6 +909,19 @@ def _check_model_folders(
                 f"no complete environment for {unbuilt} in {envs_dir}; run "
                 "`chemsampler fetch` to build them"
             )
+
+
+def _check_versions(models_dir: str, versions: dict) -> None:
+    """Every model's clone is at the release its row names (`chemsampler fetch`)."""
+    from ..hub.fetch import release_problem
+
+    problems = [
+        problem
+        for model_id, tag in versions.items()
+        if (problem := release_problem(Path(models_dir) / model_id, tag)) is not None
+    ]
+    if problems:
+        raise ValueError("; ".join(problems) + ": run `chemsampler fetch`")
 
 
 def _check_rdkit_env(envs_dir: str | None, names: list[str]) -> None:

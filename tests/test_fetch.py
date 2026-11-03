@@ -1,4 +1,6 @@
+import dataclasses
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -29,7 +31,27 @@ DOCKERFILE = (
 )
 
 
-# --- a fake git, eosvc, conda and pip ---------------------------------------------------
+# --- a real git on local repositories, and a fake eosvc, conda and pip -------------------
+
+#: Who commits in the test repositories.
+GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@example.org",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@example.org",
+}
+
+
+def git(*args, cwd=None):
+    return subprocess.run(
+        ["git", *map(str, args)],
+        cwd=cwd,
+        env=GIT_ENV,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
 
 def _done(stdout="", stderr="", code=0):
@@ -37,13 +59,16 @@ def _done(stdout="", stderr="", code=0):
 
 
 class FakeSystem:
-    """Stands in for every command `fetch` runs, doing their file-system effects."""
+    """
+    Stands in for every command `fetch` runs but git, which is real: each model
+    is a local repository under `origin` (what ORG_URL points at), made on its
+    first clone with its recipe, tagged v1.0.0.
+    """
 
-    def __init__(self, recipes, access=()):
+    def __init__(self, recipes, origin, access=()):
         self.recipes = recipes  # model id -> (file name, text)
+        self.origin = origin
         self.access = set(access)  # ids whose clone carries an access.json
-        self.behind, self.ahead, self.dirty = {}, {}, set()
-        self.porcelain = {}
         self.fail = {}  # a text in the command line -> the stderr it fails with
         self.installed, self.conda_installed, self.python = {}, {}, {}
         self.calls = []
@@ -70,29 +95,35 @@ class FakeSystem:
 
     def _git(self, argv):
         if argv[1] == "clone":
-            dest = Path(argv[-1])
-            (dest / ".git").mkdir(parents=True)
-            name, text = self.recipes[dest.name]
-            (dest / name).write_text(text)
-            if dest.name in self.access:
-                (dest / "access.json").write_text("{}")
-            return _done()
-        model = Path(argv[2]).name
-        return {
-            "fetch": lambda: _done(),
-            "rev-list": lambda: _done(
-                f"{self.ahead.get(model, 0)}\t{self.behind.get(model, 0)}\n"
-            ),
-            "status": lambda: _done(
-                self.porcelain.get(model, " M code.py\n" if model in self.dirty else "")
-            ),
-            "rev-parse": lambda: _done("abc1234\n"),
-            "pull": lambda: self._pull(model),
-        }[argv[3]]()
+            self.repo(Path(argv[-2]).stem)
+        return subprocess.run(
+            argv, capture_output=True, text=True, env=GIT_ENV, check=False
+        )
 
-    def _pull(self, model):
-        self.behind[model] = 0
-        return _done()
+    def repo(self, model):
+        """The model's repository, made with its recipe and tagged v1.0.0."""
+        repo = self.origin / f"{model}.git"
+        if not repo.exists():
+            repo.mkdir(parents=True)
+            git("init", "--quiet", "-b", "main", cwd=repo)
+            name, text = self.recipes[model]
+            (repo / name).write_text(text)
+            if model in self.access:
+                (repo / "access.json").write_text("{}")
+            git("add", "-A", cwd=repo)
+            git("commit", "--quiet", "-m", "first", cwd=repo)
+            git("tag", "v1.0.0", cwd=repo)
+        return repo
+
+    def release(self, model, tag, recipe=None):
+        """A new commit on the model's main (a new recipe, if given), tagged."""
+        repo = self.repo(model)
+        name, text = self.recipes[model]
+        self.commits = getattr(self, "commits", 0) + 1
+        (repo / name).write_text(recipe or f"{text}# {tag} {self.commits}\n")
+        git("commit", "--quiet", "-am", tag or "more work", cwd=repo)
+        if tag:
+            git("tag", tag, cwd=repo)
 
     def _conda(self, argv):
         if argv[1] == "create":
@@ -128,14 +159,19 @@ class FakeSystem:
 
 
 @pytest.fixture
-def system(monkeypatch):
+def system(monkeypatch, tmp_path):
     fake = FakeSystem(
-        {"eos1aaa": ("install.yml", YML), "eos2bbb": ("Dockerfile", DOCKERFILE)}
+        {"eos1aaa": ("install.yml", YML), "eos2bbb": ("Dockerfile", DOCKERFILE)},
+        tmp_path / "origin",
     )
+    monkeypatch.setattr(fetch, "ORG_URL", str(tmp_path / "origin"))
     monkeypatch.setattr(fetch, "_run", fake)
     monkeypatch.setattr(fetch, "_eosvc", lambda: "eosvc")
     monkeypatch.setattr(fetch, "free_disk_gb", lambda path: 500.0)
     return fake
+
+
+VERSIONS = {"eos1aaa": "v1.0.0", "eos2bbb": "v1.0.0"}
 
 
 @pytest.fixture
@@ -145,7 +181,21 @@ def plan(tmp_path):
         models_dir=tmp_path / "models",
         envs_dir=tmp_path / "envs",
         logs_dir=tmp_path / "logs" / "fetch",
+        versions=VERSIONS,
     )
+
+
+def _at(plan, tag, model="eos1aaa"):
+    """The plan, asking for another release of `model`."""
+    return dataclasses.replace(plan, versions={**plan.versions, model: tag})
+
+
+def _head(plan, model="eos1aaa"):
+    return git("-C", plan.models_dir / model, "rev-parse", "HEAD")
+
+
+def _tag(plan, tag, model="eos1aaa"):
+    return git("-C", plan.models_dir / model, "rev-parse", f"{tag}^{{commit}}")
 
 
 def _say(messages):
@@ -244,14 +294,15 @@ def test_a_first_fetch_clones_downloads_and_builds(system, plan):
 
     model_dir, env = plan.models_dir / "eos1aaa", plan.envs_dir / "eos1aaa"
     assert result.ok and (result.clone, result.checkpoints, result.env) == (
-        "cloned",
+        "cloned at v1.0.0",
         "downloaded",
         "built",
     )
     assert system.commands("git", "clone")[0][-2:] == [
-        "https://github.com/ersilia-os/eos1aaa.git",
+        f"{system.origin}/eos1aaa.git",
         str(model_dir),
     ]
+    assert _head(plan) == _tag(plan, "v1.0.0")
     [eosvc_call] = [c for c in system.calls if c[0][0] == "eosvc"]
     # only the checkpoints: `fit` is training data and is never downloaded
     assert eosvc_call[0] == ["eosvc", "download", "--path", "model/checkpoints"]
@@ -265,9 +316,8 @@ def test_a_first_fetch_clones_downloads_and_builds(system, plan):
         "-y",
     ]
     assert is_complete(env)
-    assert (
-        json.loads((env / ".chemsampler-env.json").read_text())["commit"] == "abc1234"
-    )
+    short = git("-C", model_dir, "rev-parse", "--short", "HEAD")
+    assert json.loads((env / ".chemsampler-env.json").read_text())["commit"] == short
     assert "$ git clone" in (plan.logs_dir / "eos1aaa.log").read_text()
 
 
@@ -297,7 +347,7 @@ def test_a_model_without_access_json_needs_no_download(system, plan):
 
 
 def test_a_dockerfile_model_builds_its_pip_steps_too(system, plan):
-    plan = FetchPlan(("eos2bbb",), plan.models_dir, plan.envs_dir, plan.logs_dir)
+    plan = dataclasses.replace(plan, model_ids=("eos2bbb",))
 
     [result] = fetch_models(plan, say=_say([]))
 
@@ -313,79 +363,175 @@ def test_fetching_again_changes_nothing(system, plan):
     fetch_models(plan, say=_say([]))
     system.calls.clear()
 
-    [result] = fetch_models(plan, say=_say([]))
+    [result] = fetch_models(plan, update=True, say=_say([]))
 
     assert (result.clone, result.checkpoints, result.env) == (
-        "up to date",
+        "at v1.0.0",
         "present",
         "ok",
     )
     assert not system.commands("git", "clone") and not system.commands("conda")
     assert not [c for c, _, _ in system.calls if c[0] == "eosvc"]
-    assert not [c for c in system.commands("git") if "pull" in c]
+    assert not [c for c in system.commands("git") if "checkout" in c]
 
 
-def test_a_clone_that_is_behind_is_reported_and_left_alone(system, plan):
+def test_a_new_clone_lands_on_the_release_asked_for_not_on_main(system, plan):
+    system.release("eos1aaa", "v1.1.0")
+    system.release("eos1aaa", "")  # main moves on past the last release
+
+    [result] = fetch_models(_at(plan, "v1.0.0"), say=_say([]))
+
+    assert result.clone == "cloned at v1.0.0"
+    assert _head(plan) == _tag(plan, "v1.0.0")
+
+
+def test_without_update_a_clone_at_another_release_is_only_reported(system, plan):
     fetch_models(plan, say=_say([]))
-    system.behind["eos1aaa"] = 3
+    system.release("eos1aaa", "v1.1.0")
 
-    [result] = fetch_models(plan, say=_say([]))
+    [result] = fetch_models(_at(plan, "v1.1.0"), say=_say([]))
 
-    assert result.clone == "3 behind"
-    assert not [c for c in system.commands("git") if "pull" in c]
+    assert result.clone == "not at v1.1.0"
+    assert _head(plan) == _tag(plan, "v1.0.0")
 
 
-def test_update_pulls_a_clone_that_is_behind_fast_forward_only(system, plan):
+def test_update_switches_a_clone_to_the_release_asked_for(system, plan):
     fetch_models(plan, say=_say([]))
-    system.behind["eos1aaa"] = 3
+    system.release("eos1aaa", "v1.1.0", recipe=YML.replace("2.5.3", "2.6.0"))
+    messages = []
 
-    [result] = fetch_models(plan, update=True, say=_say([]))
+    [result] = fetch_models(
+        _at(plan, "v1.1.0"), update=True, rebuild=True, say=_say(messages)
+    )
 
-    assert result.clone == "updated"
-    [pull] = [c for c in system.commands("git") if "pull" in c]
-    assert "--ff-only" in pull
+    assert result.ok and result.clone == "switched to v1.1.0"
+    assert _head(plan) == _tag(plan, "v1.1.0")
+    assert "eos1aaa: checking out v1.1.0" in messages
+    assert result.env == "rebuilt"  # the new release's recipe pins another numpy
+    # and back again
+    [back] = fetch_models(plan, update=True, say=_say([]))
+    assert back.clone == "switched to v1.0.0" and _head(plan) == _tag(plan, "v1.0.0")
 
 
-@pytest.mark.parametrize("trouble", ["dirty", "ahead", "diverged"])
-def test_update_never_touches_a_clone_with_local_work(system, plan, trouble):
+@pytest.mark.parametrize("trouble", ["changes", "commits"])
+def test_update_never_switches_a_clone_with_local_work(system, plan, trouble):
     fetch_models(plan, say=_say([]))
-    system.behind["eos1aaa"] = 2
-    if trouble == "dirty":
-        system.dirty.add("eos1aaa")
-    else:
-        system.ahead["eos1aaa"] = 1
-    if trouble == "ahead":
-        system.behind["eos1aaa"] = 0
+    system.release("eos1aaa", "v1.1.0")
+    clone = plan.models_dir / "eos1aaa"
+    (clone / "install.yml").write_text(YML + "# mine\n")
+    if trouble == "commits":
+        git("commit", "--quiet", "-am", "mine", cwd=clone)
+    before = _head(plan)
 
-    [result] = fetch_models(plan, update=True, say=_say([]))
+    [result] = fetch_models(_at(plan, "v1.1.0"), update=True, say=_say([]))
 
-    assert not [c for c in system.commands("git") if "pull" in c]
-    assert result.notes == ["not updated: local changes or local commits"]
+    assert result.clone == "not at v1.1.0"
+    assert result.notes == ["not switched to v1.1.0: local changes or local commits"]
+    assert _head(plan) == before
+    assert "# mine" in (clone / "install.yml").read_text()
 
 
 def test_what_eosvc_leaves_behind_does_not_make_a_clone_look_modified(system, plan):
-    system.access = {"eos1aaa"}
     fetch_models(plan, say=_say([]))
+    system.release("eos1aaa", "v1.1.0")
     # eosvc keeps its state inside the clone and model repositories do not ignore it
-    system.porcelain["eos1aaa"] = "?? .eosvc/\n"
-    system.behind["eos1aaa"] = 2
+    (plan.models_dir / "eos1aaa" / ".eosvc").mkdir()
+    (plan.models_dir / "eos1aaa" / ".eosvc" / "state").write_text("x")
 
-    [result] = fetch_models(plan, update=True, say=_say([]))
+    [result] = fetch_models(_at(plan, "v1.1.0"), update=True, say=_say([]))
 
-    assert result.clone == "updated"
-    assert [c for c in system.commands("git") if "pull" in c]
-    assert result.notes == []
+    assert result.clone == "switched to v1.1.0" and result.notes == []
 
 
-def test_the_users_own_changes_still_protect_a_clone(system, plan):
+def test_a_release_that_does_not_exist_names_the_ones_that_do(system, plan):
+    system.release("eos1aaa", "v1.1.0")
+    system.release("eos1aaa", "test")  # not a release
+
+    [result] = fetch_models(_at(plan, "v9.0.0"), say=_say([]))
+
+    assert not result.ok
+    assert result.error == "no release v9.0.0 of eos1aaa; its releases: v1.0.0, v1.1.0"
+
+
+def test_a_model_the_plan_gives_no_version_is_not_fetched(system, plan):
+    [result] = fetch_models(dataclasses.replace(plan, versions={}), say=_say([]))
+
+    assert not result.ok and "no version" in result.error
+    assert not system.commands("git", "clone")
+
+
+def test_a_live_clone_follows_main_past_the_last_release(system, plan):
+    system.release("eos1aaa", "")  # main moves on past v1.0.0
+    main = git("-C", system.repo("eos1aaa"), "rev-parse", "HEAD")
+
+    [result] = fetch_models(_at(plan, "live"), say=_say([]))
+
+    assert result.ok and result.clone == "cloned at live"
+    assert _head(plan) == main
+
+
+def test_a_clone_at_a_release_switches_to_live_and_a_live_one_is_pulled(system, plan):
+    system.release("eos1aaa", "")
+    fetch_models(plan, say=_say([]))  # at v1.0.0, behind main: detached
+    assert git("-C", plan.models_dir / "eos1aaa", "branch", "--show-current") == ""
+    messages = []
+
+    [switched] = fetch_models(_at(plan, "live"), update=True, say=_say(messages))
+    main = git("-C", system.repo("eos1aaa"), "rev-parse", "HEAD")
+    assert switched.clone == "updated to live" and _head(plan) == main
+    assert (
+        git("-C", plan.models_dir / "eos1aaa", "symbolic-ref", "--short", "HEAD")
+        == "main"
+    )
+    assert "eos1aaa: updated to live" in messages
+
+    [same] = fetch_models(_at(plan, "live"), update=True, say=_say([]))
+    assert same.clone == "at live"  # a pull brings nothing
+
+    system.release("eos1aaa", "")
+    [pulled] = fetch_models(_at(plan, "live"), update=True, say=_say([]))
+    assert pulled.clone == "updated to live"
+    assert _head(plan) == git("-C", system.repo("eos1aaa"), "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("trouble", ["changes", "commits"])
+def test_live_never_overwrites_local_work(system, plan, trouble):
+    fetch_models(plan, say=_say([]))  # at v1.0.0
+    system.release("eos1aaa", "")
+    clone = plan.models_dir / "eos1aaa"
+    (clone / "install.yml").write_text(YML + "# mine\n")
+    if trouble == "commits":
+        git("commit", "--quiet", "-am", "mine", cwd=clone)
+    before = _head(plan)
+
+    [result] = fetch_models(_at(plan, "live"), update=True, say=_say([]))
+
+    assert result.clone == "not at live"
+    assert result.notes == ["not switched to live: local changes or local commits"]
+    assert _head(plan) == before
+
+
+def test_release_problem_says_whether_a_clone_is_at_its_release(system, plan):
     fetch_models(plan, say=_say([]))
-    system.porcelain["eos1aaa"] = "?? .eosvc/\n M model/framework/code/main.py\n"
-    system.behind["eos1aaa"] = 2
+    system.release("eos1aaa", "v1.1.0")
+    clone = plan.models_dir / "eos1aaa"
 
-    [result] = fetch_models(plan, update=True, say=_say([]))
-
-    assert result.clone == "2 behind, local changes"
-    assert not [c for c in system.commands("git") if "pull" in c]
+    assert fetch.release_problem(clone, "v1.0.0") is None
+    assert (
+        fetch.release_problem(clone, "v1.1.0")
+        == "eos1aaa: its clone has no release v1.1.0"
+    )
+    git("fetch", "--quiet", "--tags", cwd=clone)
+    assert fetch.release_problem(clone, "v1.1.0") == "eos1aaa is not at v1.1.0"
+    assert fetch.release_problem(plan.models_dir / "plain", "v1.0.0") is None
+    # live: on the main branch, not on a tag
+    git("checkout", "--quiet", "v1.0.0", cwd=clone)
+    assert (
+        fetch.release_problem(clone, "live")
+        == "eos1aaa is not at live (not on its main branch)"
+    )
+    git("checkout", "--quiet", "main", cwd=clone)
+    assert fetch.release_problem(clone, "live") is None
 
 
 def test_a_folder_that_is_not_a_clone_is_not_overwritten(system, plan):
@@ -410,8 +556,17 @@ def _built_env(system, plan, installed, python="3.12", model="eos1aaa"):
 
 
 def _with_clone(system, plan, model="eos1aaa"):
-    """Give `model` a clone, without building anything."""
-    system(["git", "clone", "x", str(plan.models_dir / model)])
+    """Give `model` a clone at v1.0.0, without building anything."""
+    system(
+        [
+            "git",
+            "clone",
+            "--quiet",
+            f"{system.origin}/{model}.git",
+            str(plan.models_dir / model),
+        ]
+    )
+    git("-C", plan.models_dir / model, "checkout", "--quiet", "v1.0.0")
 
 
 def test_an_environment_that_differs_is_reported_not_rebuilt(system, plan):
@@ -450,7 +605,7 @@ def test_versions_are_compared_the_way_pip_judges_them(installed, pinned, matche
 
 
 def test_a_cpu_wheel_satisfies_a_plain_pin(system, plan):
-    plan = FetchPlan(("eos2bbb",), plan.models_dir, plan.envs_dir, plan.logs_dir)
+    plan = dataclasses.replace(plan, model_ids=("eos2bbb",))
     _with_clone(system, plan, "eos2bbb")
     _built_env(
         system,
@@ -478,7 +633,7 @@ def test_a_missing_package_and_a_wrong_python_are_differences(system, plan):
 
 
 def test_package_names_are_compared_in_their_normalized_form(system, plan):
-    plan = FetchPlan(("eos2bbb",), plan.models_dir, plan.envs_dir, plan.logs_dir)
+    plan = dataclasses.replace(plan, model_ids=("eos2bbb",))
     _with_clone(system, plan, "eos2bbb")
     _built_env(
         system,
@@ -493,9 +648,7 @@ def test_package_names_are_compared_in_their_normalized_form(system, plan):
 
 
 def test_rebuild_rebuilds_only_the_environments_that_differ(system, plan):
-    plan = FetchPlan(
-        ("eos1aaa", "eos2bbb"), plan.models_dir, plan.envs_dir, plan.logs_dir
-    )
+    plan = dataclasses.replace(plan, model_ids=("eos1aaa", "eos2bbb"))
     for model in plan.model_ids:
         _with_clone(system, plan, model)
     _built_env(system, plan, {"torch": "2.8.0", "numpy": "2.5.3"})
@@ -577,9 +730,7 @@ def test_a_failed_step_leaves_no_marker_and_the_next_fetch_rebuilds(system, plan
 
 
 def test_one_failing_model_does_not_stop_the_others(system, plan):
-    plan = FetchPlan(
-        ("eos1aaa", "eos2bbb"), plan.models_dir, plan.envs_dir, plan.logs_dir
-    )
+    plan = dataclasses.replace(plan, model_ids=("eos1aaa", "eos2bbb"))
     system.fail["eos1aaa.git"] = "repository not found"
 
     first, second = fetch_models(plan, say=_say([]))

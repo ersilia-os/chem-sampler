@@ -82,6 +82,9 @@ class FetchPlan:
     #: The RDKit annotators the inputs list (`mw`, `qed`, `tanimoto`): they need
     #: that environment.
     rdkit_annotators: tuple[str, ...] = ()
+    #: The version each model is fetched at: a release tag (e.g. "v1.0.0"), or
+    #: `live` (its main branch's latest commit).
+    versions: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -111,8 +114,6 @@ class EnvCheck:
 @dataclass(frozen=True)
 class RepoState:
     commit: str
-    ahead: int
-    behind: int
     dirty: bool
 
 
@@ -483,20 +484,161 @@ def check_env(env_dir: Path, recipe: Recipe, log: _Log) -> EnvCheck:
 
 
 def repo_state(model_dir: Path, log: _Log) -> RepoState:
-    """Where a clone stands against its remote, after a `git fetch` that changes no file."""
-    log.run(["git", "-C", model_dir, "fetch", "--quiet"])
-    counts = log.run(
-        ["git", "-C", model_dir, "rev-list", "--left-right", "--count", "HEAD...@{u}"]
-    )
-    ahead = behind = 0
-    if counts.returncode == 0 and len(counts.stdout.split()) == 2:
-        ahead, behind = (int(n) for n in counts.stdout.split())
+    """A clone's commit and whether it has local changes, after fetching its tags."""
+    log.run(["git", "-C", model_dir, "fetch", "--quiet", "--tags"])
     changed = log.run(["git", "-C", model_dir, "status", "--porcelain"]).stdout
-    dirty = bool(_local_changes(changed))
     commit = log.run(
         ["git", "-C", model_dir, "rev-parse", "--short", "HEAD"]
     ).stdout.strip()
-    return RepoState(commit, ahead, behind, dirty)
+    return RepoState(commit, bool(_local_changes(changed)))
+
+
+#: The version that follows the repository's main branch, at its latest commit
+#: (not necessarily a release).
+LIVE = "live"
+
+#: A release tag: v, then three numbers.
+_RELEASE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
+
+def _release_key(tag: str) -> tuple[int, ...] | None:
+    found = _RELEASE.match(tag)
+    return None if found is None else tuple(int(n) for n in found.groups())
+
+
+def _releases(lines) -> list[str]:
+    """The release tags among `lines`, oldest first (compared as numbers)."""
+    tags = {line.strip() for line in lines}
+    return sorted((t for t in tags if _release_key(t)), key=_release_key)
+
+
+def _commit_of(model_dir: Path, ref: str) -> str | None:
+    found = _run(["git", "-C", model_dir, "rev-parse", "--verify", "--quiet", ref])
+    return found.stdout.strip() if found.returncode == 0 else None
+
+
+def _default_branch(model_dir: Path) -> str:
+    """The remote's main branch, e.g. "main" (from origin/HEAD)."""
+    found = _run(
+        ["git", "-C", model_dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
+    )
+    name = found.stdout.strip() if found.returncode == 0 else "origin/main"
+    return name.split("/", 1)[-1]
+
+
+def release_problem(model_dir: Path, tag: str) -> str | None:
+    """
+    Why a clone is not at version `tag`, or None if it is (or is no git clone,
+    such as a model `ersilia fetch` left, which has nothing to compare). `live`
+    asks only that the clone is on its main branch: whether that is the latest
+    commit needs the network, which is `fetch`'s job.
+    """
+    if not (Path(model_dir) / ".git").is_dir():
+        return None
+    name = Path(model_dir).name
+    if tag == LIVE:
+        branch = _run(["git", "-C", model_dir, "symbolic-ref", "--short", "HEAD"])
+        if branch.stdout.strip() != _default_branch(model_dir):
+            return f"{name} is not at live (not on its main branch)"
+        return None
+    target = _commit_of(model_dir, f"refs/tags/{tag}^{{commit}}")
+    if target is None:
+        return f"{name}: its clone has no release {tag}"
+    if _commit_of(model_dir, "HEAD") != target:
+        return f"{name} is not at {tag}"
+    return None
+
+
+def _has_local_commits(model_dir: Path, log: _Log) -> bool:
+    """Whether HEAD is on no remote branch and no tag: commits only this clone has."""
+    branches = log.run(["git", "-C", model_dir, "branch", "-r", "--contains", "HEAD"])
+    tags = log.run(["git", "-C", model_dir, "tag", "--contains", "HEAD"])
+    return not (branches.stdout.strip() or tags.stdout.strip())
+
+
+def _to_live(
+    model_id: str,
+    model_dir: Path,
+    state: RepoState,
+    fresh: bool,
+    log: _Log,
+    result: "ModelResult",
+    say: Callable[[str], None],
+) -> bool:
+    """
+    Bring the clone to its main branch's latest commit, unless that would lose
+    local work. Returns whether it is there afterwards.
+
+    Raises
+    ------
+    BuildError
+        If the checkout or the pull fails.
+    """
+    if fresh:  # a new clone is on the main branch, at its latest commit
+        result.clone = f"cloned at {LIVE}"
+        return True
+    branch = _default_branch(model_dir)
+    on_branch = release_problem(model_dir, LIVE) is None
+    # commits only this clone has, on a branch or not, are never pulled over
+    if state.dirty or _has_local_commits(model_dir, log):
+        result.clone = f"not at {LIVE}"
+        result.notes.append(f"not switched to {LIVE}: local changes or local commits")
+        return False
+    before = _commit_of(model_dir, "HEAD")
+    if not on_branch:
+        switched = log.run(["git", "-C", model_dir, "checkout", "--quiet", branch])
+        if switched.returncode != 0:
+            raise BuildError(f"git checkout {branch} failed: {_tail(switched)}")
+    pulled = log.run(["git", "-C", model_dir, "pull", "--ff-only", "--quiet"])
+    if pulled.returncode != 0:  # e.g. local commits on the branch itself
+        result.clone = f"not at {LIVE}"
+        result.notes.append(f"not updated to {LIVE}: {_tail(pulled)}")
+        return False
+    changed = _commit_of(model_dir, "HEAD") != before
+    if changed:
+        say(f"{model_id}: updated to {LIVE}")
+    result.clone = f"updated to {LIVE}" if changed else f"at {LIVE}"
+    return True
+
+
+def _to_release(
+    model_id: str,
+    model_dir: Path,
+    tag: str,
+    state: RepoState,
+    fresh: bool,
+    log: _Log,
+    result: "ModelResult",
+    say: Callable[[str], None],
+) -> bool:
+    """
+    Check the clone out at release `tag` unless that would lose local work.
+
+    Returns whether it is at the tag afterwards.
+
+    Raises
+    ------
+    BuildError
+        If the repository has no such release, or the checkout fails.
+    """
+    target = _commit_of(model_dir, f"refs/tags/{tag}^{{commit}}")
+    if target is None:
+        tags = log.run(["git", "-C", model_dir, "tag", "-l"]).stdout.splitlines()
+        known = ", ".join(_releases(tags)) or "none"
+        raise BuildError(f"no release {tag} of {model_id}; its releases: {known}")
+    if _commit_of(model_dir, "HEAD") == target:
+        result.clone = f"cloned at {tag}" if fresh else f"at {tag}"
+        return True
+    if not fresh and (state.dirty or _has_local_commits(model_dir, log)):
+        result.clone = f"not at {tag}"
+        result.notes.append(f"not switched to {tag}: local changes or local commits")
+        return False
+    say(f"{model_id}: checking out {tag}")
+    switched = log.run(["git", "-C", model_dir, "checkout", "--quiet", tag])
+    if switched.returncode != 0:
+        raise BuildError(f"git checkout {tag} failed: {_tail(switched)}")
+    result.clone = f"cloned at {tag}" if fresh else f"switched to {tag}"
+    return True
 
 
 def _local_changes(porcelain: str) -> list[str]:
@@ -504,7 +646,7 @@ def _local_changes(porcelain: str) -> list[str]:
     The lines of `git status --porcelain` that are the user's own work.
 
     Whatever eosvc leaves inside a clone is ours, not theirs, and must not make
-    the clone look modified: that would stop `--update` from ever pulling it.
+    the clone look modified: that would stop fetch from ever switching its release.
     """
     lines = []
     for line in porcelain.splitlines():
@@ -515,19 +657,6 @@ def _local_changes(porcelain: str) -> list[str]:
             continue
         lines.append(line)
     return lines
-
-
-def _clone_note(state: RepoState) -> str:
-    notes = []
-    if state.behind and state.ahead:
-        notes.append(f"diverged ({state.ahead} ahead, {state.behind} behind)")
-    elif state.behind:
-        notes.append(f"{state.behind} behind")
-    elif state.ahead:
-        notes.append(f"{state.ahead} ahead")
-    if state.dirty:
-        notes.append("local changes")
-    return ", ".join(notes) or "up to date"
 
 
 # --- fetching -------------------------------------------------------------------------
@@ -557,8 +686,13 @@ def _fetch_one(
     model_dir = plan.models_dir / model_id
     env_dir = plan.envs_dir / model_id
 
-    # 1. the clone: created if absent, otherwise only inspected (and updated on request)
-    if not (model_dir / ".git").is_dir():
+    # 1. the clone, at the release the inputs name: cloned if absent, otherwise
+    # checked out at that release (on request) unless it holds local work
+    tag = plan.versions.get(model_id)
+    if not tag:
+        raise BuildError("no version (release tag) to fetch it at")
+    fresh = not (model_dir / ".git").is_dir()
+    if fresh:
         if model_dir.exists() and any(model_dir.iterdir()):
             raise BuildError(f"{model_dir} exists but is not a git clone")
         say(f"{model_id}: cloning")
@@ -567,23 +701,16 @@ def _fetch_one(
         )
         if cloned.returncode != 0:
             raise BuildError(f"git clone failed: {_tail(cloned)}")
-        result.clone = "cloned"
+    state_now = repo_state(model_dir, log)
+    if fresh or update:
+        if tag == LIVE:
+            _to_live(model_id, model_dir, state_now, fresh, log, result, say)
+        else:
+            _to_release(model_id, model_dir, tag, state_now, fresh, log, result, say)
         state_now = repo_state(model_dir, log)
     else:
-        state_now = repo_state(model_dir, log)
-        result.clone = _clone_note(state_now)
-        if update:
-            if state_now.dirty or state_now.ahead:
-                result.notes.append("not updated: local changes or local commits")
-            elif state_now.behind:
-                say(f"{model_id}: updating {state_now.behind} commit(s)")
-                pulled = log.run(
-                    ["git", "-C", model_dir, "pull", "--ff-only", "--quiet"]
-                )
-                if pulled.returncode != 0:
-                    raise BuildError(f"git pull failed: {_tail(pulled)}")
-                state_now = repo_state(model_dir, log)
-                result.clone = "updated"
+        problem = release_problem(model_dir, tag)
+        result.clone = f"at {tag}" if problem is None else f"not at {tag}"
 
     # 2. the checkpoints, which a clone alone does not carry
     if (model_dir / "access.json").is_file():
@@ -691,8 +818,10 @@ def fetch_models(
     """
     Clone, download and build every model of the plan, one at a time.
 
-    A failure on one model is recorded and does not stop the others. Existing
-    clones are only inspected unless `update`; existing environments are only
+    Each model is cloned at the release tag `plan.versions` gives it. A failure
+    on one model is recorded and does not stop the others. Existing clones are
+    only inspected unless `update`, which checks them out at their release
+    (never over local changes or local commits); existing environments are only
     checked against their recipe unless `rebuild`, which rebuilds the ones that
     differ.
     """

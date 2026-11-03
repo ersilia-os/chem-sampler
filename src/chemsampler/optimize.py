@@ -172,8 +172,8 @@ def hill_climb(
         the order of the primaries is the priority/cycling order. Guard-rails:
         see above.
     mode : {"joint", "sequential", "weighted", "incremental"}, optional
-        How the primaries combine: needed with several primaries; with one it
-        defaults to "sequential" (see `resolve_mode`).
+        How the primaries combine: needed with several primaries; with one the
+        run is "sequential" and no other mode is accepted (see `resolve_mode`).
     similarity : HubSimilarity, optional
         A similarity-search model whose nearest neighbours of the current best
         molecule join each round's candidates next to the generator's, or are
@@ -539,17 +539,17 @@ MODES = ("joint", "sequential", "weighted", "incremental")
 
 def resolve_mode(mode: str | None, annotators: list[AnnotatorSpec]) -> str:
     """
-    The mode a run uses: `mode` if given, else "sequential" with one primary.
+    The mode a run uses: `mode` with several primaries, "sequential" with one.
 
-    The modes differ in how several primaries combine, so with several a mode
-    must be chosen. With one, "sequential" optimizes it directly (until its
-    cutoff is met); the others still work but are rarely what is wanted (joint
-    only checks the cutoff pass/fail), and `chemsampler run` refuses them.
+    The modes differ only in how several primaries combine, so with several a
+    mode must be chosen, and with one the run is "sequential", which optimizes
+    that annotator until its cutoff is met.
 
     Parameters
     ----------
     mode : str or None
-        One of `MODES`, or None for the default.
+        One of `MODES`, or None. With one primary, only None or "sequential"
+        (what a resumed run recorded).
     annotators : list[AnnotatorSpec]
         The run's annotators.
 
@@ -561,12 +561,18 @@ def resolve_mode(mode: str | None, annotators: list[AnnotatorSpec]) -> str:
     Raises
     ------
     ValueError
-        If no mode is given with several primaries, or it is not one of `MODES`.
+        If another mode than "sequential" is given with one primary, none is
+        given with several, or it is not one of `MODES`.
     """
     count = len(_primaries(annotators))
+    if count == 1:
+        if mode not in (None, "sequential"):
+            raise ValueError(
+                "with one primary annotator a run is always sequential: give no "
+                "mode (--mode)"
+            )
+        return "sequential"
     if mode is None:
-        if count == 1:
-            return "sequential"
         raise ValueError(
             f"with {count} primary annotators a mode is needed (--mode): "
             + ", ".join(MODES)

@@ -2,7 +2,6 @@ import csv
 import importlib.metadata
 import json
 import re
-import shutil
 
 import pandas as pd
 import pytest
@@ -42,8 +41,8 @@ def _write_csv(path, header, rows):
         writer.writerows(rows)
 
 
-ANNOTATOR_HEADER = ["source", "model", "cutoff", "direction", "priority"]
-QED = ["rdkit", "qed", "0.0", "higher", "primary"]
+ANNOTATOR_HEADER = ["source", "model", "version", "cutoff", "direction", "priority"]
+QED = ["rdkit", "qed", "", "0.0", "higher", "primary"]
 
 
 def _fetch(models_dir, envs_dir, *model_ids):
@@ -63,8 +62,8 @@ def _inputs(tmp_path, annotators=(QED,), fetched=True):
     root = tmp_path / "proj"
     create_project(root, tmp_path / "models", tmp_path / "envs")
     folder = root / "input"
-    _write_csv(folder / "similarity.csv", ["similarity"], [["eos8nyg"]])
-    _write_csv(folder / "generators.csv", ["generators"], [["eos9taz"]])
+    _write_csv(folder / "similarity.csv", ["model", "version"], [["eos8nyg", "v1.0.0"]])
+    _write_csv(folder / "generators.csv", ["model", "version"], [["eos9taz", "v1.0.0"]])
     _write_csv(folder / "annotators.csv", ANNOTATOR_HEADER, list(annotators))
     if fetched:
         _fetch(tmp_path / "models", tmp_path / "envs", "eos8nyg", "eos9taz")
@@ -115,7 +114,7 @@ def test_run_writes_results_and_merges_generator_and_similarity_candidates(tmp_p
 
 
 def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-10", "range", "guard-rail"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "", "0-10", "range", "guard-rail"]])
 
     result = _run(root)
 
@@ -125,7 +124,9 @@ def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
 
 
 def test_one_primary_runs_sequentially_without_a_mode(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "guard-rail"]])
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "mw", "", "0-1000", "range", "guard-rail"]]
+    )
 
     result = _run(root)
 
@@ -146,7 +147,7 @@ def test_one_primary_takes_no_mode(tmp_path, mode):
 
 
 def test_several_primaries_need_a_mode(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0", "higher", "primary"]])
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "", "0", "higher", "primary"]])
 
     refused = _run(root)
     weighted = _run(root, "--mode", "weighted")
@@ -182,7 +183,7 @@ def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
 
 def test_a_run_needs_a_seed(tmp_path):
     root = _inputs(
-        tmp_path, [QED, ["rdkit", "tanimoto", "0.4", "higher", "guard-rail"]]
+        tmp_path, [QED, ["rdkit", "tanimoto", "", "0.4", "higher", "guard-rail"]]
     )
 
     result = CliRunner().invoke(cli, ["run", "-p", str(root)])
@@ -212,7 +213,8 @@ def test_a_run_records_how_it_was_launched(tmp_path):
 
     assert result.exit_code == 0, result.output
     saved = json.loads((_run_dir(root) / "inputs.json").read_text())
-    assert saved["similarity"] == "eos8nyg"  # the models are still there
+    # the models are still there, with their versions
+    assert saved["similarity"] == {"model": "eos8nyg", "version": "v1.0.0"}
     assert saved["run"] == {
         "chemsampler_version": importlib.metadata.version("chemsampler"),
         "mode": "sequential",
@@ -248,7 +250,7 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
 
 #: CCN (45.1 Da), the fake models' only candidate, beats the seed CCO (46.1 Da),
 #: and the cutoff is out of reach, so the run goes on to round 2.
-MW_LOWER = ["rdkit", "mw", "10", "lower", "primary"]
+MW_LOWER = ["rdkit", "mw", "", "10", "lower", "primary"]
 
 
 def _stop_in_round_2(monkeypatch, error):
@@ -293,7 +295,7 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
 # --- resume -------------------------------------------------------------------------
 
 #: Heavier molecules each round, so every round improves on the last.
-MW_HIGHER = ["rdkit", "mw", "1000", "higher", "primary"]
+MW_HIGHER = ["rdkit", "mw", "", "1000", "higher", "primary"]
 HEAVIER = ["CCCC", "CCCCC", "CCCCCC"]
 
 
@@ -483,7 +485,7 @@ def test_run_can_use_generators_without_a_similarity_model(tmp_path):
 
 # --- the seed (input/smiles.csv) and the Tanimoto annotator ---------------------------
 
-TANIMOTO = ["rdkit", "tanimoto", "0.5", "higher", "guard-rail"]
+TANIMOTO = ["rdkit", "tanimoto", "", "0.5", "higher", "guard-rail"]
 
 
 def _seed(root, text):
@@ -634,7 +636,7 @@ def test_the_tanimoto_options_are_gone(tmp_path, option):
 
 
 def test_a_stopped_run_with_a_tanimoto_annotator_resumes(tmp_path, monkeypatch):
-    tanimoto = ["rdkit", "tanimoto", "0", "higher", "guard-rail"]
+    tanimoto = ["rdkit", "tanimoto", "", "0", "higher", "guard-rail"]
     whole = _generator_project(tmp_path / "whole", [MW_HIGHER, tanimoto])
     _script(monkeypatch, *HEAVIER)
     assert _three_rounds(whole).exit_code == 0
@@ -670,7 +672,7 @@ def test_resume_refuses_a_run_made_with_the_removed_options(
 
 def test_annotate_measures_tanimoto_against_the_seed(tmp_path):
     root = _inputs(
-        tmp_path, [QED, ["rdkit", "tanimoto", "0.2", "higher", "guard-rail"]]
+        tmp_path, [QED, ["rdkit", "tanimoto", "", "0.2", "higher", "guard-rail"]]
     )
     _seed(root, "smiles\nCCO\n")
 
@@ -707,7 +709,7 @@ def test_annotate_a_single_tanimoto_uses_the_project_seed(tmp_path):
 
 def test_annotate_with_several_seeds_shows_tanimoto_per_seed_uncounted(tmp_path):
     root = _inputs(
-        tmp_path, [QED, ["rdkit", "tanimoto", "0.2", "higher", "guard-rail"]]
+        tmp_path, [QED, ["rdkit", "tanimoto", "", "0.2", "higher", "guard-rail"]]
     )
     _seed(root, "smiles\nCCO\nCO\n")
     single = ["-p", str(root), "--source", "rdkit", "--model", "tanimoto"]
@@ -733,7 +735,9 @@ def _annotate(*args):
 
 
 def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "guard-rail"]])
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "mw", "", "0-1000", "range", "guard-rail"]]
+    )
 
     result = _annotate("-p", str(root), "--smiles", "CCO")
 
@@ -745,7 +749,9 @@ def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
 
 
 def test_annotate_reports_a_broken_guard_rail(tmp_path):
-    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "250-450", "range", "guard-rail"]])
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "mw", "", "250-450", "range", "guard-rail"]]
+    )
 
     result = _annotate("-p", str(root), "--smiles", "CCO")
 
@@ -997,10 +1003,12 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
     assert result.exit_code == 0, result.output
     [round_dir] = list((root / "runs").iterdir())
     saved = json.loads((round_dir / "inputs.json").read_text())
-    assert saved["similarity"] == "eos8nyg" and saved["generators"] == ["eos9taz"]
+    assert saved["similarity"] == {"model": "eos8nyg", "version": "live"}
+    assert saved["generators"] == [{"model": "eos9taz", "version": "live"}]
     assert saved["annotators"] == [
         {
             "model": "qed",
+            "version": None,
             "cutoff": 0.0,
             "direction": "higher",
             "priority": "primary",
@@ -1067,7 +1075,7 @@ def test_fetch_puts_models_in_the_store_and_says_where(
     create_project(root)
     monkeypatch.chdir(root)
 
-    result = CliRunner().invoke(cli, ["fetch"])
+    result = CliRunner().invoke(cli, ["fetch", "-f"])
 
     assert result.exit_code == 0, result.output
     assert fetched["plan"].models_dir == store_root / "models"
@@ -1086,30 +1094,45 @@ def test_fetch_uses_the_folders_the_project_names(tmp_path, monkeypatch, fetched
     )
     monkeypatch.chdir(root)
 
-    result = CliRunner().invoke(cli, ["fetch"])
+    result = CliRunner().invoke(cli, ["fetch", "-f"])
 
     assert result.exit_code == 0, result.output
     assert fetched["plan"].models_dir == tmp_path / "shared" / "models"
     assert fetched["plan"].envs_dir == tmp_path / "shared" / "envs"
 
 
-def test_plain_fetch_never_builds_the_rdkit_environment_but_says_it_is_missing(
-    tmp_path, fetched
+def test_plain_fetch_asks_before_fetching_everything_listed(
+    tmp_path, fetched, monkeypatch
 ):
     root = _inputs(
-        tmp_path, [QED, ["rdkit", "tanimoto", "0.4", "higher", "guard-rail"]]
+        tmp_path, [QED, ["rdkit", "tanimoto", "", "0.4", "higher", "guard-rail"]]
     )
 
-    built = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
-    shutil.rmtree(tmp_path / "envs" / "rdkit")
-    missing = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    no = _fetch_ids(root, can_ask=True, answer="n\n", monkeypatch=monkeypatch)
+    nobody = _fetch_ids(root, monkeypatch=monkeypatch)
+    yes = _fetch_ids(root, can_ask=True, answer="y\n", monkeypatch=monkeypatch)
 
-    assert built.exit_code == 0 and missing.exit_code == 0, missing.output
-    assert not fetched["plan"].rdkit
-    assert "Fetching 2 model(s): eos9taz, eos8nyg\n" in missing.output
-    note = "uses qed, tanimoto, which run in the rdkit environment: build it with"
-    assert note in missing.output and "`chemsampler fetch rdkit`" in missing.output
-    assert note not in built.output
+    listed = (
+        "2 model(s): eos9taz v1.0.0, eos8nyg v1.0.0, and the rdkit environment "
+        "(qed, tanimoto)"
+    )
+    assert no.exit_code == 0 and f"input/*.csv list: {listed}" in no.output
+    assert "Fetch these? [y/N]: n" in no.output and "Nothing fetched." in no.output
+    assert nobody.exit_code == 1 and "run it with -f" in nobody.output
+    assert yes.exit_code == 0, yes.output
+    assert f"Fetching {listed}" in yes.output
+    plan = fetched["plan"]
+    assert plan.model_ids == ("eos9taz", "eos8nyg") and plan.rdkit
+    assert plan.versions == {"eos9taz": "v1.0.0", "eos8nyg": "v1.0.0"}
+
+
+def test_plain_fetch_with_f_does_not_ask(tmp_path, fetched, monkeypatch):
+    root = _inputs(tmp_path)
+
+    result = _fetch_ids(root, "-f", monkeypatch=monkeypatch)
+
+    assert result.exit_code == 0, result.output
+    assert "Fetch these?" not in result.output and fetched["plan"].rdkit
 
 
 def test_fetch_rdkit_alone_builds_only_its_environment(tmp_path, fetched):
@@ -1141,7 +1164,7 @@ def test_fetch_refuses_rdkit_annotators_as_ids(tmp_path, fetched, name):
 def test_fetch_pulls_and_rebuilds_by_default(tmp_path, fetched):
     root = _inputs(tmp_path)
 
-    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root), "-f"])
     old_flag = CliRunner().invoke(cli, ["fetch", "-p", str(root), "--update"])
 
     assert result.exit_code == 0, result.output
@@ -1161,22 +1184,59 @@ def _fetch_ids(root, *args, can_ask=False, answer=None, monkeypatch=None):
 
 
 def _ids(root, name):
+    """The `model version` rows of a list, or None without the file."""
     path = root / "input" / f"{name}.csv"
-    return path.read_text().split()[1:] if path.exists() else None
+    if not path.exists():
+        return None
+    lines = path.read_text().split()
+    assert lines[0] == "model,version"
+    return [line.replace(",", " ") for line in lines[1:]]
 
 
 def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
-    root = _inputs(tmp_path, [QED, ["ersilia", "eos4zfy", "0.5", "higher", "primary"]])
+    root = _inputs(
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+    )
 
     result = _fetch_ids(root, "eos9p57,eos1bgt", "eos4zfy", "rdkit", "-f")
 
     assert result.exit_code == 0, result.output
-    assert _ids(root, "generators") == ["eos9p57"]
-    assert _ids(root, "similarity") == ["eos1bgt"]
+    # a bare id is live
+    assert _ids(root, "generators") == ["eos9p57 live"]
+    assert _ids(root, "similarity") == ["eos1bgt live"]
     assert fetched["plan"].model_ids == ("eos9p57", "eos1bgt", "eos4zfy")
+    # the annotator at the version annotators.csv gives it, and a note says so
+    assert fetched["plan"].versions["eos4zfy"] == "v1.0.0"
+    assert "lists eos4zfy at v1.0.0, not live" in result.output
     assert fetched["plan"].rdkit
-    assert "eos9p57, eos1bgt, eos4zfy, and the rdkit environment" in result.output
-    assert "annotators.csv" not in result.output  # it agrees with the ids
+    assert (
+        "eos9p57 live, eos1bgt live, eos4zfy v1.0.0, and the rdkit environment"
+        in result.output
+    )
+
+
+def test_fetch_id_at_tag_pins_that_release(tmp_path, fetched):
+    root = _inputs(
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+    )
+
+    result = _fetch_ids(
+        root, "eos9p57@v1.0.0", "eos1bgt@live", "eos4zfy@v2.0.1", "rdkit", "-f"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _ids(root, "generators") == ["eos9p57 v1.0.0"]
+    assert _ids(root, "similarity") == ["eos1bgt live"]
+    # annotators.csv stays the user's: its version is fetched, and the difference said
+    assert fetched["plan"].versions["eos4zfy"] == "v1.0.0"
+    assert "lists eos4zfy at v1.0.0, not v2.0.1" in result.output
+
+
+def test_an_empty_tag_after_at_is_refused(tmp_path, fetched):
+    result = _fetch_ids(_inputs(tmp_path), "eos9p57@", "rdkit", "-f")
+
+    assert result.exit_code == 1
+    assert "a release tag (e.g. eos9p57@v1.0.0) or live" in result.output
 
 
 def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
@@ -1185,7 +1245,7 @@ def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
     result = _fetch_ids(root, "eos9p57", "rdkit", "-f")
 
     assert result.exit_code == 0, result.output
-    assert "similarity.csv: eos8nyg -> none (file removed)" in result.output
+    assert "similarity.csv: eos8nyg v1.0.0 -> none (file removed)" in result.output
     assert _ids(root, "similarity") is None  # a missing list is none
     _fetch(tmp_path / "models", tmp_path / "envs", "eos9p57")
     inputs = config.load_inputs(str(root / "chemsampler.json"))
@@ -1220,7 +1280,7 @@ def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
     no = _fetch_ids(
         root,
         "eos9p57",
-        "eos8nyg",
+        "eos8nyg@v1.0.0",  # as similarity.csv has it
         "rdkit",
         can_ask=True,
         answer="n\n",
@@ -1228,21 +1288,21 @@ def test_fetch_asks_before_replacing_a_list(tmp_path, fetched, monkeypatch):
     )
 
     assert no.exit_code == 0, no.output
-    assert "generators.csv: eos9taz -> eos9p57" in no.output
+    assert "generators.csv: eos9taz v1.0.0 -> eos9p57 live" in no.output
     assert "similarity.csv" not in no.output  # unchanged: not asked about
     assert "nothing fetched" in no.output and "plan" not in fetched
-    assert _ids(root, "generators") == ["eos9taz"]
+    assert _ids(root, "generators") == ["eos9taz v1.0.0"]
     yes = _fetch_ids(
         root,
         "eos9p57",
-        "eos8nyg",
+        "eos8nyg@v1.0.0",  # as similarity.csv has it
         "rdkit",
         can_ask=True,
         answer="y\n",
         monkeypatch=monkeypatch,
     )
     assert yes.exit_code == 0, yes.output
-    assert _ids(root, "generators") == ["eos9p57"]
+    assert _ids(root, "generators") == ["eos9p57 live"]
 
 
 def test_fetch_cannot_ask_without_a_terminal(tmp_path, fetched, monkeypatch):
@@ -1252,18 +1312,24 @@ def test_fetch_cannot_ask_without_a_terminal(tmp_path, fetched, monkeypatch):
 
     assert result.exit_code == 1
     assert "run it with -f" in result.output
-    assert _ids(root, "generators") == ["eos9taz"] and "plan" not in fetched
+    assert _ids(root, "generators") == ["eos9taz v1.0.0"] and "plan" not in fetched
 
 
 def test_fetch_ids_say_where_annotators_csv_disagrees(tmp_path, fetched):
-    root = _inputs(tmp_path, [QED, ["ersilia", "eos4zfy", "0.5", "higher", "primary"]])
+    root = _inputs(
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+    )
 
     result = _fetch_ids(root, "eos9p57", "eos9ei3", "-f")
 
     assert result.exit_code == 0, result.output
-    assert "eos9ei3 is not in input/annotators.csv" in result.output
+    assert (
+        "eos9ei3 is not in input/annotators.csv: add a row with its version (live)"
+        in result.output
+    )
     assert "also lists eos4zfy, which you did not name" in result.output
     assert fetched["plan"].model_ids == ("eos9p57", "eos9ei3")
+    assert fetched["plan"].versions["eos9ei3"] == "live"
 
 
 def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
@@ -1273,7 +1339,7 @@ def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
     (root / "input" / "similarity.csv").unlink()
     (root / "input" / "generators.csv").unlink()
 
-    result = CliRunner().invoke(cli, ["fetch", "-p", str(root)])
+    result = CliRunner().invoke(cli, ["fetch", "-p", str(root), "-f"])
 
     assert result.exit_code == 1
     assert "plan" not in fetched and not store_root.exists()
@@ -1283,7 +1349,7 @@ def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
 
 #: What each command needs besides the project to succeed here (fakes, rdkit).
 NEEDS_A_PROJECT = {
-    "fetch": [],
+    "fetch": ["-f"],
     "run": ["--seed-smiles", "CCO", "--n-rounds", "1"],
     "annotate": ["--smiles", "CCO"],
 }

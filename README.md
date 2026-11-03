@@ -30,7 +30,7 @@ a **store** that every project on the machine shares.
 
 ```bash
 chemsampler init -p my-run && cd my-run   # a project: input/ and runs/
-chemsampler fetch eos9p57 eos8nyg eos4zfy rdkit # these models (writes input/generators.csv and similarity.csv) and the rdkit env
+chemsampler fetch eos9p57 eos8nyg eos4zfy rdkit # these models, live (writes input/generators.csv and similarity.csv), and the rdkit env
 $EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
 printf 'smiles\nCCO\n' > input/smiles.csv  # the seeds, one per row
 chemsampler run                           # --mode only with several primaries
@@ -76,27 +76,34 @@ project later, edit its `chemsampler.json`. Two cautions: **never move or rename
 for environments, since model start-up was several times slower on a shared
 filesystem in our tests (a cluster run needs them on the shared one, see below).
 
-`chemsampler fetch ID [ID ...]` (spaces or commas) tells generators, similarity
-models and annotators apart by itself, and needs at least one annotator and one
-generator or similarity model. It sets `input/generators.csv` and
-`input/similarity.csv` to the ids, asking before it changes them (`-f`: without
-asking); `annotators.csv` stays yours, and fetch says where it disagrees with the
-ids. Without ids, it fetches what `input/*.csv` lists. Either way it is safe to
-repeat, and leaves every model current:
+Every model is used at a **version**, given next to it in `input/*.csv`: a
+release tag of its GitHub repository (e.g. `v1.0.0`), or `live`, the latest
+commit of its main branch (which need not be a release). `chemsampler fetch ID [ID ...]`
+(spaces or commas; `ID` is `live`, `ID@TAG` a given release) tells
+generators, similarity models and annotators apart by itself, and needs at least
+one annotator and one generator or similarity model. It sets
+`input/generators.csv` and `input/similarity.csv` to the ids and their versions,
+asking before it changes them (`-f`: without asking); `annotators.csv` stays
+yours (its versions are the ones fetched), and fetch says where it disagrees with
+the ids. Without ids, it lists everything `input/*.csv` names, the `rdkit`
+environment included, and fetches it once you agree (`-f`: without asking).
+Either way it is safe to repeat, and leaves every model at its version:
 
-- A missing clone is cloned; an existing one is pulled, fast-forward only. A clone
-  with local changes or local commits is never touched.
-- An environment is built when missing, and rebuilt (after pulling, so against the
-  new recipe) when a pinned package differs from its recipe (`install.yml`, or the
+- A missing clone is cloned and checked out at its release; an existing one is
+  switched to it (`live`: to its main branch, then pulled). A clone with local changes or local commits is never touched,
+  and `run` refuses a clone that is not at the version its row names. Checkpoints
+  come from S3 as they are now: they are not versioned.
+- An environment is built when missing, and rebuilt (after switching, so against
+  that release's recipe) when a pinned package differs from its recipe (`install.yml`, or the
   Dockerfile for older models), e.g. `torch: installed 2.8.0, recipe 2.9.1`.
   Recipe lines that pin nothing (an unpinned package, a GitHub install, a shell
   line) cannot be compared and count as matching; `fetch` says how many. Don't
   fetch while a run uses the same models.
 - An environment left half-built by an interrupted run is removed and rebuilt.
 - The RDKit annotators (`mw`, `qed`, `tanimoto`) run in a small `rdkit`
-  environment, here and on a cluster. Only `chemsampler fetch rdkit` builds it
-  (alone, or with model ids); plain `fetch` says when it is missing, and `run`
-  refuses to start without it.
+  environment, here and on a cluster: `chemsampler fetch rdkit` builds it (alone,
+  or with model ids), and so does plain `fetch` when `annotators.csv` lists one;
+  `run` refuses to start without it.
 
 ## Inputs
 
@@ -104,8 +111,8 @@ Annotators are required, and so is at least one of similarity and generators.
 
 | Input | File in `input/` | What it holds |
 |---|---|---|
-| similarity | `similarity.csv` | one similarity-search model: `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT) or `eos80al` (Enamine Hit Locator) |
-| generators | `generators.csv` | generative models |
+| similarity | `similarity.csv` | `model,version`: one similarity-search model, `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT) or `eos80al` (Enamine Hit Locator) |
+| generators | `generators.csv` | `model,version`: generative models |
 | annotators | `annotators.csv` | models or RDKit functions that score molecules, each with a cutoff, a direction and a priority |
 | seeds | `smiles.csv` | the starting molecules, header `smiles`, one per row; each is climbed in turn (`run --seed-smiles` gives one instead) |
 
@@ -148,7 +155,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | Command | Description |
 |---|---|
 | `chemsampler init` | Create a project for one analysis's inputs and results. |
-| `chemsampler fetch` | Clone (or pull) the models, download their checkpoints and build their conda environments, in the store; `fetch rdkit` builds the RDKit annotators' one. |
+| `chemsampler fetch` | Clone the models at their version, download their checkpoints and build their conda environments, in the store (asks first); `fetch rdkit` builds the RDKit annotators' one. |
 | `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
 | `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
@@ -156,7 +163,9 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler store` | Show where models, environments and cluster profiles are kept, and how to move them. |
 
 ```bash
-chemsampler fetch eos9p57,eos8nyg rdkit -f      # set the project's samplers and fetch them
+chemsampler fetch eos9p57,eos8nyg rdkit -f      # set the project's samplers (live) and fetch them
+chemsampler fetch eos9p57@v1.0.0 eos8nyg rdkit   # a given release of eos9p57
+chemsampler fetch                                # everything input/*.csv lists, after asking
 chemsampler run -p my-run                        # from outside the project
 chemsampler run --mode weighted                  # several primaries: say how to combine them
 chemsampler run --seed-smiles "CCO"              # one seed instead of input/smiles.csv

@@ -8,6 +8,7 @@ def _row(**overrides):
     row = {
         "source": "ersilia",
         "model": "eos4zfy",
+        "version": "v1.0.0",
         "cutoff": "0.5",
         "direction": "higher",
         "priority": "primary",
@@ -93,6 +94,7 @@ def test_parses_an_rdkit_guard_rail():
         _row(
             source="rdkit",
             model="mw",
+            version="",
             cutoff="250-450",
             direction="range",
             priority="guard-rail",
@@ -100,7 +102,7 @@ def test_parses_an_rdkit_guard_rail():
         "annotators.csv row 2",
     )
 
-    assert row.cutoff == (250.0, 450.0)
+    assert row.cutoff == (250.0, 450.0) and row.version is None
     assert row.weight is None and row.column is None
 
 
@@ -166,8 +168,8 @@ def test_header_must_match():
     check_header("g.csv", ["generators"], ["generators"])
     check_header(
         "a.csv",
-        ["source", "model", "cutoff", "direction", "priority", "weight"],
-        ["source", "model", "cutoff", "direction", "priority"],
+        ["source", "model", "version", "cutoff", "direction", "priority", "weight"],
+        ["source", "model", "version", "cutoff", "direction", "priority"],
         ["weight", "column"],
     )
 

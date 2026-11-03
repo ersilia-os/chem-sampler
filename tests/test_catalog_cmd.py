@@ -336,7 +336,7 @@ def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
 ):
     create_project(tmp_path / "proj")
     (tmp_path / "proj" / "input" / "annotators.csv").write_text(
-        "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n"
+        "source,model,version,cutoff,direction,priority\nrdkit,qed,,0,higher,primary\n"
     )
     fake_fetch("eos9taz", "eos8nyg")
     monkeypatch.chdir(tmp_path / "proj")

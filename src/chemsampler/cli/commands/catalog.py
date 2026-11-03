@@ -83,16 +83,20 @@ def _read_catalog():
 
 
 def _show_local(models_dir, envs_dir, role, config) -> None:
+    from pathlib import Path
+
     from ...config import plan_fetch
     from ...hub.envs import RDKIT_ENV
+    from ...hub.fetch import release_problem
     from ...hub.listing import env_state, list_local
 
-    needed, rdkit_needed = (), False
+    needed, rdkit_needed, versions = (), False, {}
     if config is not None:  # outside a project there are no inputs to mark
         try:
             with _quiet():
                 plan = plan_fetch(config)
             needed, rdkit_needed = plan.model_ids, bool(plan.rdkit_annotators)
+            versions = plan.versions
         except ValueError as e:
             click.secho(f"(this project's inputs could not be read: {e})", fg="yellow")
 
@@ -137,6 +141,16 @@ def _show_local(models_dir, envs_dir, role, config) -> None:
         m.model_id
         for m in models
         if m.needed and m.cloned and m.env in ("missing", "unfinished")
+    ]
+    # a clone at another release than the inputs name
+    unbuilt += [
+        f"{m.model_id} (not at {versions[m.model_id]})"
+        for m in models
+        if m.needed
+        and m.cloned
+        and m.model_id not in unbuilt
+        and m.model_id in versions
+        and release_problem(Path(models_dir) / m.model_id, versions[m.model_id])
     ]
     if lacking or unbuilt:
         click.secho(

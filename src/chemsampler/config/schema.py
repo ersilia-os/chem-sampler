@@ -10,7 +10,7 @@ from ..models.spec import Cutoff
 SOURCES = ("ersilia", "rdkit")
 DIRECTIONS = ("higher", "lower", "range")
 PRIORITIES = ("primary", "guard-rail")
-REQUIRED_FIELDS = ("source", "model", "cutoff", "direction", "priority")
+REQUIRED_FIELDS = ("source", "model", "version", "cutoff", "direction", "priority")
 OPTIONAL_FIELDS = ("weight", "column")
 
 #: Two numbers joined by a hyphen, so "-5--1" is a range and "-5" is not.
@@ -23,6 +23,8 @@ class AnnotatorRow:
 
     source: str
     model: str
+    #: The Hub model's release tag (e.g. "v1.0.0") or "live"; None for rdkit.
+    version: str | None
     cutoff: Cutoff
     direction: str
     priority: str
@@ -130,6 +132,15 @@ def _parse_weight(where: str, value) -> float | None:
     return weight
 
 
+def no_version(where: str, model: str) -> ValueError:
+    """The error for a Hub model listed without its release tag."""
+    return ValueError(
+        f"{where}: {model} has no version: give a release tag "
+        f"(https://github.com/ersilia-os/{model}/releases) or live (its latest "
+        "commit)"
+    )
+
+
 def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     """
     Validate one annotator entry, from a CSV row or a JSON object.
@@ -137,8 +148,9 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     Parameters
     ----------
     row : Mapping
-        Fields `source`, `model`, `cutoff`, `direction` and `priority`, and
-        optionally `weight` and `column`. Empty cells count as missing.
+        Fields `source`, `model`, `version` (a Hub model's release tag; empty
+        for an rdkit one), `cutoff`, `direction` and `priority`, and optionally
+        `weight` and `column`. Empty cells count as missing.
     where : str
         Prefix for error messages, e.g. "annotators.csv row 3".
 
@@ -151,8 +163,9 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     ------
     ValueError
         On an unknown or missing field, a source/model/direction/priority that is
-        not allowed, a bad cutoff (see `parse_cutoff`), a range on a primary
-        annotator, a weight on a guard-rail, or a column on an rdkit one.
+        not allowed, a Hub model without a version or an rdkit one with one, a
+        bad cutoff (see `parse_cutoff`), a range on a primary annotator, a
+        weight on a guard-rail, or a column on an rdkit one.
     """
     allowed = REQUIRED_FIELDS + OPTIONAL_FIELDS
     unknown = sorted(str(k) for k in row if k not in allowed)
@@ -162,12 +175,16 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
         )
 
     values = {name: _clean(row.get(name)) for name in allowed}
-    missing = [name for name in REQUIRED_FIELDS if values[name] is None]
+    # the version depends on the source, so it is checked below
+    missing = [n for n in REQUIRED_FIELDS if n != "version" and values[n] is None]
     if missing:
         raise ValueError(f"{where}: missing {missing}")
 
     source, model = values["source"], str(values["model"])
     direction, priority = values["direction"], values["priority"]
+    version = None if values["version"] is None else str(values["version"])
+    if source == "ersilia" and version is None:
+        raise no_version(where, model)
     where = f"{where} ({model})"
 
     if source not in SOURCES:
@@ -181,6 +198,11 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
             )
         if values["column"] is not None:
             raise ValueError(f"{where}: column only applies to ersilia models")
+        if version is not None:
+            raise ValueError(
+                f"{where}: an rdkit annotator has no version (it runs with "
+                "chemsampler's own RDKit); leave the column empty"
+            )
     if direction not in DIRECTIONS:
         raise ValueError(
             f"{where}: direction must be one of {list(DIRECTIONS)}, got {direction!r}"
@@ -209,6 +231,7 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     return AnnotatorRow(
         source=source,
         model=model,
+        version=version,
         cutoff=cutoff,
         direction=direction,
         priority=priority,

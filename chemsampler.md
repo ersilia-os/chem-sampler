@@ -224,7 +224,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      was made.
 
 7. **Generators and similarity.** There is no built-in generator list: propose
-   one (`examples/inputs/csv/generators.csv` is a starting point), adjusted by
+   one (the template `chemsampler init` writes is a starting point), adjusted by
    step 6's recommendation, and show it. The user accepts
    it or removes/adds generators; the final list is theirs, and the skill
    never drops or adds one on its own. Whatever the user confirms is what
@@ -241,11 +241,15 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    there, suggest `chemsampler catalog --update`, which refreshes the catalog from the Hub.
    Similarity and generators are each optional, but at least one is needed.
    `chemsampler fetch <ids>` (the samplers and the Hub annotators, plus `rdkit`
-   if `mw`, `qed` or `tanimoto` is used) writes `generators.csv` and
-   `similarity.csv` and fetches them; it asks before it replaces those lists
-   (`-f` does not ask), and leaves `annotators.csv` to be written from step 1.
-   The RDKit annotators run in the `rdkit` environment, which only
-   `chemsampler fetch rdkit` builds; `run` refuses to start without it.
+   if `mw`, `qed` or `tanimoto` is used; `ID` follows the model's main branch,
+   `live`, and `ID@TAG` pins a release) writes `generators.csv` and
+   `similarity.csv` as `model,version`
+   and fetches them; it asks before it replaces those lists (`-f` does not ask),
+   and leaves `annotators.csv` to be written from step 1 — with each Hub
+   annotator's `version` (a release tag or `live`; empty for rdkit rows). Plain
+   `chemsampler fetch` fetches everything the CSVs list, the `rdkit`
+   environment included, after asking. Every model runs at the version its row
+   names; `run` refuses a clone at another one.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
    apply any silently either: state the value that will be used, so it is

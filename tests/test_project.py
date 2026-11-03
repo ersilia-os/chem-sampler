@@ -47,14 +47,16 @@ def test_a_project_has_no_models_or_envs_of_its_own(tmp_path):
 
 def test_init_is_safe_to_repeat_and_keeps_edited_inputs(tmp_path):
     create_project(tmp_path)
-    (tmp_path / "input" / "generators.csv").write_text("generators\neos8vud\n")
+    (tmp_path / "input" / "generators.csv").write_text(
+        "model,version\neos8vud,v1.0.0\n"
+    )
 
     again = create_project(tmp_path)
 
     assert again == []
     assert (
         tmp_path / "input" / "generators.csv"
-    ).read_text() == "generators\neos8vud\n"
+    ).read_text() == "model,version\neos8vud,v1.0.0\n"
 
 
 def test_init_fills_in_only_what_is_missing(tmp_path):
@@ -336,7 +338,9 @@ def test_setup_is_gone(tmp_path):
 
 # --- a copied or moved project ------------------------------------------------------
 
-QED_ONLY = "source,model,cutoff,direction,priority\nrdkit,qed,0,higher,primary\n"
+QED_ONLY = (
+    "source,model,version,cutoff,direction,priority\nrdkit,qed,,0,higher,primary\n"
+)
 
 
 def annotate_in(project):

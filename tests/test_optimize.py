@@ -36,6 +36,22 @@ class StubAnnotator:
         return {smi: self._scores[smi] for smi in smiles_list if smi in self._scores}
 
 
+class ZeroAnnotator:
+    """Scores every SMILES 0.0."""
+
+    def score(self, smiles_list):
+        return dict.fromkeys(smiles_list, 0.0)
+
+
+def _neutral(cutoff=0.0):
+    """
+    A second primary that changes no ranking: it scores everything 0, so it
+    adds the same to every count (joint, while its cutoff is met) and nothing
+    to a weighted sum. Joint, weighted and incremental need two primaries.
+    """
+    return AnnotatorSpec("z", ZeroAnnotator(), cutoff=cutoff, direction="higher")
+
+
 # --- translated from the pre-redesign suite, as mode="sequential" with a --------
 # --- permissive cutoff: this is the only faithful single-annotator migration ---
 
@@ -230,7 +246,10 @@ def test_one_primary_defaults_to_sequential_and_several_need_a_mode():
 
     assert summary["active_annotator_id"].dropna().unique().tolist() == ["a"]
     assert resolve_mode(None, one) == "sequential"
-    assert resolve_mode("joint", one) == "joint"
+    assert resolve_mode("sequential", one) == "sequential"  # what a resumed run says
+    for mode in ("joint", "weighted", "incremental"):
+        with pytest.raises(ValueError, match="one primary annotator a run is always"):
+            hill_climb(StubGenerator([]), one, mode=mode, seed_smiles="CCO", n_steps=1)
     with pytest.raises(ValueError, match="with 2 primary annotators a mode is needed"):
         hill_climb(StubGenerator([]), two, seed_smiles="CCO")
     with pytest.raises(ValueError, match="mode must be one of"):
@@ -433,7 +452,10 @@ def test_sequential_mode_candidate_missing_active_score_cannot_win():
 
 def test_incremental_mode_requires_seed_smiles():
     annotators = [
-        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+        AnnotatorSpec(
+            "a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher"
+        ),
+        _neutral(),
     ]
     with pytest.raises(ValueError, match="seed_smiles"):
         hill_climb(StubGenerator([]), annotators, mode="incremental", n_steps=5)
@@ -441,7 +463,10 @@ def test_incremental_mode_requires_seed_smiles():
 
 def test_incremental_mode_requires_n_steps():
     annotators = [
-        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+        AnnotatorSpec(
+            "a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher"
+        ),
+        _neutral(),
     ]
     with pytest.raises(ValueError, match="n_steps"):
         hill_climb(StubGenerator([]), annotators, mode="incremental", seed_smiles="CCO")
@@ -474,7 +499,8 @@ def test_incremental_mode_requires_finite_cutoff():
     annotators = [
         AnnotatorSpec(
             "a", StubAnnotator({"CCO": 1.0}), cutoff=float("inf"), direction="higher"
-        )
+        ),
+        _neutral(),
     ]
     with pytest.raises(ValueError, match="finite"):
         hill_climb(
@@ -488,8 +514,9 @@ def test_incremental_mode_requires_finite_cutoff():
 
 def test_incremental_mode_requires_seed_scoreable_by_every_annotator():
     annotators = [
-        AnnotatorSpec("a", StubAnnotator({}), cutoff=10.0, direction="higher")
-    ]  # "CCO" missing from the score table
+        AnnotatorSpec("a", StubAnnotator({}), cutoff=10.0, direction="higher"),
+        _neutral(),
+    ]  # "CCO" missing from a's score table
     with pytest.raises(ValueError, match="anchor"):
         hill_climb(
             StubGenerator([]),
@@ -580,7 +607,10 @@ def test_incremental_mode_floor_is_the_target_not_the_achieved_value():
 
 def test_incremental_mode_stops_whole_run_when_a_step_finds_no_candidates():
     annotators = [
-        AnnotatorSpec("a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher")
+        AnnotatorSpec(
+            "a", StubAnnotator({"CCO": 1.0}), cutoff=10.0, direction="higher"
+        ),
+        _neutral(),
     ]
     generator = StubGenerator([[]])
 
@@ -600,7 +630,8 @@ def test_incremental_mode_stops_whole_run_when_step_has_no_improvement_and_entry
     a_scores = {"CCO": 1.0, "CCC": 0.5}  # CCC is worse than the seed
     generator = StubGenerator([["CCC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=10.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=10.0, direction="higher"),
+        _neutral(),
     ]
 
     summary, _ = hill_climb(
@@ -623,12 +654,13 @@ def test_incremental_mode_stops_whole_run_when_step_has_no_improvement_and_entry
 def test_step_level_column_only_present_in_incremental_mode():
     scores = {"CCO": 1.0, "CCC": 2.0}
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
     ]
 
     for mode in ("sequential", "joint", "weighted"):
         summary, _ = hill_climb(
-            StubGenerator([["CCC"]]),
+            StubGenerator([["CCC"]] * 2),  # sequential: a round per primary
             annotators,
             mode=mode,
             seed_smiles="CCO",
@@ -637,7 +669,7 @@ def test_step_level_column_only_present_in_incremental_mode():
         assert "step_level" not in summary.columns
 
     summary, _ = hill_climb(
-        StubGenerator([["CCC"]]),
+        StubGenerator([["CCC"]] * 2),
         annotators,
         mode="incremental",
         seed_smiles="CCO",
@@ -648,24 +680,6 @@ def test_step_level_column_only_present_in_incremental_mode():
 
 
 # --- joint mode: count-based scoring, tie-breaking, tanimoto exclusion ----
-
-
-def test_joint_mode_single_annotator_is_threshold_not_maximization():
-    scores = {"CCO": 1.0, "CCC": 10.0, "CCN": 6.0}
-    generator = StubGenerator([["CCC", "CCN"]])
-    annotators = [
-        AnnotatorSpec("score", StubAnnotator(scores), cutoff=5.0, direction="higher")
-    ]
-
-    _, candidates_by_round = hill_climb(
-        generator, annotators, mode="joint", seed_smiles="CCO", n_rounds=1
-    )
-
-    # Both CCC and CCN clear the single cutoff, so joint mode can't tell them
-    # apart by raw score (both score cutoffs_satisfied=1) - unlike sequential
-    # mode, the higher raw value (CCC, 10.0) is not guaranteed to win.
-    round1 = candidates_by_round[1]
-    assert set(round1["cutoffs_satisfied"]) == {1}
 
 
 def test_joint_mode_round_score_is_cutoffs_satisfied_count():
@@ -692,14 +706,15 @@ def test_joint_mode_breaks_ties_by_first_found_candidate():
     scores = {"CCO": 0.0, "CCC": 10.0, "CCN": 10.0}
     generator = StubGenerator([["CCC", "CCN"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=5.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=5.0, direction="higher"),
+        _neutral(),
     ]
 
     summary, _ = hill_climb(
         generator, annotators, mode="joint", seed_smiles="CCO", n_rounds=1
     )
 
-    # CCC and CCN are tied (both cutoffs_satisfied=1); CCC wins as the first
+    # CCC and CCN are tied (both cutoffs_satisfied=2); CCC wins as the first
     # one encountered, per the generator's own order.
     assert summary.iloc[-1]["smiles"] == "CCC"
 
@@ -728,7 +743,8 @@ def test_joint_mode_stops_when_nothing_clears_any_cutoff():
     a_scores = {"CCO": 1.0, "CCC": 0.5}
     generator = StubGenerator([["CCC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=5.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=5.0, direction="higher"),
+        _neutral(cutoff=1.0),  # out of reach too
     ]
 
     summary, candidates_by_round = hill_climb(
@@ -745,7 +761,8 @@ def test_active_annotator_id_is_none_for_joint_mode():
     scores = {"CCO": 1.0, "CCC": 10.0}
     generator = StubGenerator([["CCC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
     ]
 
     summary, _ = hill_climb(
@@ -786,27 +803,12 @@ def test_a_tanimoto_guard_rail_is_not_counted_in_joint_mode():
 # --- weighted mode: sign correction, weighting, missing values -------------
 
 
-def test_weighted_mode_single_annotator_reproduces_pure_maximization():
-    scores = {"CCO": 1.0, "CCC": 2.0, "CCN": 3.0}
-    generator = StubGenerator([["CCC", "CCN"]])
-    annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
-    ]
-
-    summary, _ = hill_climb(
-        generator, annotators, mode="weighted", seed_smiles="CCO", n_rounds=1
-    )
-
-    # Weight is irrelevant with a single annotator - the highest raw value wins.
-    assert summary.iloc[-1]["smiles"] == "CCN"
-    assert summary.iloc[-1]["score"] == 3.0
-
-
 def test_weighted_mode_respects_lower_direction():
     scores = {"CCO": 10.0, "CCC": 8.0, "CCN": 2.0}
     generator = StubGenerator([["CCC", "CCN"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="lower")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="lower"),
+        _neutral(),
     ]
 
     summary, _ = hill_climb(
@@ -866,7 +868,8 @@ def test_active_annotator_id_is_none_for_weighted_mode():
     scores = {"CCO": 1.0, "CCC": 10.0}
     generator = StubGenerator([["CCC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
     ]
 
     summary, _ = hill_climb(
@@ -882,6 +885,7 @@ def test_a_tanimoto_guard_rail_is_not_weighted():
     generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
     annotators = [
         AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
         AnnotatorSpec(
             "tanimoto", TanimotoAnnotator(), 0.2, "higher", priority="guard-rail"
         ),
@@ -902,7 +906,8 @@ def test_weighted_mode_round_table_sorted_by_weighted_score_descending():
     a_scores = {"CCO": 0.0, "CCC": 1.0, "CCN": 5.0, "CC": 2.0}
     generator = StubGenerator([["CCC", "CCN", "CC"]])
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(a_scores), cutoff=0.0, direction="higher"),
+        _neutral(),
     ]
 
     _, candidates_by_round = hill_climb(
@@ -915,12 +920,13 @@ def test_weighted_mode_round_table_sorted_by_weighted_score_descending():
 def test_weighted_score_column_only_present_in_weighted_mode():
     scores = {"CCO": 1.0, "CCC": 2.0}
     annotators = [
-        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher")
+        AnnotatorSpec("a", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
     ]
 
     for mode in ("sequential", "joint"):
         _, candidates_by_round = hill_climb(
-            StubGenerator([["CCC"]]),
+            StubGenerator([["CCC"]] * 2),  # sequential: a round per primary
             annotators,
             mode=mode,
             seed_smiles="CCO",
@@ -944,6 +950,7 @@ def test_a_lower_tanimoto_guard_rail_seeks_novelty():
     generator = StubGenerator([["CO", "c1ccc2ccccc2c1"]])
     annotators = [
         AnnotatorSpec("score", StubAnnotator(scores), cutoff=0.0, direction="higher"),
+        _neutral(),
         AnnotatorSpec(
             "tanimoto", TanimotoAnnotator(), 0.2, "lower", priority="guard-rail"
         ),
@@ -1265,10 +1272,10 @@ GUARD_SCORES = {"CCO": 1.0, "CCC": 1.0, "CCN": 0.0}
 )
 def test_guard_rail_blocks_the_best_primary_candidate_in_every_mode(mode, extra):
     # CCN is listed first and scores best, so it would win without the guard-rail.
-    annotators = [_primary(PRIMARY_SCORES), _guard(GUARD_SCORES, cutoff=0.5)]
+    annotators = [_primary(PRIMARY_SCORES), _neutral(), _guard(GUARD_SCORES, 0.5)]
 
     summary, candidates_by_round = hill_climb(
-        StubGenerator([["CCN", "CCC"]]),
+        StubGenerator([["CCN", "CCC"]] * 2),  # a round per primary, step by step
         annotators,
         mode=mode,
         seed_smiles="CCO",
@@ -1285,6 +1292,7 @@ def test_guard_rail_blocks_the_best_primary_candidate_in_every_mode(mode, extra)
 def test_guard_rails_do_not_count_or_weigh():
     annotators = [
         _primary({"CCO": 1.0, "CCC": 2.0}),
+        _neutral(),
         _guard({"CCO": 100.0, "CCC": 100.0}, cutoff=0.0),
     ]
 
@@ -1297,7 +1305,7 @@ def test_guard_rails_do_not_count_or_weigh():
     )
 
     row = candidates_by_round[1].iloc[0]
-    assert row["cutoffs_satisfied"] == 1
+    assert row["cutoffs_satisfied"] == 2  # the two primaries, not the guard-rail
     assert row["weighted_score"] == 2.0
     assert row["guard"] == 100.0
 
@@ -1465,7 +1473,6 @@ def test_a_run_stopped_midway_keeps_the_rounds_it_finished(error):
         hill_climb(
             generator,
             [_higher("score", {"CCO": 1.0, "CCC": 2.0})],
-            mode="weighted",
             seed_smiles="CCO",
             n_rounds=5,
         )
@@ -1498,13 +1505,16 @@ def test_a_stop_in_a_later_stage_keeps_the_earlier_stages():
 
 
 def test_a_stop_within_an_incremental_step_keeps_its_rounds_and_their_level():
-    # targets 1.0 then 2.0: round 1 clears step 1, round 2 falls short in step 2
-    scores = {"CCO": 0.0, "CCC": 1.0, "CCN": 1.5}
+    # a: targets 1.0 then 2.0; b: 0.5 then 1.0. Round 1 (a, level 1) CCC clears
+    # 1.0; round 2 (b, level 1) CCN clears 0.5; round 3 (a, level 2) CCCC clears
+    # 2.0; the Ctrl-C comes in round 4 (b, level 2).
+    a = {"CCO": 0.0, "CCC": 1.0, "CCN": 1.5, "CCCC": 2.0}
+    b = {"CCO": 0.0, "CCC": 0.0, "CCN": 1.0, "CCCC": 1.0}
 
     with pytest.raises(KeyboardInterrupt) as raised:
         hill_climb(
-            StoppingGenerator([["CCC"], ["CCN"]], KeyboardInterrupt()),
-            [_higher("score", scores, cutoff=2.0)],
+            StoppingGenerator([["CCC"], ["CCN"], ["CCCC"]], KeyboardInterrupt()),
+            [_higher("a", a, cutoff=2.0), _higher("b", b, cutoff=1.0)],
             mode="incremental",
             seed_smiles="CCO",
             n_steps=2,
@@ -1512,8 +1522,9 @@ def test_a_stop_within_an_incremental_step_keeps_its_rounds_and_their_level():
         )
 
     summary, _ = raised.value.partial
-    assert list(summary["round"]) == [0, 1, 2]
-    assert list(summary["step_level"]) == [0, 1, 2]
+    assert list(summary["round"]) == [0, 1, 2, 3]
+    assert list(summary["smiles"]) == ["CCO", "CCC", "CCN", "CCCC"]
+    assert list(summary["step_level"]) == [0, 1, 1, 2]
 
 
 def test_a_stop_while_scoring_the_seed_has_no_rounds_to_keep():
@@ -1526,9 +1537,7 @@ def test_a_stop_while_scoring_the_seed_has_no_rounds_to_keep():
     ]
 
     with pytest.raises(KeyboardInterrupt) as raised:
-        hill_climb(
-            StubGenerator([["CCC"]]), annotators, mode="joint", seed_smiles="CCO"
-        )
+        hill_climb(StubGenerator([["CCC"]]), annotators, seed_smiles="CCO")
 
     assert not hasattr(raised.value, "partial")
 
@@ -1547,7 +1556,7 @@ RESUME_CASES = {
     "weighted": {"cutoffs": (float("-inf"), float("-inf")), "stop": 3},
     "joint": {"cutoffs": (1.0, 3.0), "stop": 3},
     "sequential": {"cutoffs": (2.0, 3.0), "stop": 3},
-    "incremental": {"cutoffs": (3.0, None), "stop": 3, "n_steps": 2},
+    "incremental": {"cutoffs": (2.0, 3.0), "stop": 3, "n_steps": 2},
 }
 
 
@@ -1656,10 +1665,9 @@ def test_a_saved_round_from_other_annotators_is_refused(tmp_path):
         tmp_path,
     )
 
+    other = [_resume_annotators("weighted")[0], _higher("c", RESUME_B)]
     with pytest.raises(ValueError, match="round0.csv was not made by this run"):
-        _climb(
-            "weighted", StubGenerator([]), _resume_annotators("incremental"), tmp_path
-        )
+        _climb("weighted", StubGenerator([]), other, tmp_path)
 
 
 def test_a_round_killed_while_being_written_leaves_no_table(tmp_path, monkeypatch):

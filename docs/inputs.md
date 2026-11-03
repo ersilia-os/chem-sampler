@@ -2,18 +2,31 @@
 
 Annotators are required, and so is at least one of similarity and generators.
 They are three CSV files in the project's `input/` folder, and a fourth for the
-seeds; `chemsampler init`
-writes a template of each (the same as [`examples/inputs/csv/`](../examples/inputs/csv/)).
-`chemsampler fetch ID [ID ...]` sets `similarity.csv` and `generators.csv` to the
-ids it is given (a role with none has its file removed); `annotators.csv` is
-always yours to write.
+seeds; `chemsampler init` writes a template of the first three (one model of
+each kind, `live`). `chemsampler fetch ID [ID ...]` sets `similarity.csv` and
+`generators.csv` to the ids it is given, `live` or at the release of `ID@TAG` (a
+role with none has its file removed); `annotators.csv` is always yours to write.
 
 | Input | CSV in `input/` |
 |---|---|
-| similarity | `similarity.csv`, header `similarity`, one model: `eos8nyg`, `eos1bgt` or `eos80al` |
-| generators | `generators.csv`, header `generators` |
-| annotators | `annotators.csv`, header `source,model,cutoff,direction,priority` (+ `weight,column`) |
+| similarity | `similarity.csv`, header `model,version`, one model: `eos8nyg`, `eos1bgt` or `eos80al` |
+| generators | `generators.csv`, header `model,version` |
+| annotators | `annotators.csv`, header `source,model,version,cutoff,direction,priority` (+ `weight,column`) |
 | seeds | `smiles.csv`, header `smiles`, one SMILES per row |
+
+`version` is a release tag of the model's GitHub repository, e.g. `v1.0.0` (its
+releases are at `https://github.com/ersilia-os/<model>/releases`), or `live`: the
+latest commit of its main branch, which need not be a release. A Hub model needs
+one: an empty cell is an error that says where to find it. An
+`rdkit` annotator has none (leave the cell empty). A model listed in two files
+must have the same version in both. `fetch` checks each clone out at its
+version (`live`: its main branch, pulled), and `run` refuses a clone at another
+one (for `live`, one that is not on its main branch; only `fetch` can tell
+whether it is the latest commit). The old one-column headers
+(`similarity`, `generators`) and an `annotators.csv` without `version` are
+refused. In a config file the lists are objects:
+`"generators": [{"model": "eos9p57", "version": "v1.0.0"}]`, and an annotator
+object takes a `version` key.
 
 `run` needs a seed: the molecules in `smiles.csv`, or the one SMILES of
 `--seed-smiles`, which overrides the file (with a note). Each seed is climbed in
