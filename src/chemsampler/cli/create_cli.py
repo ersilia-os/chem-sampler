@@ -15,9 +15,9 @@ _COMMAND_ORDER = (
 _EPILOG = """\b
 Typical use:
   chemsampler init -p my-run && cd my-run
-  (edit input/*.csv; the seed goes in input/smiles.csv)
-  chemsampler fetch
-  chemsampler run --mode sequential"""
+  (edit input/*.csv; the seeds go in input/smiles.csv)
+  chemsampler fetch          (and `fetch rdkit` for mw, qed, tanimoto)
+  chemsampler run"""
 
 
 class _WorkflowGroup(click.Group):

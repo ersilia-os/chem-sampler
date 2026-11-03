@@ -78,6 +78,11 @@ def _run_dir(root):
     return folder
 
 
+def _seed_dir(root, k=1):
+    """The folder of the run's k-th seed, with its rounds and summary."""
+    return _run_dir(root) / f"seed{k}"
+
+
 def _run(root, *args):
     return CliRunner().invoke(
         cli,
@@ -104,8 +109,8 @@ def test_run_writes_results_and_merges_generator_and_similarity_candidates(tmp_p
 
     assert result.exit_code == 0, result.output
     assert "Best candidate" in result.output
-    assert (_run_dir(root) / "summary.csv").exists()
-    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
+    assert (_seed_dir(root) / "summary.csv").exists()
+    round1 = pd.read_csv(_seed_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz|eos8nyg"]
 
 
@@ -115,7 +120,7 @@ def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_seed_dir(root) / "round1.csv")
     assert round1["guardrails_satisfied"].tolist() == [False]  # CCN weighs about 45 Da
 
 
@@ -175,13 +180,29 @@ def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
     assert "chemsampler fetch" in result.output
 
 
-def test_run_handles_empty_summary_without_seed(tmp_path):
-    root = _inputs(tmp_path)
+def test_a_run_needs_a_seed(tmp_path):
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "tanimoto", "0.4", "higher", "guard-rail"]]
+    )
 
     result = CliRunner().invoke(cli, ["run", "-p", str(root)])
 
-    assert result.exit_code == 0, result.output
-    assert "No candidates were generated" in result.output
+    assert result.exit_code == 1
+    assert "give a seed: input/smiles.csv" in result.output
+    assert "--seed-smiles" in result.output
+    assert not list((root / "runs").iterdir())
+
+
+@pytest.mark.parametrize("smiles", ["CCO,CCN", "CCO CCN", "not-a-molecule"])
+def test_seed_smiles_takes_one_smiles(tmp_path, smiles):
+    root = _inputs(tmp_path)
+
+    result = CliRunner().invoke(cli, ["run", "-p", str(root), "--seed-smiles", smiles])
+
+    assert result.exit_code == 1
+    assert "--seed-smiles takes one SMILES" in result.output
+    assert "put several seeds in input/smiles.csv" in result.output
+    assert not list((root / "runs").iterdir())
 
 
 def test_a_run_records_how_it_was_launched(tmp_path):
@@ -195,7 +216,7 @@ def test_a_run_records_how_it_was_launched(tmp_path):
     assert saved["run"] == {
         "chemsampler_version": importlib.metadata.version("chemsampler"),
         "mode": "sequential",
-        "seed_smiles": "CCO",
+        "seeds": ["CCO"],
         "n_rounds": 1,
         "n_steps": None,
         "tolerance": 0.1,
@@ -222,7 +243,7 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
     assert "Partial results written" in result.output
     saved = json.loads((_run_dir(root) / "inputs.json").read_text())
     assert saved["run"]["mode"] == "sequential"
-    assert (_run_dir(root) / "summary.csv").exists()
+    assert (_seed_dir(root) / "summary.csv").exists()
 
 
 #: CCN (45.1 Da), the fake models' only candidate, beats the seed CCO (46.1 Da),
@@ -251,9 +272,9 @@ def test_ctrl_c_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
-    summary = pd.read_csv(_run_dir(root) / "summary.csv")
+    summary = pd.read_csv(_seed_dir(root) / "summary.csv")
     assert summary["round"].tolist() == [0, 1]
-    assert (_run_dir(root) / "round1.csv").exists()
+    assert (_seed_dir(root) / "round1.csv").exists()
 
 
 def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
@@ -265,7 +286,7 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
     assert result.exit_code == 1
     assert "eos9taz: run.sh failed (exit 1)" in result.output
     assert f"Finished rounds written to {_run_dir(root)}" in result.output
-    summary = pd.read_csv(_run_dir(root) / "summary.csv")
+    summary = pd.read_csv(_seed_dir(root) / "summary.csv")
     assert summary["round"].tolist() == [0, 1]
 
 
@@ -311,6 +332,8 @@ def _status(root):
 
 
 def _same_results(here, there):
+    """Two runs' folders hold the same tables, seed by seed, to the last digit."""
+    here, there = here / "seed1", there / "seed1"
     names = sorted(p.name for p in here.glob("*.csv"))
     assert names == sorted(p.name for p in there.glob("*.csv"))
     for name in names:
@@ -358,7 +381,7 @@ def test_resume_uses_the_inputs_the_run_started_with(tmp_path, monkeypatch):
     result = _resume(root, _run_dir(root).name)
 
     assert result.exit_code == 0, result.output
-    assert "mw" in pd.read_csv(_run_dir(root) / "round3.csv").columns
+    assert "mw" in pd.read_csv(_seed_dir(root) / "round3.csv").columns
 
 
 def test_sigterm_stops_a_run_as_ctrl_c_does(tmp_path, monkeypatch):
@@ -373,7 +396,7 @@ def test_sigterm_stops_a_run_as_ctrl_c_does(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
     assert _status(root) == "stopped"
-    assert pd.read_csv(_run_dir(root) / "summary.csv")["round"].tolist() == [0, 1]
+    assert pd.read_csv(_seed_dir(root) / "summary.csv")["round"].tolist() == [0, 1]
 
 
 def test_a_failed_run_can_be_resumed_once_fixed(tmp_path, monkeypatch):
@@ -440,7 +463,7 @@ def test_run_can_use_a_similarity_model_without_generators(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_seed_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos8nyg"]
 
 
@@ -451,7 +474,7 @@ def test_run_can_use_generators_without_a_similarity_model(tmp_path):
     result = _run(root)
 
     assert result.exit_code == 0, result.output
-    round1 = pd.read_csv(_run_dir(root) / "round1.csv")
+    round1 = pd.read_csv(_seed_dir(root) / "round1.csv")
     assert round1["source"].tolist() == ["eos9taz"]
 
 
@@ -467,9 +490,9 @@ def _seed(root, text):
     (root / "input" / "smiles.csv").write_text(text)
 
 
-def _run_from_csv(root):
-    """A run that takes its seed from input/smiles.csv, if anything."""
-    return CliRunner().invoke(cli, ["run", "-p", str(root), "--n-rounds", "1"])
+def _run_from_csv(root, *args):
+    """A run that takes its seeds from input/smiles.csv, if anything."""
+    return CliRunner().invoke(cli, ["run", "-p", str(root), "--n-rounds", "1", *args])
 
 
 def _record(root):
@@ -483,9 +506,9 @@ def test_the_seed_comes_from_smiles_csv(tmp_path):
     result = _run_from_csv(root)
 
     assert result.exit_code == 0, result.output
-    assert _record(root)["run"]["seed_smiles"] == "CCO"
+    assert _record(root)["run"]["seeds"] == ["CCO"]
     assert (_run_dir(root) / "input" / "smiles.csv").read_text() == "smiles\nCCO\n"
-    assert pd.read_csv(_run_dir(root) / "round0.csv")["smiles"].tolist() == ["CCO"]
+    assert pd.read_csv(_seed_dir(root) / "round0.csv")["smiles"].tolist() == ["CCO"]
 
 
 def test_seed_smiles_wins_over_smiles_csv(tmp_path):
@@ -496,15 +519,16 @@ def test_seed_smiles_wins_over_smiles_csv(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "--seed-smiles given: ignoring input/smiles.csv" in result.output
-    assert _record(root)["run"]["seed_smiles"] == "CCO"
+    assert _record(root)["run"]["seeds"] == ["CCO"]
 
 
 @pytest.mark.parametrize(
     "text, message",
     [
-        ("smiles\nCCO\nCCC\n", "only one seed is supported for now, got 2"),
+        ("smiles\nCCO\nCCC\nOCC\n", "rows 1 and 3 are the same molecule"),
         ("smiles\n", "smiles.csv has no molecule"),
-        ("smiles\nnot-a-molecule\n", "RDKit cannot read the SMILES"),
+        ("smiles\nCCO\nnot-a-molecule\n", "row 2: RDKit cannot read the SMILES"),
+        ("smiles\nCCO CCN\n", "row 1: RDKit cannot read the SMILES 'CCO CCN'"),
         ("seed\nCCO\n", "smiles.csv"),
     ],
 )
@@ -526,21 +550,77 @@ def test_a_tanimoto_guard_rail_through_the_cli(tmp_path):
     result = _run_from_csv(root)
 
     assert result.exit_code == 0, result.output
-    round0 = pd.read_csv(_run_dir(root) / "round0.csv")
+    round0 = pd.read_csv(_seed_dir(root) / "round0.csv")
     assert round0["tanimoto"].tolist() == [1.0]
-    round1 = pd.read_csv(_run_dir(root) / "round1.csv")  # CCN, 0.333 to CCO
+    round1 = pd.read_csv(_seed_dir(root) / "round1.csv")  # CCN, 0.333 to CCO
     assert round1["tanimoto"].tolist() == [round1["tanimoto_to_seed"][0]]
     assert round1["guardrails_satisfied"].tolist() == [False]
 
 
-def test_a_tanimoto_annotator_needs_a_seed(tmp_path):
+def test_each_seed_is_climbed_in_its_own_folder_with_tanimoto_to_its_own_seed(
+    tmp_path,
+):
     root = _inputs(tmp_path, [QED, TANIMOTO])
+    _seed(root, "smiles\nCCO\nc1ccccc1\n")
 
     result = _run_from_csv(root)
 
+    assert result.exit_code == 0, result.output
+    assert "Seed 1 of 2: CCO (seed1/)" in result.output
+    assert "Seed 2 of 2: c1ccccc1 (seed2/)" in result.output
+    assert "Best candidate from CCO (seed1/)" in result.output
+    assert "Best candidate from c1ccccc1 (seed2/)" in result.output
+    assert _record(root)["run"]["seeds"] == ["CCO", "c1ccccc1"]
+    assert sorted(p.name for p in _run_dir(root).glob("seed*")) == ["seed1", "seed2"]
+    for k, seed in [(1, "CCO"), (2, "c1ccccc1")]:
+        round0 = pd.read_csv(_seed_dir(root, k) / "round0.csv")
+        assert round0["smiles"].tolist() == [seed] and round0["tanimoto"][0] == 1.0
+        assert (_seed_dir(root, k) / "summary.csv").is_file()
+    # the same candidate (CCN), compared with each seed
+    near, far = (pd.read_csv(_seed_dir(root, k) / "round1.csv") for k in (1, 2))
+    assert near["tanimoto"][0] > far["tanimoto"][0]
+    assert near["tanimoto"][0] == near["tanimoto_to_seed"][0]
+
+
+def test_a_run_stopped_in_its_second_seed_resumes_there(tmp_path, monkeypatch):
+    root = _generator_project(tmp_path)
+    _seed(root, "smiles\nCCO\nCCN\n")
+    # seed 1: rounds 1-3; seed 2: round 1, then Ctrl-C in round 2
+    _script(monkeypatch, *HEAVIER, "CCCCCCC", KeyboardInterrupt())
+
+    stopped = _run_from_csv(root, "--n-rounds", "3")
+
+    assert stopped.exit_code == 0, stopped.output
+    assert f"Partial results written to {_seed_dir(root, 2)}" in stopped.output
+    assert _status(root) == "stopped"
+    seed1 = pd.read_csv(_seed_dir(root, 1) / "summary.csv")
+    assert seed1["round"].tolist() == [0, 1, 2, 3]
+    assert pd.read_csv(_seed_dir(root, 2) / "summary.csv")["round"].tolist() == [0, 1]
+    before = (_seed_dir(root, 1) / "round3.csv").read_text()
+    calls = _script(monkeypatch, "CCCCCCCC", "CCCCCCCCC")
+
+    resumed = _resume(root)
+
+    assert resumed.exit_code == 0, resumed.output
+    assert calls == []  # only seed 2's rounds 2 and 3 called the generator
+    assert _status(root) == "finished"
+    assert (_seed_dir(root, 1) / "round3.csv").read_text() == before
+    seed2 = pd.read_csv(_seed_dir(root, 2) / "summary.csv")
+    assert seed2["round"].tolist() == [0, 1, 2, 3]
+
+
+def test_resume_refuses_a_run_made_before_seed_folders(tmp_path):
+    root = _inputs(tmp_path)
+    assert _run(root).exit_code == 0
+    record = _record(root)
+    record["run"]["status"] = "stopped"
+    record["run"]["seed_smiles"] = record["run"].pop("seeds")[0]
+    (_run_dir(root) / "inputs.json").write_text(json.dumps(record))
+
+    result = _resume(root)
+
     assert result.exit_code == 1
-    assert "tanimoto compares candidates with the seed" in result.output
-    assert not (root / "runs").exists() or not any((root / "runs").iterdir())
+    assert "before each seed had its own folder: start it again" in result.output
 
 
 @pytest.mark.parametrize(
@@ -623,6 +703,29 @@ def test_annotate_a_single_tanimoto_uses_the_project_seed(tmp_path):
     assert "tanimoto compares candidates with the seed" in without.output
     assert seeded.exit_code == 0, seeded.output
     assert "tanimoto: 0.2857142857142857" in seeded.output
+
+
+def test_annotate_with_several_seeds_shows_tanimoto_per_seed_uncounted(tmp_path):
+    root = _inputs(
+        tmp_path, [QED, ["rdkit", "tanimoto", "0.2", "higher", "guard-rail"]]
+    )
+    _seed(root, "smiles\nCCO\nCO\n")
+    single = ["-p", str(root), "--source", "rdkit", "--model", "tanimoto"]
+
+    result = _annotate("-p", str(root), "--smiles", "CO")
+    one_model = _annotate(*single, "--smiles", "CO")
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "tanimoto [guard-rail] (>= 0.2): tanimoto vs seed 1: 0.2857142857142857; "
+        "tanimoto vs seed 2: 1.0; not counted"
+    ) in result.output
+    assert "qed [primary]" in result.output
+    assert "1 of 1 primary cutoffs satisfied" in result.output
+    assert "guard-rails" not in result.output  # none counted
+    assert one_model.exit_code == 0, one_model.output
+    assert "tanimoto vs seed 1: 0.2857142857142857" in one_model.output
+    assert "tanimoto vs seed 2: 1.0" in one_model.output
 
 
 def _annotate(*args):
@@ -878,7 +981,9 @@ def test_a_run_in_a_project_writes_a_dated_round_folder(
     runs = list((root / "runs").iterdir())
     assert len(runs) == 1
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", runs[0].name)
-    assert (runs[0] / "summary.csv").exists() and (runs[0] / "round1.csv").exists()
+    assert (runs[0] / "seed1" / "summary.csv").exists() and (
+        runs[0] / "seed1" / "round1.csv"
+    ).exists()
 
 
 def test_a_run_saves_what_it_resolved_next_to_its_results(
@@ -1215,7 +1320,7 @@ def test_path_names_the_project_from_anywhere(
     assert result.exit_code == 0, result.output
     assert list(elsewhere.iterdir()) == []  # results go to the project, not here
     if command == "run":
-        assert (_run_dir(root) / "summary.csv").exists()
+        assert (_seed_dir(root) / "summary.csv").exists()
 
 
 @pytest.mark.parametrize("command", [*NEEDS_A_PROJECT, "catalog"])

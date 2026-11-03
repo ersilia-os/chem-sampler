@@ -49,6 +49,11 @@ def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
         if record["run"]["status"] == "finished":
             click.secho(f"{run_dir.name} already finished: see {run_dir}", fg="green")
             return
+        if "seeds" not in record["run"]:
+            raise ValueError(
+                f"{run_dir.name} was made by an older chemsampler, before each "
+                "seed had its own folder: start it again"
+            )
         if not record["run"]["verbose"]:
             logger.set_quiet_mode(True)
         # the inputs as the run found them, not as the project has them now

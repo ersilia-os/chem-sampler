@@ -1,8 +1,8 @@
 # Inputs
 
 Annotators are required, and so is at least one of similarity and generators.
-They are three CSV files in the project's `input/` folder, with an optional fourth
-for the seed; `chemsampler init`
+They are three CSV files in the project's `input/` folder, and a fourth for the
+seeds; `chemsampler init`
 writes a template of each (the same as [`examples/inputs/csv/`](../examples/inputs/csv/)).
 `chemsampler fetch ID [ID ...]` sets `similarity.csv` and `generators.csv` to the
 ids it is given (a role with none has its file removed); `annotators.csv` is
@@ -13,12 +13,16 @@ always yours to write.
 | similarity | `similarity.csv`, header `similarity`, one model: `eos8nyg`, `eos1bgt` or `eos80al` |
 | generators | `generators.csv`, header `generators` |
 | annotators | `annotators.csv`, header `source,model,cutoff,direction,priority` (+ `weight,column`) |
-| seed | `smiles.csv`, header `smiles`, one molecule (optional) |
+| seeds | `smiles.csv`, header `smiles`, one SMILES per row |
 
-`run` takes its seed from `smiles.csv`; `--seed-smiles` overrides it, with a note.
-For now the file holds exactly one molecule
-([several seeds](https://github.com/ersilia-os/chem-sampler/issues/8) are still to
-be defined); without the file a run has no seed. `init` writes no `smiles.csv`.
+`run` needs a seed: the molecules in `smiles.csv`, or the one SMILES of
+`--seed-smiles`, which overrides the file (with a note). Each seed is climbed in
+turn, as if it were a run of its own, in its own folder of the run: `seed1/`,
+`seed2/`, ... (zero-padded from 10 seeds on), each with its `round<n>.csv`,
+`summary.csv` and, on a cluster, its `jobs/` and `jobs.json`. A stopped run
+resumes in the seed it was in; the seeds before it are only read back. A SMILES
+RDKit cannot read, one with a space in it (RDKit would read the rest as a
+name), or the same molecule twice is refused. `init` writes no `smiles.csv`.
 
 ## Annotators
 
@@ -28,13 +32,15 @@ be defined); without the file a run has no seed. `init` writes no `smiles.csv`.
 `priority` is `primary` (optimized, in list order for `sequential` and
 `incremental`) or `guard-rail` (a constraint every winner must satisfy, no weight).
 
-`tanimoto` is the similarity of each candidate to the run's seed (Morgan
-fingerprints, radius 2, 2048 bits; the seed itself scores 1.0), so it needs a seed.
+`tanimoto` is the similarity of each candidate to the seed of its climb (Morgan
+fingerprints, radius 2, 2048 bits; the seed itself scores 1.0).
 As a guard-rail it keeps candidates near the seed (`0.4,higher`), away from it
 (`0.6,lower`) or both (`0.4-0.9,range`); as a primary, `lower` pushes the search
-away from the seed. The run computes it itself: on a cluster it is no job and
-needs no `rdkit` environment. `weight` (primary, default 1) and `column` (a multi-output
-Hub model) are optional.
+away from the seed. `mw`, `qed` and `tanimoto` run in the `rdkit` environment,
+which `chemsampler fetch rdkit` builds (this Python's version and chemsampler's
+own RDKit, so the values are the same everywhere): as a process of its own
+here, as a job on a cluster. `weight` (primary, default 1) and `column` (a
+multi-output Hub model) are optional.
 
 ## The project file
 

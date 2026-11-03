@@ -173,12 +173,12 @@ def test_a_run_on_the_cluster_gives_the_same_tables_as_a_local_run(project, clus
     assert local.exit_code == 0, local.output
     assert on_cluster.exit_code == 0, on_cluster.output
     here, there = _runs(project)
-    names = sorted(p.name for p in here.glob("*.csv"))
+    names = sorted(p.name for p in (here / "seed1").glob("*.csv"))
     assert names == ["round0.csv", "round1.csv", "round2.csv", "summary.csv"]
     for name in names:  # every value equal, RDKit's qed included
         pd.testing.assert_frame_equal(
-            pd.read_csv(here / name, float_precision="round_trip"),
-            pd.read_csv(there / name, float_precision="round_trip"),
+            pd.read_csv(here / "seed1" / name, float_precision="round_trip"),
+            pd.read_csv(there / "seed1" / name, float_precision="round_trip"),
             check_exact=True,
         )
     assert json.loads((there / "inputs.json").read_text())["run"]["hpc"] == "test"
@@ -191,13 +191,13 @@ def test_each_step_of_a_round_is_one_wave_of_jobs_recorded_in_jobs_json(
 
     assert result.exit_code == 0, result.output
     [run] = _runs(project)
-    record = json.loads((run / "jobs.json").read_text())
+    record = json.loads((run / "seed1" / "jobs.json").read_text())
     assert record["profile"] == "test"
     waves = {}
     for job in record["jobs"]:
         waves.setdefault(job["stage"], set()).add(job["model"])
         assert job["state"] == "COMPLETED" and job["node"] == "node-a"
-        assert (run / job["folder"] / "job.sh").is_file()
+        assert (run / "seed1" / job["folder"] / "job.sh").is_file()
     assert waves == {
         "Round 0 · annotation": {"eos4zfy", "qed"},
         "Round 1 · sampling": {"eos9taz", "eos8nyg"},
@@ -208,6 +208,23 @@ def test_each_step_of_a_round_is_one_wave_of_jobs_recorded_in_jobs_json(
     assert "Round 1 · sampling: 2 job(s) done" in result.output
     for argv in cluster.argvs:  # only where the profile allows
         assert "--partition=fake" in argv and "--nodelist=node-a,node-b" in argv
+
+
+def test_each_seed_s_jobs_and_jobs_json_are_in_its_own_folder(project, cluster):
+    (project / "input" / "smiles.csv").write_text("smiles\nCCO\nCCCO\n")
+
+    result = CliRunner().invoke(
+        cli, ["run", "-p", str(project), "--n-rounds", "1", "--hpc", "test"]
+    )
+
+    assert result.exit_code == 0, result.output
+    [run] = _runs(project)
+    for seed in ("seed1", "seed2"):
+        record = json.loads((run / seed / "jobs.json").read_text())
+        assert len(record["jobs"]) == 6  # 2 annotators, then 2 samplers + 2
+        assert all((run / seed / job["folder"]).is_dir() for job in record["jobs"])
+    assert not (run / "jobs").exists() and not (run / "jobs.json").exists()
+    assert len(cluster.argvs) == 12
 
 
 def test_the_models_of_a_step_wait_on_the_cluster_together(project, cluster):
@@ -251,8 +268,8 @@ def test_a_failed_job_stops_the_run_cancels_the_rest_and_keeps_finished_rounds(
     assert cluster.cancelled == [held]
     assert "Cancelled 1 job(s) still on the cluster." in result.output
     [run] = _runs(project)
-    assert pd.read_csv(run / "summary.csv")["round"].tolist() == [0, 1]
-    record = json.loads((run / "jobs.json").read_text())
+    assert pd.read_csv(run / "seed1" / "summary.csv")["round"].tolist() == [0, 1]
+    record = json.loads((run / "seed1" / "jobs.json").read_text())
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert states[held] == "CANCELLED"
 
@@ -278,8 +295,8 @@ def test_ctrl_c_cancels_the_jobs_on_the_cluster_and_keeps_finished_rounds(
     round2 = sorted(i for i, f in cluster.folders.items() if "round2" in str(f))
     assert round2 and sorted(cluster.cancelled) == round2
     [run] = _runs(project)
-    assert pd.read_csv(run / "summary.csv")["round"].tolist() == [0, 1]
-    record = json.loads((run / "jobs.json").read_text())
+    assert pd.read_csv(run / "seed1" / "summary.csv")["round"].tolist() == [0, 1]
+    record = json.loads((run / "seed1" / "jobs.json").read_text())
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert all(states[i] == "CANCELLED" for i in round2)
 
@@ -312,7 +329,7 @@ def test_ctrl_c_cancels_and_counts_only_the_jobs_slurm_still_runs(
     round2 = {f.name: i for i, f in cluster.folders.items() if "round2" in str(f)}
     assert cluster.cancelled == [round2["eos8nyg"]]
     [run] = _runs(project)
-    record = json.loads((run / "jobs.json").read_text())
+    record = json.loads((run / "seed1" / "jobs.json").read_text())
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert states[round2["eos9taz"]] == "COMPLETED"
     assert states[round2["eos8nyg"]] == "CANCELLED"
@@ -406,11 +423,11 @@ def test_a_resumed_cluster_run_cancels_what_a_killed_attempt_left_and_keeps_its_
     )
     # ... then killed outright: its round 2 jobs still queued, its lock left
     cluster.cancelled.clear()
-    record = json.loads((run / "jobs.json").read_text())
+    record = json.loads((run / "seed1" / "jobs.json").read_text())
     for job in record["jobs"]:
         if job["job_id"] in round2:
             job["state"] = "PENDING"
-    (run / "jobs.json").write_text(json.dumps(record))
+    (run / "seed1" / "jobs.json").write_text(json.dumps(record))
     cluster.hold, cluster.on_check = (lambda f: False), None
     cluster.queued = set(round2)
 
@@ -422,17 +439,19 @@ def test_a_resumed_cluster_run_cancels_what_a_killed_attempt_left_and_keeps_its_
     first, _ = _runs(project)
     for name in ("round0.csv", "round1.csv", "round2.csv", "summary.csv"):
         pd.testing.assert_frame_equal(
-            pd.read_csv(first / name), pd.read_csv(run / name), check_exact=True
+            pd.read_csv(first / "seed1" / name),
+            pd.read_csv(run / "seed1" / name),
+            check_exact=True,
         )
-    jobs = json.loads((run / "jobs.json").read_text())["jobs"]
+    jobs = json.loads((run / "seed1" / "jobs.json").read_text())["jobs"]
     assert {job["attempt"] for job in jobs} == {1, 2}
     redone = [job for job in jobs if job["attempt"] == 2]
     assert {job["stage"] for job in redone} == {
         "Round 2 · sampling",
         "Round 2 · annotation",
     }  # rounds 0 and 1 were read back, not sent again
-    stale = run / "jobs" / "stopped" / "attempt1" / "04-round2-sampling"
-    assert stale.is_dir() and (run / "jobs" / "04-round2-sampling").is_dir()
+    stale = run / "seed1" / "jobs" / "stopped" / "attempt1" / "04-round2-sampling"
+    assert stale.is_dir() and (run / "seed1" / "jobs" / "04-round2-sampling").is_dir()
     assert all(
         job["folder"].startswith("jobs/stopped/attempt1/")
         for job in jobs
@@ -445,7 +464,7 @@ def test_jobs_json_lists_a_job_while_it_waits(project, cluster):
     listed = []
 
     def look(fake, ids):
-        path = _runs(project)[0] / "jobs.json"
+        path = _runs(project)[0] / "seed1" / "jobs.json"
         record = json.loads(path.read_text()) if path.exists() else {"jobs": []}
         listed.append(set(ids) <= {job["job_id"] for job in record["jobs"]})
 
@@ -514,7 +533,7 @@ def test_the_run_s_own_job_runs_it_where_slurm_is(project, cluster, store_root):
     assert result.exit_code == 0, result.output
     assert "Resuming" in result.output and "(queued)" in result.output
     assert json.loads((run / "inputs.json").read_text())["run"]["status"] == "finished"
-    assert (run / "summary.csv").is_file()
+    assert (run / "seed1" / "summary.csv").is_file()
 
 
 def test_a_run_waiting_as_a_job_is_not_run_twice(project, cluster, store_root):
@@ -616,8 +635,8 @@ def test_a_tanimoto_annotator_is_a_job_given_the_seed_with_local_values(
     here, there = _runs(project)
     for name in ("round1.csv", "round2.csv"):
         pd.testing.assert_frame_equal(
-            pd.read_csv(here / name, float_precision="round_trip"),
-            pd.read_csv(there / name, float_precision="round_trip"),
+            pd.read_csv(here / "seed1" / name, float_precision="round_trip"),
+            pd.read_csv(there / "seed1" / name, float_precision="round_trip"),
             check_exact=True,
         )
 

@@ -76,3 +76,15 @@ def test_the_latest_run_or_a_named_one_is_found(tmp_path):
     )
     with pytest.raises(ValueError, match="notes is not a run"):
         runs.find_run(tmp_path, "notes")
+
+
+def test_seed_folders_are_numbered_so_that_they_sort_in_order(tmp_path):
+    assert [p.name for p in runs.seed_folders(tmp_path, 3)] == [
+        "seed1",
+        "seed2",
+        "seed3",
+    ]
+    twelve = [p.name for p in runs.seed_folders(tmp_path, 12)]
+    assert twelve[0] == "seed01" and twelve[-1] == "seed12"
+    assert twelve == sorted(twelve)
+    assert runs.seed_folders(tmp_path, 1) == [tmp_path / "seed1"]

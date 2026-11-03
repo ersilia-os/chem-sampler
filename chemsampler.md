@@ -104,11 +104,11 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      plausible range, say so and ask the user rather than silently trusting
      an extreme cutoff.
 
-3. **Combination mode** — always ask, whatever the number of annotators (the
-   CLI requires `--mode` and has no default, and with exactly one annotator
-   the modes diverge sharply). Explain all four. If the user's stated goal
-   clearly points to one (e.g. "get the best possible value" with a single
-   annotator points to `sequential`), recommend it; the user picks:
+3. **Combination mode** — only with several primary annotators. With one, the
+   run is always `sequential` (it optimizes that annotator until its cutoff is
+   met) and the CLI refuses `--mode`: say so and skip this step. With several,
+   `--mode` is required: explain all four, recommend one if the user's stated
+   goal clearly points to it, and let the user pick:
    - `sequential` — primary annotators are optimized one at a time, in
      priority order (the order the user listed them). Each finished stage's own
      cutoff becomes a hard floor for every later stage. Reproduces plain
@@ -137,18 +137,17 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    Whatever the mode, guard-rails apply: a candidate that fails one is never
    eligible.
 
-4. **Seed compound (optional).** Ask for a SMILES. If the user names a
-   compound instead of pasting a SMILES, look it up from an authoritative
-   source (PubChem) and confirm by **InChIKey** before using it — never
-   write a SMILES from memory (see `CLAUDE.md`) — and show the user what it
-   resolved to so they can confirm it is the compound they meant. It goes in
-   the project's `input/smiles.csv` (header `smiles`, one molecule: several
-   seeds are not supported yet); `run --seed-smiles` overrides the file. Every Hub
-   generator needs a seed to run, so without one no candidates are produced
-   in round 1, and steps 5-6 below don't apply (no seed to be similar to, or
-   to score a baseline against).
+4. **Seed compounds.** `run` needs at least one. Ask for SMILES. If the user
+   names a compound instead of pasting a SMILES, look it up from an
+   authoritative source (PubChem) and confirm by **InChIKey** before using it
+   — never write a SMILES from memory (see `CLAUDE.md`) — and show the user
+   what it resolved to so they can confirm it is the compound they meant. They
+   go in the project's `input/smiles.csv` (header `smiles`, one SMILES per row).
+   With several, each seed is climbed in turn, in its own folder of the run
+   (`seed1/`, `seed2/`, ...), so the run takes about that many times longer.
+   `run --seed-smiles` gives a single seed instead of the file.
 
-5. **Tanimoto constraint (optional, only if a seed was given).** Ask
+5. **Tanimoto constraint (optional).** Ask
    whether to bound similarity to the seed at all, and if so add a row
    `rdkit,tanimoto,<cutoff>,<direction>,guard-rail` to `annotators.csv`
    (`higher` = stay at least this similar; `lower` = novelty-seeking, stay at
@@ -226,7 +225,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 
 7. **Generators and similarity.** There is no built-in generator list: propose
    one (`examples/inputs/csv/generators.csv` is a starting point), adjusted by
-   step 6's recommendation when a seed was given, and show it. The user accepts
+   step 6's recommendation, and show it. The user accepts
    it or removes/adds generators; the final list is theirs, and the skill
    never drops or adds one on its own. Whatever the user confirms is what
    step 9 writes to `generators.csv`. A similarity model is optional (at least
@@ -241,10 +240,12 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    message; relay it and let the user decide. If the user says a model should be
    there, suggest `chemsampler catalog --update`, which refreshes the catalog from the Hub.
    Similarity and generators are each optional, but at least one is needed.
-   `chemsampler fetch <ids>` (the samplers and the Hub annotators) writes
-   `generators.csv` and `similarity.csv` and fetches them; it asks before it
-   replaces those lists (`-f` does not ask), and leaves `annotators.csv` to be
-   written from step 1.
+   `chemsampler fetch <ids>` (the samplers and the Hub annotators, plus `rdkit`
+   if `mw`, `qed` or `tanimoto` is used) writes `generators.csv` and
+   `similarity.csv` and fetches them; it asks before it replaces those lists
+   (`-f` does not ask), and leaves `annotators.csv` to be written from step 1.
+   The RDKit annotators run in the `rdkit` environment, which only
+   `chemsampler fetch rdkit` builds; `run` refuses to start without it.
 
 8. **Remaining knobs.** Don't interrogate the user about each one, but don't
    apply any silently either: state the value that will be used, so it is
@@ -272,7 +273,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 9. **Where the run lives.** Every run needs a project: if there is none,
    propose `chemsampler init -p <name>` (one per analysis; it refuses a folder
    that exists, and records where the models go). Write the CSVs (and
-   `smiles.csv` with the seed) into its `input/` folder and let `run` pick its own dated folder under `runs/`,
+   `smiles.csv` with the seeds) into its `input/` folder and let `run` pick its own dated folder under `runs/`,
    which also stores an `inputs.json` of what was resolved — no output folder
    to choose and nothing stale to inherit. Give `-p <project>` to every command
    unless the working directory is inside the project.
@@ -297,8 +298,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
       only accepts certain scaffold types, or the seed being outside its
       working range) rather than silently omitting it.
     - The best score achieved (and which annotator it's against, in
-      `mode="sequential"`), plus that candidate's `tanimoto_to_seed` if a
-      seed was given.
+      `mode="sequential"`), plus that candidate's `tanimoto_to_seed`, for
+      each seed.
     - Which generator took the most wall-clock time, if that's visible
       (e.g. from timing chemsampler itself logs, or from run duration) —
       useful for the user to know which model is the bottleneck when
@@ -312,8 +313,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
     Point to the per-round CSVs for full detail rather than reproducing
     them wholesale in chat. Also close the loop on step 6's generator
     guidance empirically: each round's CSV already has a `source` column
-    (which generator(s) produced each candidate) and, if a seed was given,
-    `tanimoto_to_seed`. If one generator's candidates are consistently
+    (which generator(s) produced each candidate) and `tanimoto_to_seed`. If one generator's candidates are consistently
     filtered out by the Tanimoto gate, or it contributed nothing at all,
     tell the user and suggest dropping it from `generators.csv` for a
     re-run rather than silently carrying dead weight; the user decides.

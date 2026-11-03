@@ -30,10 +30,10 @@ a **store** that every project on the machine shares.
 
 ```bash
 chemsampler init -p my-run && cd my-run   # a project: input/ and runs/
-chemsampler fetch eos9p57 eos8nyg eos4zfy # get these models; writes input/generators.csv and similarity.csv
+chemsampler fetch eos9p57 eos8nyg eos4zfy rdkit # these models (writes input/generators.csv and similarity.csv) and the rdkit env
 $EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
-printf 'smiles\nCCO\n' > input/smiles.csv  # the seed
-chemsampler run --mode sequential
+printf 'smiles\nCCO\n' > input/smiles.csv  # the seeds, one per row
+chemsampler run                           # --mode only with several primaries
 ```
 
 `init` only creates a new folder; without `-p` it makes a dummy `chemsampler-test`.
@@ -49,8 +49,9 @@ my-run/                       ~/.chemsampler/        the store ($CHEMSAMPLER_HOM
 Every location is set once, by `init`, and written to the project's
 `chemsampler.json`; the other commands need only the project. They work anywhere
 inside it, or on any project with `-p PATH`. Each run writes a dated folder under
-`runs/` with its `summary.csv`, one `round<n>.csv` per round and an `inputs.json`
-of the models and the options it ran with. The paths are absolute: a copied project is refused until its
+`runs/` with an `inputs.json` of the models and the options it ran with, and one
+folder per seed (`seed1/`, `seed2/`, ...: the seeds are climbed one after
+another) with its `summary.csv` and one `round<n>.csv` per round. The paths are absolute: a copied project is refused until its
 `chemsampler.json` names its own `input/` and `runs/`.
 
 Rounds are saved as they finish, with a copy of the inputs. A run stopped in any
@@ -92,8 +93,10 @@ repeat, and leaves every model current:
   line) cannot be compared and count as matching; `fetch` says how many. Don't
   fetch while a run uses the same models.
 - An environment left half-built by an interrupted run is removed and rebuilt.
-- With an RDKit annotator in the inputs (`mw`, `qed`), `fetch` also builds a small
-  `rdkit` environment, which a cluster run scores it with.
+- The RDKit annotators (`mw`, `qed`, `tanimoto`) run in a small `rdkit`
+  environment, here and on a cluster. Only `chemsampler fetch rdkit` builds it
+  (alone, or with model ids); plain `fetch` says when it is missing, and `run`
+  refuses to start without it.
 
 ## Inputs
 
@@ -104,24 +107,25 @@ Annotators are required, and so is at least one of similarity and generators.
 | similarity | `similarity.csv` | one similarity-search model: `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT) or `eos80al` (Enamine Hit Locator) |
 | generators | `generators.csv` | generative models |
 | annotators | `annotators.csv` | models or RDKit functions that score molecules, each with a cutoff, a direction and a priority |
-| seed | `smiles.csv` | the starting molecule, header `smiles` (optional; `run --seed-smiles` overrides it) |
+| seeds | `smiles.csv` | the starting molecules, header `smiles`, one per row; each is climbed in turn (`run --seed-smiles` gives one instead) |
 
 A **primary** annotator is optimized; a **guard-rail** is one every candidate must
 satisfy. Any annotator can be either, including the RDKit ones: `mw`, `qed` and
-`tanimoto`, the similarity to the seed (e.g. `rdkit,tanimoto,0.4,higher,guard-rail`
+`tanimoto`, the similarity to the seed of each climb (e.g. `rdkit,tanimoto,0.4,higher,guard-rail`
 keeps candidates near it). Every model is checked against a bundled catalog of what
 the Hub currently labels for each role, which works offline. The exact columns, the
-project file and the catalog are in [docs/inputs.md](docs/inputs.md); the four
-ways to combine primaries (`sequential`, `joint`, `weighted`, `incremental`) and the
-Python API are in [docs/modes.md](docs/modes.md).
+project file and the catalog are in [docs/inputs.md](docs/inputs.md). With one
+primary a run is sequential; with several, `--mode` picks one of the four ways to
+combine them (`sequential`, `joint`, `weighted`, `incremental`), described with the
+Python API in [docs/modes.md](docs/modes.md).
 
 ## Running on a cluster
 
 `chemsampler run --hpc NAME` sends every model of a round to a Slurm cluster as its
 own job: the similarity and generative models side by side, then, once their
-candidates are put together, one job per annotator (`mw` and `qed` included;
-`tanimoto` is computed by the run itself). The
-terminal waits and says how many jobs are pending, running and done; each round is
+candidates are put together, one job per annotator (`mw`, `qed` and `tanimoto`
+included). The terminal waits, checking every 10 s (every 60 s once a step passes
+5 minutes), and says how many jobs are pending, running and done; each round is
 ranked as a local run would rank it. Ctrl-C cancels the run's jobs and keeps the
 rounds already finished.
 
@@ -144,7 +148,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | Command | Description |
 |---|---|
 | `chemsampler init` | Create a project for one analysis's inputs and results. |
-| `chemsampler fetch` | Clone (or pull) the models, download their checkpoints and build their conda environments, in the store. |
+| `chemsampler fetch` | Clone (or pull) the models, download their checkpoints and build their conda environments, in the store; `fetch rdkit` builds the RDKit annotators' one. |
 | `chemsampler run` | Generate and score candidate molecules across rounds, saving the result. |
 | `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
@@ -152,11 +156,12 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler store` | Show where models, environments and cluster profiles are kept, and how to move them. |
 
 ```bash
-chemsampler fetch eos9p57,eos8nyg qed -f        # set the project's samplers and fetch them
-chemsampler run -p my-run --mode joint            # from outside the project
-chemsampler run --mode joint --seed-smiles "CCO"   # another seed than input/smiles.csv
-chemsampler run --mode weighted --hpc mycluster    # models as Slurm jobs
-chemsampler run --mode weighted --hpc mycluster --detach   # the run is a job too
+chemsampler fetch eos9p57,eos8nyg rdkit -f      # set the project's samplers and fetch them
+chemsampler run -p my-run                        # from outside the project
+chemsampler run --mode weighted                  # several primaries: say how to combine them
+chemsampler run --seed-smiles "CCO"              # one seed instead of input/smiles.csv
+chemsampler run --hpc mycluster                  # models as Slurm jobs
+chemsampler run --hpc mycluster --detach         # the run is a job too
 chemsampler resume                               # continue the latest run where it stopped
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed

@@ -31,7 +31,7 @@ from .schema import (
 #: all of those, in the working directory). The CSVs' single column has the same
 #: name; annotators.csv has the columns of `schema.REQUIRED_FIELDS`.
 INPUT_NAMES = ("similarity", "generators", "annotators")
-#: The seed: `smiles.csv`, found the same way, with a single column `smiles`.
+#: The seeds: `smiles.csv`, found the same way, with a single column `smiles`.
 SEED_NAME = "smiles"
 PATH_KEYS = (
     "path_to_models",
@@ -52,7 +52,7 @@ class Inputs:
     models_dir: str | None
     envs_dir: str | None
     runs_dir: str | None
-    seed_smiles: str | None = None
+    seeds: tuple[str, ...] = ()
 
     def describe(self) -> dict:
         """What was resolved, to save next to a run's results."""
@@ -143,15 +143,15 @@ def load_inputs(
     -------
     Inputs
         The generator pool and the similarity model (each `None` if not given),
-        the annotators, the folder of model repositories, and the seed from
-        `smiles.csv` (`None` without one).
+        the annotators, the folder of model repositories, and the seeds from
+        `smiles.csv` (none without one).
 
     Raises
     ------
     ValueError
         If annotators, or both similarity and generators, are missing; an input
-        is given twice or malformed; `smiles.csv` holds no molecule, more than
-        one, or one RDKit cannot parse; a model is not in the catalog with the
+        is given twice or malformed; `smiles.csv` holds no molecule, one RDKit
+        cannot parse, or one molecule twice; a model is not in the catalog with the
         label its role needs; or a model folder is missing.
     """
     files = {
@@ -174,7 +174,7 @@ def load_inputs(
         models_dir=loaded["models_dir"],
         envs_dir=loaded["envs_dir"],
         runs_dir=loaded["runs_dir"],
-        seed_smiles=loaded["seed_smiles"],
+        seeds=loaded["seeds"],
     )
 
 
@@ -209,9 +209,9 @@ def load_annotators(
     return loaded["annotators"]
 
 
-def load_seed(config: str | None = None, path_to_models: str | None = None):
+def load_seeds(config: str | None = None, path_to_models: str | None = None):
     """
-    The seed in `smiles.csv`, found as `load_inputs` finds it.
+    The seeds in `smiles.csv`, found as `load_inputs` finds it.
 
     Parameters
     ----------
@@ -220,14 +220,14 @@ def load_seed(config: str | None = None, path_to_models: str | None = None):
 
     Returns
     -------
-    str or None
-        The seed's SMILES, or None when there is no `smiles.csv`.
+    tuple[str, ...]
+        The seeds' SMILES in file order; empty when there is no `smiles.csv`.
 
     Raises
     ------
     ValueError
-        If `smiles.csv` holds no molecule, more than one, or one RDKit cannot
-        parse.
+        If `smiles.csv` holds no molecule, one RDKit cannot parse, or the same
+        molecule twice.
     """
     return _read_seed(_locations(config, path_to_models, None))
 
@@ -382,8 +382,8 @@ def _read_ids_csv(path: Path, column: str) -> list[str]:
     return _unique_ids(ids, path.name)
 
 
-def _read_seed_csv(path: Path) -> str:
-    """The one SMILES of a `smiles.csv`; blank rows are skipped."""
+def _read_seed_csv(path: Path) -> tuple[str, ...]:
+    """The SMILES of a `smiles.csv`, in order; blank rows are skipped."""
     from rdkit import Chem
 
     with open(path, newline="") as f:
@@ -392,19 +392,31 @@ def _read_seed_csv(path: Path) -> str:
         rows = [row for row in reader if any(cell.strip() for cell in row)]
     if not rows:
         raise ValueError(
-            f"{path.name} has no molecule; remove the file for a run without a seed"
+            f"{path.name} has no molecule: list the seeds under the header, one "
+            "SMILES per row"
         )
-    if len(rows) > 1:
-        raise ValueError(
-            f"{path.name}: only one seed is supported for now, got {len(rows)} "
-            "(see https://github.com/ersilia-os/chem-sampler/issues/8)"
-        )
-    if len(rows[0]) != 1:
-        raise ValueError(f"{path.name}: expected one value, got {len(rows[0])}")
-    smiles = rows[0][0].strip()
-    if Chem.MolFromSmiles(smiles) is None:
-        raise ValueError(f"{path.name}: RDKit cannot read the SMILES {smiles!r}")
-    return smiles
+    seeds, rows_of = [], {}
+    for number, row in enumerate(rows, start=1):
+        if len(row) != 1:
+            raise ValueError(
+                f"{path.name} row {number}: expected one value, got {len(row)}"
+            )
+        smiles = row[0].strip()
+        # RDKit would read "CCO CCN" as CCO, the rest being a name
+        spaced = any(c.isspace() for c in smiles)
+        mol = None if spaced else Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(
+                f"{path.name} row {number}: RDKit cannot read the SMILES {smiles!r}"
+            )
+        same = rows_of.setdefault(Chem.MolToSmiles(mol), [])
+        same.append(number)
+        if len(same) > 1:
+            raise ValueError(
+                f"{path.name}: rows {same[0]} and {number} are the same molecule"
+            )
+        seeds.append(smiles)
+    return tuple(seeds)
 
 
 def _read_annotators_csv(path: Path) -> list[AnnotatorRow]:
@@ -620,12 +632,13 @@ def _read_inputs(names, loc: _Locations, files):
     return generators, similarity, rows
 
 
-def _read_seed(loc: _Locations) -> str | None:
-    """The seed from `smiles.csv`, or None when there is none."""
+def _read_seed(loc: _Locations) -> tuple[str, ...]:
+    """The seeds from `smiles.csv`, or none when there is none."""
     # a config file holds no seed, so there is nothing inline to read
-    return _find_source(
+    seeds = _find_source(
         SEED_NAME, None, {}, loc.models, _read_seed_csv, None, required=False
     )
+    return seeds or ()
 
 
 def _load(
@@ -644,7 +657,7 @@ def _load(
     """
     loc = _locations(config, path_to_models, path_to_model_repositories, path_to_envs)
     generators, similarity, rows = _read_inputs(names, loc, files)
-    seed_smiles = _read_seed(loc) if "generators" in names else None
+    seeds = _read_seed(loc) if "generators" in names else ()
 
     ersilia_annotators = [row.model for row in rows if row.source == "ersilia"]
     hub_ids = [*(generators or []), *(similarity or []), *ersilia_annotators]
@@ -665,7 +678,7 @@ def _load(
         "models_dir": models_dir,
         "envs_dir": envs_dir,
         "runs_dir": _as_text(loc.runs),
-        "seed_smiles": seed_smiles,
+        "seeds": seeds,
         "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,
         "similarity": None,

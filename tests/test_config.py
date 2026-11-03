@@ -744,7 +744,7 @@ def test_rdkit_annotators_need_the_rdkit_environment(
     ):
         load_inputs(path_to_models=str(inputs_dir))
     make_rdkit_env(store_root / "envs")
-    [_, mw, _qed] = load_inputs(path_to_models=str(inputs_dir)).annotators
+    [_, mw, _] = load_inputs(path_to_models=str(inputs_dir)).annotators
     assert mw.annotator.env_dir() == store_root / "envs" / "rdkit"
 
 

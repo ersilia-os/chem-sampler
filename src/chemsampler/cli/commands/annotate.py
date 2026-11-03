@@ -35,57 +35,77 @@ def annotate_cmd(
         click.secho("--source and --model go together.", fg="red")
         sys.exit(1)
 
-    from ...config import load_annotator, load_annotators, load_seed
+    from ...config import load_annotator, load_annotators, load_seeds
     from ...models.annotator import NEEDS_SEED, TanimotoAnnotator
     from ...optimize import annotate
     from ...project import PROJECT_FILE, locate_project
 
-    unseeded = []  # Tanimoto annotators left out: no seed to compare with
+    # Tanimoto annotators not counted: no seed to compare with, or several
+    # (one value per seed, shown apart)
+    apart, per_seed = [], {}
     try:
         if single:
             # without --path, load_annotator looks for a project from here itself
             marker = None if path is None else locate_project(path) / PROJECT_FILE
             config = None if marker is None else str(marker)
             annotator = load_annotator(source, model_id, config=config)
+            values = {model_id: annotator}
             if isinstance(annotator, TanimotoAnnotator):
-                seed = load_seed(config)
-                if seed is None:
+                seeds = load_seeds(config)
+                if not seeds:
                     raise ValueError(NEEDS_SEED)
-                annotator = annotator.against(seed)
-            value = annotator.score([smiles]).get(smiles, float("nan"))
+                values = _per_seed(model_id, annotator, seeds)
+            values = {
+                label: a.score([smiles]).get(smiles, float("nan"))
+                for label, a in values.items()
+            }
         else:
             marker = locate_project(path) / PROJECT_FILE
             annotators = load_annotators(str(marker))
-            seed = load_seed(str(marker))
-            if seed is None:
-                unseeded = [
+            seeds = load_seeds(str(marker))
+            if len(seeds) != 1:
+                apart = [
                     s for s in annotators if isinstance(s.annotator, TanimotoAnnotator)
                 ]
-                annotators = [s for s in annotators if s not in unseeded]
-                if not annotators:
+                annotators = [s for s in annotators if s not in apart]
+                if not annotators and not seeds:
                     raise ValueError(NEEDS_SEED)
-            result = annotate(smiles, annotators, seed)
+                for spec in apart:
+                    for label, a in _per_seed(
+                        spec.annotator_id, spec.annotator, seeds
+                    ).items():
+                        per_seed[label] = a.score([smiles]).get(smiles, float("nan"))
+            seed = seeds[0] if len(seeds) == 1 else None
+            result = annotate(smiles, annotators, seed) if annotators else None
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
 
     click.echo(f"smiles: {smiles}")
     if single:
-        click.echo(f"  {model_id}: {value}")
+        for label, value in values.items():
+            click.echo(f"  {label}: {value}")
         return
-
-    row = result.iloc[0]
+    row = None if result is None else result.iloc[0]
     for spec in annotators:
         click.echo(
             f"  {spec.annotator_id} [{spec.priority}] "
             f"({_describe(spec)}): {row[spec.annotator_id]}"
         )
-    for spec in unseeded:
+    for spec in apart:
+        lines = [
+            f"{label}: {value}"
+            for label, value in per_seed.items()
+            if label.startswith(f"{spec.annotator_id} ")
+        ]
+        why = "; ".join(lines) if lines else "needs a seed (input/smiles.csv)"
         click.secho(
-            f"  {spec.annotator_id} [{spec.priority}] ({_describe(spec)}): needs "
-            "a seed (input/smiles.csv); not counted",
+            f"  {spec.annotator_id} [{spec.priority}] ({_describe(spec)}): {why}; "
+            "not counted",
             fg="yellow",
         )
+    if row is None:
+        return
     primaries = [spec for spec in annotators if spec.priority == "primary"]
     guards = [spec for spec in annotators if spec.priority == "guard-rail"]
     satisfied = int(row["cutoffs_satisfied"])
@@ -97,6 +117,16 @@ def annotate_cmd(
             f"guard-rails {'all satisfied' if met else 'NOT all satisfied'}",
             fg="green" if met else "yellow",
         )
+
+
+def _per_seed(annotator_id: str, annotator, seeds) -> dict:
+    """The annotator bound to each seed, labelled by it when there are several."""
+    if len(seeds) == 1:
+        return {annotator_id: annotator.against(seeds[0])}
+    return {
+        f"{annotator_id} vs seed {k}": annotator.against(seed)
+        for k, seed in enumerate(seeds, start=1)
+    }
 
 
 def _describe(spec) -> str:

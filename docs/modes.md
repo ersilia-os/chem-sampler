@@ -3,8 +3,10 @@
 Generators and a similarity model propose molecules, and annotators score them.
 `hill_climb` alternates the two, promoting each round's best candidate to seed the
 next round. An annotator is either **primary** (optimized) or a **guard-rail**
-(a candidate that does not satisfy it never wins, in any mode). How the
-primaries combine is chosen with `mode`, which has no default. A lighter
+(a candidate that does not satisfy it never wins, in any mode). How several
+primaries combine is chosen with `mode`. With one primary a run is
+`sequential`, which optimizes it until its cutoff is met (`chemsampler run`
+refuses `--mode` then; `hill_climb` still takes any mode). A lighter
 `annotate(smiles, annotators, seed_smiles)` scores one molecule with no generation or rounds,
 which is handy for checking a seed's baseline.
 
@@ -43,15 +45,15 @@ which is handy for checking a seed's baseline.
 from chemsampler.config import load_inputs
 from chemsampler.optimize import hill_climb
 
-# run from inside a project: its inputs, its seed (input/smiles.csv) and the
-# store's models are found for you
+# run from inside a project: its inputs, its seeds (input/smiles.csv) and the
+# store's models are found for you; this climbs from the first seed
 inputs = load_inputs()
 summary, candidates_by_round = hill_climb(
     inputs.generators,
     inputs.annotators,
     similarity=inputs.similarity,
-    mode="sequential",
-    seed_smiles=inputs.seed_smiles,
+    mode="sequential",  # needed with several primaries; one is sequential anyway
+    seed_smiles=inputs.seeds[0],
 )
 ```
 
@@ -65,7 +67,9 @@ To limit similarity to the seed, add a Tanimoto annotator, e.g.
 `AnnotatorSpec("tanimoto", TanimotoAnnotator(), 0.4, "higher", priority="guard-rail")`
 (from `chemsampler.models.annotator`); `hill_climb` compares it with
 `seed_smiles`. `"lower"` pushes toward novelty instead, and as a primary it is
-optimized like any annotator.
+optimized like any annotator. RDKit annotators built by hand, as here, are
+computed with chemsampler's own RDKit; those `load_inputs` builds run in the
+project's `rdkit` environment (`chemsampler fetch rdkit`), with the same values.
 `seed_smiles` is optional (but required with a Tanimoto annotator); without one, round 1 is unconditionally the new
 best, but every Hub model needs a seed to run, so pass one in practice.
 

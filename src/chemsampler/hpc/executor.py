@@ -68,7 +68,8 @@ class SlurmExecutor:
     profile : Profile
         The cluster profile.
     run_dir : str or Path
-        The run's folder; the jobs' folders go in its `jobs/`.
+        The folder the jobs' folders go in (its `jobs/`), with `jobs.json`: one
+        seed's folder of the run (see `for_folder`).
     cluster : Cluster, optional
         What submits and checks the jobs (by default, the profile's).
     say : callable, optional
@@ -151,6 +152,13 @@ class SlurmExecutor:
         self._write_record()
 
     # --- the run's lifetime ---------------------------------------------------------
+
+    def for_folder(self, folder) -> "SlurmExecutor":
+        """
+        A new executor on the same profile and cluster whose jobs, and
+        `jobs.json`, go in `folder` (one seed's folder of the run).
+        """
+        return SlurmExecutor(self.profile, folder, cluster=self.cluster, say=self.say)
 
     def __enter__(self):
         self._take_over()

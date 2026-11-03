@@ -26,10 +26,13 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
     """
     Run, or continue, the run in `run_dir`, then report and exit as `run` does.
 
-    Every round's table is saved as soon as it is made, and rounds already in
-    `run_dir` are read back instead of run again (see `hill_climb`'s
-    `checkpoint`). `input_dir` is given for a new run: the folder is made, with a
-    copy of the inputs, once the cluster (if any) has been checked.
+    Each seed is climbed in turn, in its own folder (`runs.seed_folders`). Every
+    round's table is saved as soon as it is made, and rounds already saved are
+    read back instead of run again (see `hill_climb`'s `checkpoint`), so a seed
+    that finished is only read. A stop or a failure saves the current seed's
+    finished rounds and leaves the later seeds for `resume`. `input_dir` is given
+    for a new run: the folder is made, with a copy of the inputs, once the
+    cluster (if any) has been checked.
     """
     import contextlib
     import time
@@ -67,50 +70,56 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
         sys.exit(0)
 
     runs.set_status(run_dir, record, "running")
-    summary, candidates_by_round = pd.DataFrame(), {}
+    seeds = options["seeds"]
+    folders = runs.seed_folders(run_dir, len(seeds))
+    summaries = []
+    folder = folders[0]
     previous = signal.signal(signal.SIGTERM, _stop_on_sigterm)
     try:
-        with cluster as executor, execution.use(executor):
-            summary, candidates_by_round = hill_climb(
-                inputs.generators,
-                inputs.annotators,
-                mode=options["mode"],
-                similarity=inputs.similarity,
-                seed_smiles=options["seed_smiles"],
-                n_rounds=options["n_rounds"],
-                n_steps=options["n_steps"],
-                tolerance=options["tolerance"],
-                checkpoint=run_dir,
-            )
+        for k, (seed, folder) in enumerate(zip(seeds, folders), start=1):
+            if len(seeds) > 1:
+                click.echo(f"Seed {k} of {len(seeds)}: {seed} ({folder.name}/)")
+            # each seed's jobs and jobs.json go in its own folder
+            here = cluster if hpc is None else cluster.for_folder(folder)
+            with here as executor, execution.use(executor):
+                summary, candidates_by_round = hill_climb(
+                    inputs.generators,
+                    inputs.annotators,
+                    mode=options["mode"],
+                    similarity=inputs.similarity,
+                    seed_smiles=seed,
+                    n_rounds=options["n_rounds"],
+                    n_steps=options["n_steps"],
+                    tolerance=options["tolerance"],
+                    checkpoint=folder,
+                )
+            write_results(summary, candidates_by_round, folder)
+            summaries.append(summary)
         elapsed = time.time() - start_time
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         # a model that failed midway: the rounds before it are still results
         if hasattr(e, "partial"):
-            write_results(*e.partial, run_dir)
-            click.secho(f"Finished rounds written to {run_dir}", fg="yellow")
+            write_results(*e.partial, folder)
+            click.secho(f"Finished rounds written to {folder}", fg="yellow")
         runs.set_status(run_dir, record, "failed")
         runs.release_lock(run_dir)
         click.echo(f"Once fixed, continue it with `chemsampler resume {name}`.")
         sys.exit(1)
     except KeyboardInterrupt as e:
         click.secho("\nInterrupted! Saving partial results...", fg="yellow")
-        summary, candidates_by_round = getattr(
-            e, "partial", (summary, candidates_by_round)
-        )
-        write_results(summary, candidates_by_round, run_dir)
+        write_results(*getattr(e, "partial", (pd.DataFrame(), {})), folder)
         runs.set_status(run_dir, record, "stopped")
         runs.release_lock(run_dir)
-        click.secho(f"Partial results written to {run_dir}", fg="yellow")
+        click.secho(f"Partial results written to {folder}", fg="yellow")
         click.echo(f"Continue it with `chemsampler resume {name}`.")
         sys.exit(0)
     finally:
         signal.signal(signal.SIGTERM, previous)
 
-    write_results(summary, candidates_by_round, run_dir)
     runs.set_status(run_dir, record, "finished")
     runs.release_lock(run_dir)
-    _report(summary, elapsed, options["verbose"], run_dir)
+    _report(seeds, summaries, folders, elapsed, options["verbose"], run_dir)
 
 
 def detach_run(inputs, record: dict, run_dir, project_root, input_dir=None) -> None:
@@ -154,36 +163,27 @@ def detach_run(inputs, record: dict, run_dir, project_root, input_dir=None) -> N
     say_detached(run_dir, job_id)
 
 
-def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
-    if summary.empty:
-        click.secho("No candidates were generated; nothing to report.", fg="yellow")
-    else:
+def _report(seeds, summaries, folders, elapsed: float, verbose: bool, run_dir) -> None:
+    for seed, summary, folder in zip(seeds, summaries, folders):
+        where = f" from {seed} ({folder.name}/)" if len(seeds) > 1 else ""
+        if summary.empty:
+            click.secho(f"No candidates were generated{where}.", fg="yellow")
+            continue
         best = summary.iloc[-1]
         click.secho(
-            f"Best candidate: {best['smiles']} (round {best['round']}, "
+            f"Best candidate{where}: {best['smiles']} (round {best['round']}, "
             f"score={best['score']})",
             fg="green",
         )
-
         if not verbose:
-            click.echo()
-            runtime_mins = elapsed / 60
-            click.secho(f"Total runtime: {runtime_mins:.1f} min", fg="cyan")
-
-            top_n = min(5, len(summary))
-            top_scores = (
-                summary.nlargest(top_n, "score")
-                if "score" in summary.columns
-                else summary.head(top_n)
-            )
-            if len(top_scores) > 0:
-                click.secho("Top scores:", fg="cyan")
-                for idx, row in top_scores.iterrows():
-                    click.secho(
-                        f"  Round {int(row['round'])}: {row['score']:.2f}",
-                        fg="cyan",
-                    )
-
+            top = summary.nlargest(min(5, len(summary)), "score")
+            click.secho("Top scores:", fg="cyan")
+            for _, row in top.iterrows():
+                click.secho(
+                    f"  Round {int(row['round'])}: {row['score']:.2f}", fg="cyan"
+                )
+    if not verbose:
+        click.secho(f"Total runtime: {elapsed / 60:.1f} min", fg="cyan")
     click.secho(f"Results written to {run_dir}", fg="green")
 
 
@@ -200,7 +200,7 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
 @click.option(
     "--seed-smiles",
     default=None,
-    help="SMILES of the starting molecule (default: input/smiles.csv).",
+    help="One SMILES to start from (default: the seeds in input/smiles.csv).",
 )
 @click.option(
     "--n-rounds",
@@ -251,9 +251,8 @@ def run_cmd(
     detach: bool,
     verbose: bool,
 ) -> None:
-    """Generate and score candidates around a seed, round by round."""
+    """Generate and score candidates around each seed, round by round."""
     from ...config import load_inputs
-    from ...models.annotator import NEEDS_SEED, TanimotoAnnotator
     from ...optimize import resolve_mode
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger
@@ -273,14 +272,27 @@ def run_cmd(
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
-    if seed_smiles is None:
-        seed_smiles = inputs.seed_smiles
-    elif inputs.seed_smiles is not None:
-        click.secho("--seed-smiles given: ignoring input/smiles.csv", fg="yellow")
-    if seed_smiles is None and any(
-        isinstance(s.annotator, TanimotoAnnotator) for s in inputs.annotators
-    ):
-        click.secho(NEEDS_SEED, fg="red")
+    seeds = inputs.seeds
+    if seed_smiles is not None:
+        from rdkit import Chem
+
+        # RDKit would read "CCO CCN" as CCO, the rest being a name
+        spaced = any(c.isspace() for c in seed_smiles.strip())
+        if spaced or Chem.MolFromSmiles(seed_smiles) is None:
+            click.secho(
+                f"--seed-smiles takes one SMILES; RDKit cannot read {seed_smiles!r} "
+                "as one (put several seeds in input/smiles.csv)",
+                fg="red",
+            )
+            sys.exit(1)
+        if seeds:
+            click.secho("--seed-smiles given: ignoring input/smiles.csv", fg="yellow")
+        seeds = (seed_smiles,)
+    if not seeds:
+        click.secho(
+            "give a seed: input/smiles.csv (one SMILES per row) or --seed-smiles",
+            fg="red",
+        )
         sys.exit(1)
     # the models it used and how it was launched: enough to run it again
     record = {
@@ -288,7 +300,7 @@ def run_cmd(
         "run": {
             "chemsampler_version": _chemsampler_version(),
             "mode": mode,
-            "seed_smiles": seed_smiles,
+            "seeds": list(seeds),
             "n_rounds": n_rounds,
             "n_steps": n_steps,
             "tolerance": tolerance,

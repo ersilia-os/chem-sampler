@@ -10,11 +10,12 @@
 2. When all of them are done, their candidates are put together (as a local run
    does).
 3. Every annotator starts, one job each: Hub models and the RDKit ones (`mw`,
-   `qed`). `tanimoto` is no job: the run computes it itself.
+   `qed`, `tanimoto`, with the `rdkit` environment).
 4. When all of them are done, the round is ranked and its best molecule seeds the
    next round.
 
-The seed itself is scored first, as round 0. The terminal shows one line whenever
+The seed itself is scored first, as round 0. With several seeds, each is climbed
+in turn, in its own folder of the run. The terminal shows one line whenever
 the jobs of a step change state:
 
 ```
@@ -52,7 +53,8 @@ you start from and the run's own job.
 `run --hpc` checks and lists every problem before submitting anything:
 
 - every model has the environment `chemsampler fetch` built, and the `rdkit`
-  environment is there when `mw` or `qed` is used;
+  environment (`chemsampler fetch rdkit`) is there when `mw`, `qed` or
+  `tanimoto` is used;
 - Slurm's commands answer, and the partition and nodes exist;
 - the run's folders, the models and their environments are visible from the
   cluster.
@@ -66,8 +68,9 @@ which has chemsampler's own RDKit version, so scores equal a local run's.
 
 ## What a run leaves in its folder
 
-Besides the usual `summary.csv`, `round<n>.csv` and `inputs.json` (whose `run`
-entry names the profile), a cluster run writes:
+Besides the usual `inputs.json` (whose `run` entry names the profile) and, in
+each seed's folder (`seed<k>/`), `summary.csv` and `round<n>.csv`, a cluster run
+writes in each seed's folder:
 
 - `jobs.json`: every job, with its step, model, Slurm id, state, node, submit,
   start and end times, run time and exit code;

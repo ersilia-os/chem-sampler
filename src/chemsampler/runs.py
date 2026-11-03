@@ -1,7 +1,8 @@
 """A run's folder: what the run started with, how far it got, and who runs it.
 
 `chemsampler run` makes the folder before the first round, with a copy of the
-inputs and an `inputs.json` of the options. Every round's table is saved in it
+inputs and an `inputs.json` of the options. Each seed is climbed in a folder of
+its own (`seed<k>/`), one after another, and every round's table is saved there
 as soon as it is made (see `hill_climb`'s `checkpoint`), so a run stopped in any
 way, even killed, continues with `chemsampler resume` from what is there.
 """
@@ -23,6 +24,15 @@ INPUT_FILES = ("similarity.csv", "generators.csv", "annotators.csv", "smiles.csv
 
 #: Who is running the run right now: host, process and Slurm job.
 LOCK_FILE = "run.lock"
+
+
+def seed_folders(run_dir, count: int) -> list[Path]:
+    """
+    The folder of each of `count` seeds, in order: `seed1`, `seed2`, ... (with
+    10 or more, `seed01`, ..., so that they sort in order).
+    """
+    width = len(str(count))
+    return [Path(run_dir) / f"seed{k:0{width}d}" for k in range(1, count + 1)]
 
 
 def start(run_dir, input_dir, record: dict) -> None:

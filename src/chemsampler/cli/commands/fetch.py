@@ -85,11 +85,8 @@ def fetch_cmd(path: str | None, force: bool, ids: tuple[str, ...]) -> None:
 
     if roles is not None:
         plan = _named(plan, roles, rdkit)
-    if (
-        plan.rdkit_annotators
-        and not plan.rdkit
-        and not is_complete(plan.envs_dir / RDKIT_ENV)
-    ):
+    missing = not is_complete(plan.envs_dir / RDKIT_ENV)
+    if plan.rdkit_annotators and not plan.rdkit and missing:
         click.secho(
             f"input/annotators.csv uses {', '.join(plan.rdkit_annotators)}, "
             "which run in the rdkit environment: build it with "
