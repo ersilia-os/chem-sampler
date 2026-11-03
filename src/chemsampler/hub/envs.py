@@ -29,6 +29,11 @@ def write_marker(env: Path, **info) -> None:
     (Path(env) / ENV_MARKER).write_text(json.dumps(info, indent=2) + "\n")
 
 
+def update_marker(env: Path, **info) -> None:
+    """Change what the marker of a complete environment records, keeping the rest."""
+    write_marker(env, **{**(read_marker(env) or {}), **info})
+
+
 def read_marker(env: Path) -> dict | None:
     """What `write_marker` recorded, or None if the build did not finish."""
     try:

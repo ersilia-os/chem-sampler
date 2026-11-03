@@ -174,7 +174,7 @@ chemsampler run --hpc mycluster --detach         # the run is a job too
 chemsampler resume                               # continue the latest run where it stopped
 chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed
-chemsampler catalog                              # * marks what the current project needs
+chemsampler catalog                              # used / version / cloned / env ready, and why a model is not ready
 chemsampler catalog --hub --role generators
 ```
 

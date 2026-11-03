@@ -38,6 +38,16 @@ def _catalog(*args):
     return CliRunner().invoke(cli, ["catalog", *args])
 
 
+def _cells(output, model):
+    """The table row of `model` as {column: cell}; cells are separated by 2+ spaces."""
+    header = ["role", "model", "used", "version", "cloned", "env ready", "title"]
+    for line in output.splitlines():
+        parts = re.split(r"\s{2,}", line.strip())
+        if len(parts) > 1 and parts[1] == model and parts[0] != "role":
+            return dict(zip(header, parts))
+    raise AssertionError(f"no row for {model} in:\n{output}")
+
+
 # --- what this machine has -------------------------------------------------------------
 
 
@@ -52,13 +62,15 @@ def test_the_local_listing_says_where_it_looked_and_what_it_found(
     assert f"Models in {store_root / 'models'}" in result.output
     assert f"environments in {store_root / 'envs'}" in result.output
     lines = result.output.splitlines()
-    assert any(
-        "generators" in line
-        and "eos9p57" in line
-        and "ok" in line
-        and "CReM Growth" in line
-        for line in lines
-    )
+    assert _cells(result.output, "eos9p57") == {
+        "role": "generators",
+        "model": "eos9p57",
+        "used": "no",
+        "version": "-",
+        "cloned": "yes",
+        "env ready": "yes",
+        "title": "CReM Growth",
+    }
     assert any("similarity" in line and "eos8nyg" in line for line in lines)
     assert any(
         "annotators" in line and "eos4zfy" in line and "MAIP" in line for line in lines
@@ -70,10 +82,7 @@ def test_an_unfinished_environment_is_visible(store_root, fake_fetch):
 
     result = _catalog()
 
-    assert any(
-        "eos9taz" in line and "unfinished" in line
-        for line in result.output.splitlines()
-    )
+    assert _cells(result.output, "eos9taz")["env ready"] == "unfinished"
 
 
 def test_an_empty_store_says_how_to_fill_it(store_root):
@@ -95,11 +104,14 @@ def test_a_project_marks_the_models_it_needs(
 
     result = _catalog()
 
-    rows = [
-        line for line in result.output.splitlines() if re.match(r"^\* \w+ +eos", line)
-    ]
-    assert {line.split()[2] for line in rows} == {"eos9taz", "eos8nyg", "eos4zfy"}
-    assert "* needed by this project" in result.output  # the legend, not a model
+    used = {
+        model
+        for model in ("eos9taz", "eos9p57", "eos8nyg", "eos4zfy")
+        if _cells(result.output, model)["used"] == "yes"
+    }
+    assert used == {"eos9taz", "eos8nyg", "eos4zfy"}
+    assert _cells(result.output, "eos9taz")["version"] == "live"
+    assert _cells(result.output, "eos9p57")["version"] == "-"
 
 
 def test_models_a_project_needs_but_has_not_fetched_are_called_out(
@@ -111,12 +123,11 @@ def test_models_a_project_needs_but_has_not_fetched_are_called_out(
 
     result = _catalog()
 
-    assert any(
-        line.startswith("*") and "eos8nyg" in line
-        for line in result.output.splitlines()
-    )
-    assert "2 model(s) this project needs are not ready" in result.output
-    assert "eos8nyg" in result.output and "chemsampler fetch" in result.output
+    cells = _cells(result.output, "eos8nyg")
+    assert (cells["used"], cells["cloned"], cells["env ready"]) == ("yes", "no", "no")
+    assert "2 model(s) this project uses are not ready" in result.output
+    assert "eos8nyg: not cloned" in result.output
+    assert "chemsampler fetch" in result.output
 
 
 def test_a_cloned_model_whose_environment_failed_counts_as_not_ready(
@@ -129,7 +140,8 @@ def test_a_cloned_model_whose_environment_failed_counts_as_not_ready(
 
     result = _catalog()
 
-    assert "1 model(s) this project needs are not ready (eos4zfy)" in result.output
+    assert "1 model(s) this project uses are not ready" in result.output
+    assert "eos4zfy: environment unfinished" in result.output
 
 
 def test_unreadable_project_inputs_are_explained_not_fatal(
@@ -179,9 +191,7 @@ def test_a_project_is_listed_from_the_folders_it_names(tmp_path):
     result = _catalog("-p", str(tmp_path / "proj"))
 
     assert f"Models in {clones}" in result.output
-    assert any(
-        "eos9taz" in line and "ok" in line for line in result.output.splitlines()
-    )
+    assert _cells(result.output, "eos9taz")["env ready"] == "yes"
 
 
 def test_a_folder_named_alone_has_no_environments_to_report(tmp_path):
@@ -309,8 +319,7 @@ def test_a_marker_file_that_names_its_own_models_is_listed_from_there(
     assert any("eos9taz" in line for line in lines)
     # eos4zfy is complete in the store, but this project keeps its own models:
     # the store's copy must not be counted
-    assert any("eos4zfy" in line and "missing" in line for line in lines)
-    assert not any("eos4zfy" in line and " ok " in line for line in lines)
+    assert _cells(result.output, "eos4zfy")["env ready"] == "no"
 
 
 def test_a_listing_prints_only_the_listing(
@@ -345,9 +354,11 @@ def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
     fake_fetch("rdkit")
     ready = _catalog()
 
-    line = "The rdkit environment (mw, qed and tanimoto):"
-    assert f"{line} missing; run `chemsampler fetch rdkit`" in missing.output
-    assert f"{line} ok" in ready.output
+    assert _cells(missing.output, "rdkit")["env ready"] == "no"
+    assert _cells(missing.output, "rdkit")["used"] == "yes"
+    assert "rdkit: environment missing" in missing.output
+    assert _cells(ready.output, "rdkit")["env ready"] == "yes"
+    assert "rdkit: environment" not in ready.output
 
 
 def test_a_project_without_rdkit_annotators_does_not_mention_it(
@@ -357,4 +368,4 @@ def test_a_project_without_rdkit_annotators_does_not_mention_it(
     fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
 
-    assert "rdkit environment" not in _catalog().output
+    assert "mw, qed, tanimoto" not in _catalog().output

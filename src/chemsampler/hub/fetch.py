@@ -21,7 +21,7 @@ from pathlib import Path
 import yaml
 
 from ..store import state_path
-from .envs import RDKIT_ENV, is_complete, write_marker
+from .envs import RDKIT_ENV, is_complete, read_marker, update_marker, write_marker
 
 #: Models are cloned from here; the clone folder must be named exactly like the
 #: model, because `eosvc` derives the S3 path from the folder name.
@@ -767,6 +767,8 @@ def _ensure_env(
     check = check_env(env_dir, recipe, log)
     if check.matches:
         result.env = "ok"
+        if commit and (read_marker(env_dir) or {}).get("commit") != commit:
+            update_marker(env_dir, commit=commit)  # still right for this commit
     elif rebuild:
         say(f"{name}: the environment differs from its recipe, rebuilding")
         shutil.rmtree(env_dir)

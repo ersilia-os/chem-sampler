@@ -5,13 +5,16 @@ per model, never an environment's contents. `pip list` or `du` over an
 environment took tens of seconds on a shared filesystem.
 """
 
-from collections.abc import Sequence
+import dataclasses
+import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from .catalog import ROLES, Catalog
 from .client import SIMILARITY_MODEL_IDS
-from .envs import env_path, is_complete
+from .envs import env_path, is_complete, read_marker
+from .fetch import LIVE, release_problem
 
 
 @dataclass(frozen=True)
@@ -22,8 +25,14 @@ class LocalModel:
     role: str  # "generators" | "similarity" | "annotators" | "unknown"
     title: str
     cloned: bool
-    env: str  # "ok" | "unfinished" | "missing" | "-" when no environments are used
-    needed: bool  # asked for by the current project's inputs
+    #: "ok" | "unfinished" | "missing" | "stale" (built from another commit than
+    #: the clone is at) | "-" when no environments are used
+    env: str
+    used: bool  # named in one of the current project's input lists
+    version: str | None = None  # what the inputs ask for
+    at: str | None = None  # what the clone is at: a tag, "live" or a commit
+    #: Why a used model is not ready, or None. Only used models have one.
+    problem: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,20 +58,89 @@ def present_models(models_dir) -> set[str]:
         return set()
 
 
-def env_state(envs_dir, model_id: str) -> str:
+def _git(model_dir, *args) -> str | None:
+    found = subprocess.run(
+        ["git", "-C", str(model_dir), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return found.stdout.strip() if found.returncode == 0 else None
+
+
+def _is_git(model_dir) -> bool:
+    return (Path(model_dir) / ".git").is_dir()
+
+
+def stale_commits(envs_dir, models_dir, model_id: str) -> tuple[str, str] | None:
+    """
+    The commit a complete environment was built from and the one the clone is at,
+    if they differ; None if they agree or either is unknown (a model that is no
+    git clone, an environment that records no commit).
+    """
+    clone = Path(models_dir) / model_id
+    if not _is_git(clone):
+        return None
+    built = (read_marker(env_path(envs_dir, model_id)) or {}).get("commit")
+    head = _git(clone, "rev-parse", "HEAD")
+    if not built or not head or head.startswith(built):
+        return None
+    return built, head[: len(built)]
+
+
+def env_state(envs_dir, model_id: str, models_dir=None) -> str:
     """`ok` if the environment was built completely, `unfinished` if a build was
-    interrupted, `missing` if there is none. Reads one file, never the environment."""
+    interrupted, `missing` if there is none. With `models_dir`, a complete one built
+    from another commit than its clone is at is `stale`. Reads the marker only,
+    never the environment."""
     env = env_path(envs_dir, model_id)
     if not env.exists():
         return "missing"
-    return "ok" if is_complete(env) else "unfinished"
+    if not is_complete(env):
+        return "unfinished"
+    if models_dir is not None and stale_commits(envs_dir, models_dir, model_id):
+        return "stale"
+    return "ok"
+
+
+def version_at(model_dir, wanted: str | None = None) -> str | None:
+    """
+    What a clone is at: `wanted` if it is there, else "live" on the main branch,
+    else the release tag it sits on, else its commit. None for a folder that is no
+    git clone (a model `ersilia fetch` left), which has no version to compare.
+    """
+    if not _is_git(model_dir):
+        return None
+    if wanted and release_problem(Path(model_dir), wanted) is None:
+        return wanted
+    if release_problem(Path(model_dir), LIVE) is None:
+        return LIVE
+    return _git(model_dir, "describe", "--tags", "--exact-match", "HEAD") or _git(
+        model_dir, "rev-parse", "--short", "HEAD"
+    )
+
+
+def _problem(model, wanted, at, models_dir, envs_dir) -> str | None:
+    """Why a used model is not ready, in words, or None."""
+    if not model.cloned:
+        return "not cloned"
+    reasons = []
+    if wanted and at and release_problem(Path(models_dir) / model.model_id, wanted):
+        reasons.append(f"cloned at {at}, the inputs ask for {wanted}")
+    if model.env in ("missing", "unfinished"):
+        reasons.append(f"environment {model.env}")
+    elif model.env == "stale":
+        built, head = stale_commits(envs_dir, models_dir, model.model_id)
+        reasons.append(f"environment built from {built}, the clone is at {head}")
+    return "; ".join(reasons) or None
 
 
 def list_local(
     models_dir,
     envs_dir,
     *,
-    needed: Sequence[str] = (),
+    used: Sequence[str] = (),
+    versions: Mapping[str, str] | None = None,
     catalog: Catalog | None = None,
     role: str | None = None,
 ) -> list[LocalModel]:
@@ -75,9 +153,12 @@ def list_local(
         The folders with the clones and the environments. `envs_dir` may be None
         for models that bring their own interpreter (as `ersilia fetch` leaves
         them), which have no environment to report.
-    needed : Sequence[str]
-        Models the current project's inputs ask for. Those the store lacks are
-        listed too, so a missing one is visible.
+    used : Sequence[str]
+        Models named in the current project's input lists. Those the store lacks
+        are listed too, so a missing one is visible.
+    versions : Mapping[str, str], optional
+        The version the inputs ask for, per used model: a clone at another one is
+        reported in its `problem`.
     catalog : Catalog, optional
         Gives each model its role and title; without it they are "unknown".
     role : str, optional
@@ -86,18 +167,27 @@ def list_local(
     known = catalog.by_id() if catalog is not None else {}
     present = present_models(models_dir)
     models = []
-    for model_id in sorted(present | set(needed)):
+    versions = versions or {}
+    for model_id in sorted(present | set(used)):
         entry = known.get(model_id)
-        models.append(
-            LocalModel(
-                model_id=model_id,
-                role=entry.role if entry else "unknown",
-                title=entry.title if entry else "",
-                cloned=model_id in present,
-                env="-" if envs_dir is None else env_state(envs_dir, model_id),
-                needed=model_id in needed,
-            )
+        cloned = model_id in present
+        wanted = versions.get(model_id)
+        at = version_at(Path(models_dir) / model_id, wanted) if cloned else None
+        model = LocalModel(
+            model_id=model_id,
+            role=entry.role if entry else "unknown",
+            title=entry.title if entry else "",
+            cloned=cloned,
+            env="-" if envs_dir is None else env_state(envs_dir, model_id, models_dir),
+            used=model_id in used,
+            version=wanted if model_id in used else None,
+            at=at,
         )
+        if model.used:
+            model = dataclasses.replace(
+                model, problem=_problem(model, wanted, at, models_dir, envs_dir)
+            )
+        models.append(model)
     if role is not None:
         models = [m for m in models if m.role == role]
     order = (*ROLES, "unknown")

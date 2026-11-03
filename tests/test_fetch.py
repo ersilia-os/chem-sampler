@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from chemsampler.hub import fetch
-from chemsampler.hub.envs import env_path, is_complete, write_marker
+from chemsampler.hub.envs import env_path, is_complete, read_marker, write_marker
 from chemsampler.hub.fetch import (
     FetchPlan,
     check_env,
@@ -383,6 +383,20 @@ def test_a_new_clone_lands_on_the_release_asked_for_not_on_main(system, plan):
 
     assert result.clone == "cloned at v1.0.0"
     assert _head(plan) == _tag(plan, "v1.0.0")
+
+
+def test_an_environment_that_still_matches_follows_the_clone_to_a_new_commit(
+    system, plan
+):
+    fetch_models(plan, say=_say([]))
+    env = plan.envs_dir / "eos1aaa"
+    assert _head(plan).startswith(read_marker(env)["commit"])
+    system.release("eos1aaa", "v1.1.0")  # a new commit with the same recipe
+
+    [result] = fetch_models(_at(plan, "v1.1.0"), update=True, say=_say([]))
+
+    assert result.env == "ok"  # nothing to rebuild ...
+    assert _head(plan).startswith(read_marker(env)["commit"])  # no longer stale
 
 
 def test_without_update_a_clone_at_another_release_is_only_reported(system, plan):
