@@ -194,8 +194,8 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
 @click.option(
     "--mode",
     type=click.Choice(["joint", "sequential", "weighted", "incremental"]),
-    required=True,
-    help="How the primary annotators combine into a round's winner.",
+    default=None,
+    help="How the primaries combine (needed with several; one is always sequential).",
 )
 @click.option(
     "--seed-smiles",
@@ -242,7 +242,7 @@ def _report(summary, elapsed: float, verbose: bool, run_dir) -> None:
 )
 def run_cmd(
     path: str | None,
-    mode: str,
+    mode: str | None,
     seed_smiles: str | None,
     n_rounds: int,
     n_steps: int | None,
@@ -254,6 +254,7 @@ def run_cmd(
     """Generate and score candidates around a seed, round by round."""
     from ...config import load_inputs
     from ...models.annotator import NEEDS_SEED, TanimotoAnnotator
+    from ...optimize import resolve_mode
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger
 
@@ -263,6 +264,12 @@ def run_cmd(
     try:
         root = locate_project(path)
         inputs = load_inputs(str(root / PROJECT_FILE))
+        primaries = [s for s in inputs.annotators if s.priority == "primary"]
+        if mode is not None and len(primaries) == 1:
+            raise ValueError(
+                "with one primary annotator a run is always sequential: drop --mode"
+            )
+        mode = resolve_mode(mode, inputs.annotators)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)

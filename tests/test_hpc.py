@@ -43,7 +43,7 @@ RUN_SH = {
 }
 ANNOTATORS = (
     "source,model,cutoff,direction,priority\n"
-    "ersilia,eos4zfy,0,higher,primary\n"
+    "ersilia,eos4zfy,1000,higher,primary\n"
     "rdkit,qed,0-1,range,guard-rail\n"
 )
 PROFILES = {"test": {"partition": "fake", "nodes": ["node-a", "node-b"]}}
@@ -160,8 +160,7 @@ def cluster(monkeypatch):
 def _run(root, *args):
     return CliRunner().invoke(
         cli,
-        ["run", "-p", str(root), "--mode", "weighted", "--seed-smiles", "CCO"]
-        + ["--n-rounds", "2", *args],
+        ["run", "-p", str(root), "--seed-smiles", "CCO"] + ["--n-rounds", "2", *args],
     )
 
 
@@ -601,7 +600,7 @@ def test_a_tanimoto_annotator_is_scored_here_and_needs_no_rdkit_environment(
     (store_root / "envs" / "rdkit" / ".chemsampler-env.json").unlink()
     (project / "input" / "annotators.csv").write_text(
         "source,model,cutoff,direction,priority\n"
-        "ersilia,eos4zfy,0,higher,primary\n"
+        "ersilia,eos4zfy,1000,higher,primary\n"
         "rdkit,tanimoto,0-1,range,guard-rail\n"
     )
 

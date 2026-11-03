@@ -81,8 +81,6 @@ def _run(root, *args):
             "run",
             "-p",
             str(root),
-            "--mode",
-            "sequential",
             "--seed-smiles",
             "CCO",
             "--n-rounds",
@@ -117,13 +115,38 @@ def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
     assert round1["guardrails_satisfied"].tolist() == [False]  # CCN weighs about 45 Da
 
 
-def test_run_requires_mode(tmp_path):
+def test_one_primary_runs_sequentially_without_a_mode(tmp_path):
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0-1000", "range", "guard-rail"]])
+
+    result = _run(root)
+
+    assert result.exit_code == 0, result.output
+    saved = json.loads((_run_dir(root) / "inputs.json").read_text())
+    assert saved["run"]["mode"] == "sequential"
+
+
+@pytest.mark.parametrize("mode", ["joint", "sequential"])
+def test_one_primary_takes_no_mode(tmp_path, mode):
     root = _inputs(tmp_path)
 
-    result = CliRunner().invoke(cli, ["run", "-p", str(root)])
+    result = _run(root, "--mode", mode)
 
-    assert result.exit_code != 0
-    assert "--mode" in result.output
+    assert result.exit_code == 1
+    assert "a run is always sequential: drop --mode" in result.output
+    assert not list((root / "runs").iterdir())
+
+
+def test_several_primaries_need_a_mode(tmp_path):
+    root = _inputs(tmp_path, [QED, ["rdkit", "mw", "0", "higher", "primary"]])
+
+    refused = _run(root)
+    weighted = _run(root, "--mode", "weighted")
+
+    assert refused.exit_code == 1
+    assert "with 2 primary annotators a mode is needed (--mode)" in refused.output
+    assert weighted.exit_code == 0, weighted.output
+    saved = json.loads((_run_dir(root) / "inputs.json").read_text())
+    assert saved["run"]["mode"] == "weighted"
 
 
 def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
@@ -141,9 +164,7 @@ def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
 def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
     root = _inputs(tmp_path, fetched=False)
 
-    result = CliRunner().invoke(
-        cli, ["run", "-p", str(root), "--mode", "sequential", "--seed-smiles", "CCO"]
-    )
+    result = CliRunner().invoke(cli, ["run", "-p", str(root), "--seed-smiles", "CCO"])
 
     assert result.exit_code == 1
     assert "no models fetched yet" in result.output
@@ -153,7 +174,7 @@ def test_a_run_with_nothing_fetched_says_to_run_fetch(tmp_path):
 def test_run_handles_empty_summary_without_seed(tmp_path):
     root = _inputs(tmp_path)
 
-    result = CliRunner().invoke(cli, ["run", "-p", str(root), "--mode", "joint"])
+    result = CliRunner().invoke(cli, ["run", "-p", str(root)])
 
     assert result.exit_code == 0, result.output
     assert "No candidates were generated" in result.output
@@ -201,8 +222,8 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
 
 
 #: CCN (45.1 Da), the fake models' only candidate, beats the seed CCO (46.1 Da),
-#: so a weighted run goes on to round 2.
-MW_LOWER = ["rdkit", "mw", "1000", "lower", "primary"]
+#: and the cutoff is out of reach, so the run goes on to round 2.
+MW_LOWER = ["rdkit", "mw", "10", "lower", "primary"]
 
 
 def _stop_in_round_2(monkeypatch, error):
@@ -222,7 +243,7 @@ def test_ctrl_c_keeps_the_rounds_finished_before_it(tmp_path, monkeypatch):
     _stop_in_round_2(monkeypatch, KeyboardInterrupt())
     root = _inputs(tmp_path, [MW_LOWER])
 
-    result = _run(root, "--mode", "weighted", "--n-rounds", "3")
+    result = _run(root, "--n-rounds", "3")
 
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
@@ -235,7 +256,7 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
     _stop_in_round_2(monkeypatch, RuntimeError("eos9taz: run.sh failed (exit 1)"))
     root = _inputs(tmp_path, [MW_LOWER])
 
-    result = _run(root, "--mode", "weighted", "--n-rounds", "3")
+    result = _run(root, "--n-rounds", "3")
 
     assert result.exit_code == 1
     assert "eos9taz: run.sh failed (exit 1)" in result.output
@@ -247,7 +268,7 @@ def test_a_failing_model_keeps_the_rounds_finished_before_it(tmp_path, monkeypat
 # --- resume -------------------------------------------------------------------------
 
 #: Heavier molecules each round, so every round improves on the last.
-MW_HIGHER = ["rdkit", "mw", "0", "higher", "primary"]
+MW_HIGHER = ["rdkit", "mw", "1000", "higher", "primary"]
 HEAVIER = ["CCCC", "CCCCC", "CCCCCC"]
 
 
@@ -274,7 +295,7 @@ def _generator_project(tmp_path, annotators=(MW_HIGHER,)):
 
 
 def _three_rounds(root):
-    return _run(root, "--mode", "weighted", "--n-rounds", "3")
+    return _run(root, "--n-rounds", "3")
 
 
 def _resume(root, *args):
@@ -444,9 +465,7 @@ def _seed(root, text):
 
 def _run_from_csv(root):
     """A run that takes its seed from input/smiles.csv, if anything."""
-    return CliRunner().invoke(
-        cli, ["run", "-p", str(root), "--mode", "sequential", "--n-rounds", "1"]
-    )
+    return CliRunner().invoke(cli, ["run", "-p", str(root), "--n-rounds", "1"])
 
 
 def _record(root):
@@ -843,9 +862,7 @@ def test_a_run_in_a_project_writes_a_dated_round_folder(
     root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
 
-    result = CliRunner().invoke(
-        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
-    )
+    result = CliRunner().invoke(cli, ["run", "--seed-smiles", "CCO", "--n-rounds", "1"])
 
     assert result.exit_code == 0, result.output
     runs = list((root / "runs").iterdir())
@@ -860,9 +877,7 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
     root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
 
-    result = CliRunner().invoke(
-        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
-    )
+    result = CliRunner().invoke(cli, ["run", "--seed-smiles", "CCO", "--n-rounds", "1"])
 
     assert result.exit_code == 0, result.output
     [round_dir] = list((root / "runs").iterdir())
@@ -885,7 +900,7 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
 def test_two_runs_in_a_row_get_separate_folders(tmp_path, store_root, monkeypatch):
     root = _project(tmp_path, store_root)
     monkeypatch.chdir(root)
-    command = ["run", "--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"]
+    command = ["run", "--seed-smiles", "CCO", "--n-rounds", "1"]
 
     first = CliRunner().invoke(cli, command)
     second = CliRunner().invoke(cli, command)
@@ -902,9 +917,7 @@ def test_a_model_without_a_built_environment_says_to_run_fetch(
     )  # eos8nyg: no clone, no env
     monkeypatch.chdir(root)
 
-    result = CliRunner().invoke(
-        cli, ["run", "--mode", "sequential", "--seed-smiles", "CCO"]
-    )
+    result = CliRunner().invoke(cli, ["run", "--seed-smiles", "CCO"])
 
     assert result.exit_code == 1
     assert "chemsampler fetch" in result.output
@@ -1143,7 +1156,7 @@ def test_fetch_does_not_touch_the_store_when_the_inputs_are_wrong(
 #: What each command needs besides the project to succeed here (fakes, rdkit).
 NEEDS_A_PROJECT = {
     "fetch": [],
-    "run": ["--mode", "sequential", "--seed-smiles", "CCO", "--n-rounds", "1"],
+    "run": ["--seed-smiles", "CCO", "--n-rounds", "1"],
     "annotate": ["--smiles", "CCO"],
 }
 

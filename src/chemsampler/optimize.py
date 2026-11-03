@@ -97,7 +97,7 @@ def hill_climb(
     generator,
     annotators: list[AnnotatorSpec],
     *,
-    mode: Literal["joint", "sequential", "weighted", "incremental"],
+    mode: Literal["joint", "sequential", "weighted", "incremental"] | None = None,
     similarity: HubSimilarity | None = None,
     seed_smiles: str | None = None,
     n_rounds: int = 5,
@@ -171,11 +171,9 @@ def hill_climb(
         At least one must be primary. In "sequential" and "incremental" modes,
         the order of the primaries is the priority/cycling order. Guard-rails:
         see above.
-    mode : {"joint", "sequential", "weighted", "incremental"}
-        How annotators combine. No default - with a single annotator the modes
-        can still diverge sharply (sequential/weighted maximize or minimize it
-        directly; joint only checks pass/fail against its cutoff and picks an
-        eligible candidate arbitrarily), so the choice is never silently assumed.
+    mode : {"joint", "sequential", "weighted", "incremental"}, optional
+        How the primaries combine: needed with several primaries; with one it
+        defaults to "sequential" (see `resolve_mode`).
     similarity : HubSimilarity, optional
         A similarity-search model whose nearest neighbours of the current best
         molecule join each round's candidates next to the generator's, or are
@@ -228,8 +226,9 @@ def hill_climb(
     ------
     ValueError
         If neither `generator` nor `similarity` is given, `annotators` is empty
-        or has no primary one, has duplicate or reserved `annotator_id` values, `mode` isn't "joint"/"sequential"/"weighted"/"incremental",
-        a `TanimotoAnnotator` is given without a seed, an entering candidate can't be scored by the annotator
+        or has no primary one, has duplicate or reserved `annotator_id` values,
+        `mode` is not one `resolve_mode` accepts, a `TanimotoAnnotator` is given
+        without a seed, an entering candidate can't be scored by the annotator
         whose stage it's entering, `mode="incremental"` is given without
         `seed_smiles` or a valid `n_steps` (>= 1), `n_steps` is given with any
         other mode, or (in "incremental" mode) any annotator has a non-finite
@@ -259,11 +258,7 @@ def hill_climb(
     if generator is None and similarity is None:
         raise ValueError("give a generator, a similarity model, or both")
     _validate_annotators(annotators)
-    if mode not in ("joint", "sequential", "weighted", "incremental"):
-        raise ValueError(
-            "mode must be 'joint', 'sequential', 'weighted', or 'incremental', "
-            f"got {mode!r}"
-        )
+    mode = resolve_mode(mode, annotators)
     if mode == "incremental":
         if seed_smiles is None:
             raise ValueError("mode='incremental' requires seed_smiles")
@@ -537,6 +532,48 @@ class _CandidateSources:
                 f"{self._similarity.model_id}: requires a seed molecule, skipped"
             )
             return {}
+
+
+MODES = ("joint", "sequential", "weighted", "incremental")
+
+
+def resolve_mode(mode: str | None, annotators: list[AnnotatorSpec]) -> str:
+    """
+    The mode a run uses: `mode` if given, else "sequential" with one primary.
+
+    The modes differ in how several primaries combine, so with several a mode
+    must be chosen. With one, "sequential" optimizes it directly (until its
+    cutoff is met); the others still work but are rarely what is wanted (joint
+    only checks the cutoff pass/fail), and `chemsampler run` refuses them.
+
+    Parameters
+    ----------
+    mode : str or None
+        One of `MODES`, or None for the default.
+    annotators : list[AnnotatorSpec]
+        The run's annotators.
+
+    Returns
+    -------
+    str
+        One of `MODES`.
+
+    Raises
+    ------
+    ValueError
+        If no mode is given with several primaries, or it is not one of `MODES`.
+    """
+    count = len(_primaries(annotators))
+    if mode is None:
+        if count == 1:
+            return "sequential"
+        raise ValueError(
+            f"with {count} primary annotators a mode is needed (--mode): "
+            + ", ".join(MODES)
+        )
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {', '.join(MODES)}; got {mode!r}")
+    return mode
 
 
 def _primaries(annotators: list[AnnotatorSpec]) -> list[AnnotatorSpec]:

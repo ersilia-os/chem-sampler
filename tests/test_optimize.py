@@ -7,7 +7,7 @@ from chemsampler.models.annotator import TanimotoAnnotator
 from chemsampler.models.generator import SeedRequiredError
 from chemsampler.models.similarity import HubSimilarity
 from chemsampler.models.spec import AnnotatorSpec
-from chemsampler.optimize import annotate, hill_climb, write_results
+from chemsampler.optimize import annotate, hill_climb, resolve_mode, write_results
 from chemsampler.utils.logging import logger
 
 
@@ -195,7 +195,7 @@ def test_a_tanimoto_annotator_requires_a_seed():
 
     # refused before anything is generated: StubGenerator([]) fails if called
     with pytest.raises(ValueError, match="tanimoto compares candidates with the seed"):
-        hill_climb(StubGenerator([]), annotators, mode="joint", seed_smiles=None)
+        hill_climb(StubGenerator([]), annotators, seed_smiles=None)
 
 
 def test_sequential_mode_single_annotator_reproduces_pure_maximization():
@@ -219,19 +219,22 @@ def test_sequential_mode_single_annotator_reproduces_pure_maximization():
 # --- validation ------------------------------------------------------------
 
 
-def test_hill_climb_requires_mode():
-    generator = StubGenerator([["CCC"]])
-    annotators = [
-        AnnotatorSpec(
-            "score",
-            StubAnnotator({"CCC": 1.0}),
-            cutoff=float("-inf"),
-            direction="higher",
-        )
-    ]
+def test_one_primary_defaults_to_sequential_and_several_need_a_mode():
+    scores = {"CCO": 0.0, "CCC": 1.0}
+    one = [AnnotatorSpec("a", StubAnnotator(scores), float("inf"), "higher")]
+    two = [*one, AnnotatorSpec("b", StubAnnotator(scores), 0.0, "higher")]
 
-    with pytest.raises(TypeError):
-        hill_climb(generator, annotators, seed_smiles="CCO")
+    summary, _ = hill_climb(
+        StubGenerator([["CCC"]]), one, seed_smiles="CCO", n_rounds=1
+    )
+
+    assert summary["active_annotator_id"].dropna().unique().tolist() == ["a"]
+    assert resolve_mode(None, one) == "sequential"
+    assert resolve_mode("joint", one) == "joint"
+    with pytest.raises(ValueError, match="with 2 primary annotators a mode is needed"):
+        hill_climb(StubGenerator([]), two, seed_smiles="CCO")
+    with pytest.raises(ValueError, match="mode must be one of"):
+        resolve_mode("greedy", two)
 
 
 def test_hill_climb_rejects_empty_annotators():
