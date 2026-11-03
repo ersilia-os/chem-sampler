@@ -41,8 +41,8 @@ class Job:
     folder: Path
     job_id: str | None = None
     state: JobState | None = None
-    #: Checks in a row in which Slurm did not know the job (just submitted, or lost).
-    unknown: int = 0
+    #: Since when Slurm has not known the job (just submitted, or lost), if it does not.
+    unknown_since: float | None = None
 
     @property
     def name(self) -> str:

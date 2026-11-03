@@ -37,7 +37,6 @@ KEYS = (
     "qos",
     "nodes",
     *RESOURCES,
-    "poll_seconds",
     "models",
     "env",
     "driver",
@@ -61,8 +60,6 @@ class Profile:
     cpus: int = 1
     mem: str | None = None
     time: str | None = None
-    #: How often the jobs are checked while a run waits for them.
-    poll_seconds: float = 60.0
     #: Per-model resources: model id (or `mw`, `qed`) -> {resource: value}.
     models: dict = field(default_factory=dict)
     qos: str | None = None
@@ -124,12 +121,6 @@ def _parse(name: str, data, where: str) -> Profile:
         if key in data and not _filled(data[key]):
             raise ValueError(f"{where}: '{key}' must be text")
     _check_nodes(data, where)
-    if "poll_seconds" in data and not (
-        isinstance(data["poll_seconds"], (int, float))
-        and not isinstance(data["poll_seconds"], bool)
-        and data["poll_seconds"] >= 0
-    ):
-        raise ValueError(f"{where}: 'poll_seconds' must be a number, 0 or more")
     _check_resources(data, where)
     models = data.get("models", {})
     if not is_object(models):
@@ -167,7 +158,6 @@ def _parse(name: str, data, where: str) -> Profile:
         cpus=data.get("cpus", 1),
         mem=data.get("mem"),
         time=data.get("time"),
-        poll_seconds=float(data.get("poll_seconds", 60.0)),
         models=models,
         qos=data.get("qos"),
         env=None if "env" not in data else str(Path(data["env"]).expanduser()),

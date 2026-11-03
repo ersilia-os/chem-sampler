@@ -75,8 +75,9 @@ def project(tmp_path, store_root, monkeypatch):
     create_project(root)
     (root / "input" / "generators.csv").write_text("generators\neos9taz\n")
     (root / "input" / "annotators.csv").write_text(ANNOTATORS)
-    profiles = {"test": {**PROFILES["test"], "poll_seconds": 0.01}}
-    (store_root / "hpc.json").write_text(json.dumps(profiles))
+    (store_root / "hpc.json").write_text(json.dumps(PROFILES))
+    monkeypatch.setattr(executor_module, "_FAST_CHECK_SECONDS", 0.01)
+    monkeypatch.setattr(executor_module, "_SLOW_CHECK_SECONDS", 0.01)
     return root
 
 
@@ -287,6 +288,108 @@ def test_ctrl_c_cancels_the_jobs_on_the_cluster_and_keeps_finished_rounds(
     record = json.loads((run / "jobs.json").read_text())
     states = {job["job_id"]: job["state"] for job in record["jobs"]}
     assert all(states[i] == "CANCELLED" for i in round2)
+
+
+def test_ctrl_c_cancels_and_counts_only_the_jobs_slurm_still_runs(
+    project, cluster, monkeypatch
+):
+    pressed, released = [], []
+    cluster.hold = lambda f: (
+        "round2" in str(f) and not (released and f.name == "eos9taz")
+    )
+
+    def interrupt_then_finish_one(fake, ids):
+        if pressed:  # the next check: the eos9taz job has finished meanwhile
+            released.append(True)
+        elif any(fake.hold(fake.folders[i]) for i in ids):
+            # the watcher waits long now, so the next check is the one made
+            # before cancelling
+            monkeypatch.setattr(executor_module, "_FAST_CHECK_SECONDS", 60)
+            monkeypatch.setattr(executor_module, "_SLOW_CHECK_SECONDS", 60)
+            pressed.append(True)
+            signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+
+    cluster.on_check = interrupt_then_finish_one
+
+    result = _run(project, "--hpc", "test")
+
+    assert result.exit_code == 0, result.output
+    assert "Cancelled 1 job(s) still on the cluster." in result.output
+    round2 = {f.name: i for i, f in cluster.folders.items() if "round2" in str(f)}
+    assert cluster.cancelled == [round2["eos8nyg"]]
+    [run] = _runs(project)
+    record = json.loads((run / "jobs.json").read_text())
+    states = {job["job_id"]: job["state"] for job in record["jobs"]}
+    assert states[round2["eos9taz"]] == "COMPLETED"
+    assert states[round2["eos8nyg"]] == "CANCELLED"
+
+
+def test_when_slurm_cannot_say_what_still_runs_every_unfinished_job_is_cancelled(
+    project, cluster, monkeypatch
+):
+    cluster.hold = lambda f: "round2" in str(f)
+    pressed = []
+
+    def interrupt_then_fail(fake, ids):
+        if pressed:
+            raise RuntimeError("ssh: connection closed")
+        if any(fake.hold(fake.folders[i]) for i in ids):
+            monkeypatch.setattr(executor_module, "_FAST_CHECK_SECONDS", 60)
+            monkeypatch.setattr(executor_module, "_SLOW_CHECK_SECONDS", 60)
+            pressed.append(True)
+            signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+
+    cluster.on_check = interrupt_then_fail
+
+    result = _run(project, "--hpc", "test")
+
+    assert result.exit_code == 0, result.output
+    assert "Asked Slurm to cancel 2 job(s)." in result.output
+    round2 = sorted(i for i, f in cluster.folders.items() if "round2" in str(f))
+    assert sorted(cluster.cancelled) == round2
+
+
+def test_checks_that_keep_failing_stop_the_run_after_a_while(
+    project, cluster, monkeypatch
+):
+    monkeypatch.setattr(executor_module, "_CHECK_FAILURES_SECONDS", 0.2)
+
+    def down(fake, ids):
+        raise RuntimeError("ssh: connection refused")
+
+    cluster.on_check = down
+
+    result = _run(project, "--hpc", "test")
+
+    assert result.exit_code == 1
+    assert "could not check the jobs: ssh: connection refused" in result.output
+
+
+def test_jobs_are_checked_often_early_in_a_step_then_less(tmp_path):
+    executor = executor_module.SlurmExecutor(
+        Profile("t"), tmp_path, cluster=FakeCluster()
+    )
+    assert executor._check_interval() == 10
+    executor._began -= 299
+    assert executor._check_interval() == 10
+    executor._began -= 2
+    assert executor._check_interval() == 60
+
+
+def test_a_job_slurm_does_not_know_counts_as_lost_only_after_ten_minutes(tmp_path):
+    executor = executor_module.SlurmExecutor(
+        Profile("t"), tmp_path, cluster=FakeCluster()
+    )
+    job = Job(stage="Round 1 · sampling", model_id="eos9taz", folder=tmp_path)
+    job.job_id = "1000"
+    executor._update([job], {})
+    assert executor._failure is None and job.unknown_since is not None
+    job.unknown_since -= 599
+    executor._update([job], {})
+    assert executor._failure is None
+    job.unknown_since -= 2
+    executor._update([job], {})
+    assert "Slurm no longer knows job 1000" in executor._failure
 
 
 def test_a_resumed_cluster_run_cancels_what_a_killed_attempt_left_and_keeps_its_record(
@@ -544,7 +647,7 @@ def test_a_profile_gives_each_model_its_own_resources(store_root):
 
     profile = load_profile("c")
 
-    assert profile.ssh == "login" and profile.poll_seconds == 60
+    assert profile.ssh == "login"
     assert profile.resources("eos8nyg") == {"cpus": 4, "mem": "16G", "time": "01:00:00"}
     assert profile.resources("qed") == {"cpus": 4, "mem": "8G", "time": "01:00:00"}
 
@@ -561,7 +664,7 @@ def test_without_a_profiles_file_it_says_where_to_write_one(store_root):
         ({"nodes": "node-a"}, "'nodes' must be a list of node names"),
         ({"cpus": 0}, "'cpus' must be a whole number"),
         ({"mem": 8}, "'mem' must be text"),
-        ({"poll_seconds": -1}, "'poll_seconds' must be a number"),
+        ({"poll_seconds": 10}, r"unknown key\(s\) \['poll_seconds'\]"),
         ({"models": {"eos8nyg": {"gpus": 1}}}, r"models.eos8nyg: unknown key"),
         ({"env": 3}, "'env' must be text"),
         ({"driver": {"gpus": 1}}, r"driver: unknown key"),

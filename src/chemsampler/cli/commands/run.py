@@ -52,7 +52,7 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
             job_alive = cluster.job_alive
             click.echo(
                 f"Running every model on the cluster of profile {hpc!r}; jobs are "
-                f"checked every {cluster.profile.poll_seconds:g} s."
+                "checked every 10 s (every 60 s once a step passes 5 min)."
             )
         if input_dir is not None:
             runs.start(run_dir, input_dir, record)

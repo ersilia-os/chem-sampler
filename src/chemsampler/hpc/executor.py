@@ -25,12 +25,18 @@ from .slurm import DONE, FAILED, PENDING, RUNNING, Cluster, sbatch_argv
 #: the job completed: network filesystems cache what a folder holds.
 OUTPUT_GRACE_SECONDS = 60
 
-#: Checks in a row in which Slurm may not know a submitted job before it counts
-#: as lost.
-_UNKNOWN_LIMIT = 10
+#: Jobs are checked every `_FAST_CHECK_SECONDS` for the first `_FAST_FOR_SECONDS`
+#: of a step (most jobs take seconds), then every `_SLOW_CHECK_SECONDS`.
+_FAST_CHECK_SECONDS = 10
+_FAST_FOR_SECONDS = 300
+_SLOW_CHECK_SECONDS = 60
 
-#: Failed checks in a row (ssh down, Slurm not answering) before the run stops.
-_CHECK_FAILURES_LIMIT = 3
+#: How long Slurm may not know a submitted job before it counts as lost.
+_UNKNOWN_SECONDS = 600
+
+#: How long checks may fail in a row (ssh down, Slurm not answering) before the
+#: run stops.
+_CHECK_FAILURES_SECONDS = 180
 
 RECORD_FILE = "jobs.json"
 
@@ -51,8 +57,8 @@ class SlurmExecutor:
     Send every model call to a Slurm cluster as a job (see `chemsampler.execution`).
 
     Calls made side by side through `map` become parallel jobs, and each waits
-    for its own. All of them are checked together every `poll_seconds`, and a
-    line says how many are pending, running and done whenever that changes. A
+    for its own. All of them are checked together, every 10 s in a step's first
+    5 min and every 60 s after, and a line says how many are pending, running and done whenever that changes. A
     job that fails stops the run. Leaving the `with` block on any exception,
     Ctrl-C included, cancels every job still on the cluster. `jobs.json` in the
     run folder records every job.
@@ -205,14 +211,36 @@ class SlurmExecutor:
             and (job.state is None or job.state.category in (PENDING, RUNNING))
         ]
         if unfinished:
+            live = self._still_live(unfinished)
+            ids = unfinished if live is None else live
             try:
-                self.cluster.cancel(unfinished)
-                self.say(f"Cancelled {len(unfinished)} job(s) still on the cluster.")
+                if ids:
+                    self.cluster.cancel(ids)
+                if live is None:
+                    self.say(f"Asked Slurm to cancel {len(ids)} job(s).")
+                elif live:
+                    self.say(f"Cancelled {len(live)} job(s) still on the cluster.")
                 self._last_look(unfinished)
             except RuntimeError as e:
-                self.say(f"Could not cancel job(s) {', '.join(unfinished)}: {e}")
+                self.say(f"Could not cancel job(s) {', '.join(ids)}: {e}")
         self._write_record()
         return False
+
+    def _still_live(self, ids: list[str]) -> list[str] | None:
+        """
+        Those of `ids` Slurm says are pending or running (finished ones are not
+        cancelled, nor counted), or None if Slurm cannot be asked.
+        """
+        try:
+            states = self.cluster.states(ids)
+        except RuntimeError:
+            return None
+        # one it does not know may be a job just submitted: cancel it too
+        return [
+            i
+            for i in ids
+            if i not in states or states[i].category in (PENDING, RUNNING)
+        ]
 
     def _last_look(self, ids: list[str]) -> None:
         """Ask once more, so `jobs.json` says CANCELLED rather than what was last seen."""
@@ -269,7 +297,7 @@ class SlurmExecutor:
                 raise RuntimeError("the run was stopped")
 
     def _watch(self) -> None:
-        failed_checks = 0
+        failing_since = None
         while not self._stop.is_set():
             with self._lock:
                 live = [
@@ -280,10 +308,11 @@ class SlurmExecutor:
             if live:
                 try:
                     states = self.cluster.states([j.job_id for j in live])
-                    failed_checks = 0
+                    failing_since = None
                 except RuntimeError as e:
-                    states, failed_checks = None, failed_checks + 1
-                    if failed_checks >= _CHECK_FAILURES_LIMIT:
+                    states = None
+                    failing_since = failing_since or time.monotonic()
+                    if time.monotonic() - failing_since >= _CHECK_FAILURES_SECONDS:
                         self._fail(f"could not check the jobs: {e}")
                 with self._lock:
                     if states is not None:
@@ -291,20 +320,24 @@ class SlurmExecutor:
                         self._write_record()
                     self._report()
                     self._lock.notify_all()
-            self._stop.wait(self.profile.poll_seconds)
+            self._stop.wait(self._check_interval())
+
+    def _check_interval(self) -> float:
+        young = time.monotonic() - self._began < _FAST_FOR_SECONDS
+        return _FAST_CHECK_SECONDS if young else _SLOW_CHECK_SECONDS
 
     def _update(self, live: list[Job], states: dict) -> None:
         """Take in what Slurm said (called with the lock held)."""
         for job in live:
             state = states.get(job.job_id)
             if state is None:
-                job.unknown += 1
-                if job.unknown >= _UNKNOWN_LIMIT:
+                job.unknown_since = job.unknown_since or time.monotonic()
+                if time.monotonic() - job.unknown_since >= _UNKNOWN_SECONDS:
                     self._fail(
                         f"{job.model_id}: Slurm no longer knows job {job.job_id}"
                     )
                 continue
-            job.unknown, job.state = 0, state
+            job.unknown_since, job.state = None, state
             if state.category == FAILED:
                 self._fail(self._failure_message(job))
 

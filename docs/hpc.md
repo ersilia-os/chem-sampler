@@ -39,7 +39,6 @@ it is yours, not part of a project or of chemsampler. Every key is optional.
 | `nodes` | List of nodes, passed as `--nodelist` with `--nodes=1`, so that a job may run on any of them. |
 | `cpus` | `--cpus-per-task` (default 1). The thread limits of the job (`OMP_NUM_THREADS` and others) follow it. |
 | `mem`, `time` | `--mem` and `--time`, as sbatch takes them (`"8G"`, `"01:00:00"`). |
-| `poll_seconds` | How often the jobs are checked (default 60). |
 | `models` | Resources per model, e.g. `{"eos8nyg": {"mem": "16G"}, "qed": {"cpus": 1}}`. |
 | `env` | For `--detach`: an environment with chemsampler, at a path the nodes see. |
 | `driver` | For `--detach`: the run's own job, any of `partition`, `qos`, `nodes`, `cpus`, `mem`, `time`. By default the profile's partition, QoS, nodes and `time`, 1 CPU and `2G`; give it a `time` long enough for a whole run. |
@@ -78,6 +77,9 @@ entry names the profile), a cluster run writes:
 Jobs are named `<model>-r<round>` (e.g. `eos9p57-r1`), so `squeue -u $USER` shows
 which model and round each one is.
 
+The run checks its jobs every 10 s during the first 5 minutes of a step (most
+jobs take seconds), then every 60 s.
+
 ## When things go wrong
 
 Every round is saved as soon as it is ranked, so a stopped run is never lost:
@@ -86,8 +88,8 @@ Every round is saved as soon as it is ranked, so a stopped run is never lost:
 - **A job fails** (an error, a time limit, out of memory): the run stops. The other
   jobs of the step are cancelled, the error names the model and the end of its
   `slurm.err`, and the finished rounds are written.
-- **Ctrl-C** (or SIGTERM): every job of the run still on the cluster is cancelled
-  (`scancel`), and the finished rounds are written.
+- **Ctrl-C** (or SIGTERM): every job of the run Slurm still has pending or running
+  is cancelled (`scancel`), and the finished rounds are written.
 - **Preemption**: jobs are submitted with `--requeue`. A preempted job goes back
   to the queue and starts over; its output is only renamed into place when it is
   complete, so a half-written file is never read.
@@ -95,6 +97,8 @@ Every round is saved as soon as it is ranked, so a stopped run is never lost:
   stops with it and its jobs carry on alone. Start long runs inside `tmux` or
   `screen`. If it happens anyway, `resume` cancels what the run left on the
   cluster before going on.
+- **Slurm cannot be reached** (ssh or Slurm down): the run stops after 3 minutes
+  of failed checks, and a job Slurm has not known for 10 minutes counts as lost.
 
 ## The run itself as a job (`--detach`)
 
