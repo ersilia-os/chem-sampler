@@ -119,7 +119,7 @@ def test_the_templates_are_valid_inputs_for_the_shipped_catalog(tmp_path, fake_f
 
     inputs = load_inputs(path_to_models=str(tmp_path / "input"))
 
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.similarity[0].model_id == "eos8nyg"
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
     assert [a.annotator_id for a in inputs.annotators] == ["eos4zfy"]
 

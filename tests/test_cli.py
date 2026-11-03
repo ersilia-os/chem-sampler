@@ -214,7 +214,7 @@ def test_a_run_records_how_it_was_launched(tmp_path):
     assert result.exit_code == 0, result.output
     saved = json.loads((_run_dir(root) / "inputs.json").read_text())
     # the models are still there, with their versions
-    assert saved["similarity"] == {"model": "eos8nyg", "version": "v1.0.0"}
+    assert saved["similarity"] == [{"model": "eos8nyg", "version": "v1.0.0"}]
     assert saved["run"] == {
         "chemsampler_version": importlib.metadata.version("chemsampler"),
         "mode": "sequential",
@@ -1003,7 +1003,7 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
     assert result.exit_code == 0, result.output
     [round_dir] = list((root / "runs").iterdir())
     saved = json.loads((round_dir / "inputs.json").read_text())
-    assert saved["similarity"] == {"model": "eos8nyg", "version": "live"}
+    assert saved["similarity"] == [{"model": "eos8nyg", "version": "live"}]
     assert saved["generators"] == [{"model": "eos9taz", "version": "live"}]
     assert saved["annotators"] == [
         {
@@ -1249,7 +1249,7 @@ def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
     assert _ids(root, "similarity") is None  # a missing list is none
     _fetch(tmp_path / "models", tmp_path / "envs", "eos9p57")
     inputs = config.load_inputs(str(root / "chemsampler.json"))
-    assert inputs.similarity is None and inputs.generators is not None
+    assert inputs.similarity == [] and inputs.generators is not None
 
 
 @pytest.mark.parametrize(
@@ -1258,7 +1258,6 @@ def test_a_role_without_ids_has_its_list_removed(tmp_path, fetched):
         (["eos9p57", "eos0xxx", "rdkit"], "eos0xxx is not a generator, similarity"),
         (["eos9p57", "eos8nyg"], "no annotator"),
         (["eos4zfy", "rdkit"], "no generator nor similarity model"),
-        (["eos8nyg", "eos1bgt", "rdkit"], "a run takes one similarity model"),
         (["eos9p57", "eos1d7r", "rdkit"], "not meant to be used in chemsampler"),
     ],
 )

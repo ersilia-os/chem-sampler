@@ -416,8 +416,7 @@ def sort_by_role(
     ------
     ValueError
         Listing every problem: an id not in the catalog, a similarity model
-        chemsampler does not support, more than one similarity model, no
-        annotator, or no generator nor similarity model.
+        chemsampler does not support, no annotator, or no generator nor similarity model.
     """
     catalog = catalog or read_catalog()
     known = catalog.by_id()
@@ -438,10 +437,6 @@ def sort_by_role(
             problems.append(not_allowed_similarity_message(model_id))
         else:
             roles[known[model_id].role].append(model_id)
-    if len(roles["similarity"]) > 1:
-        problems.append(
-            f"a run takes one similarity model; got {', '.join(roles['similarity'])}"
-        )
     if not roles["annotators"]:
         problems.append(
             "no annotator: name at least one (a Hub model, or rdkit for mw, qed "

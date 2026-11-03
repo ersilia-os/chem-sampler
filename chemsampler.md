@@ -229,9 +229,10 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    it or removes/adds generators; the final list is theirs, and the skill
    never drops or adds one on its own. Whatever the user confirms is what
    step 9 writes to `generators.csv`. A similarity model is optional (at least
-   one of similarity and generators is needed), one per run, from three:
-   `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT natural products)
-   or `eos80al` (Enamine Hit Locator). Propose the library that fits the
+   one of similarity and generators is needed), one or several, from six:
+   `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT natural products),
+   `eos80al` (Enamine Hit Locator), `eos3pu0` (Enamine Liquid Stock), `eos9b1c`
+   (Molport) or `eos8698` (Enamine REAL sample). Propose the library that fits the
    user's goal and say that it returns known compounds (not generated ones) and
    is slow per call (about 30 s for one input in eos8nyg's metadata).
    Every model is checked against the catalog in `src/chemsampler/hub/catalog.csv`

@@ -10,11 +10,13 @@ from .envs import env_path, is_complete, process_env
 
 #: Hub models that look up a seed's nearest neighbours in a reference library
 #: instead of generating molecules. Only these can back a `HubSimilarity`, and
-#: `HubGenerator` and `HubAnnotator` refuse them. All three run the same search
-#: (100 neighbours, ranked by fusing CLAMP, SAND and Mol-JEPA) on a fixed local
-#: library: the Ersilia Reference Library, COCONUT natural products and the
-#: Enamine Hit Locator. The Hub's other similarity models call outside services.
-SIMILARITY_MODEL_IDS = frozenset({"eos8nyg", "eos1bgt", "eos80al"})
+#: `HubGenerator` and `HubAnnotator` refuse them: the Ersilia Reference Library,
+#: COCONUT natural products, the Enamine Hit Locator, Enamine Liquid Stock,
+#: Molport and the Enamine REAL sample. The Hub's other similarity models call
+#: outside services.
+SIMILARITY_MODEL_IDS = frozenset(
+    {"eos8nyg", "eos1bgt", "eos80al", "eos3pu0", "eos9b1c", "eos8698"}
+)
 
 
 def not_allowed_similarity_message(model_id: str) -> str:

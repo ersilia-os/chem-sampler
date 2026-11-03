@@ -5,7 +5,7 @@
 
 ## What a round does
 
-1. The similarity model and the generative models start together, one job each,
+1. The similarity models and the generative models start together, one job each,
    on the current best molecule.
 2. When all of them are done, their candidates are put together (as a local run
    does).

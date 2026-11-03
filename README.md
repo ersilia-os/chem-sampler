@@ -111,7 +111,7 @@ Annotators are required, and so is at least one of similarity and generators.
 
 | Input | File in `input/` | What it holds |
 |---|---|---|
-| similarity | `similarity.csv` | `model,version`: one similarity-search model, `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT) or `eos80al` (Enamine Hit Locator) |
+| similarity | `similarity.csv` | `model,version`: similarity-search models (one or more), `eos8nyg` (Ersilia Reference Library), `eos1bgt` (COCONUT), `eos80al` (Enamine Hit Locator), `eos3pu0` (Enamine Liquid Stock), `eos9b1c` (Molport) or `eos8698` (Enamine REAL sample) |
 | generators | `generators.csv` | `model,version`: generative models |
 | annotators | `annotators.csv` | models or RDKit functions that score molecules, each with a cutoff, a direction and a priority |
 | seeds | `smiles.csv` | the starting molecules, header `smiles`, one per row; each is climbed in turn (`run --seed-smiles` gives one instead) |

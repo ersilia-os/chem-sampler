@@ -1,4 +1,4 @@
-# chemsampler catalog, built 2026-10-29, ersilia 0.1.62
+# chemsampler catalog, built 2026-11-03, ersilia 0.1.62
 role,identifier,title,task,subtask
 generators,eos4q1a,CReM mutate-based structure generation,Sampling,Generation
 generators,eos4qda,FasmiFra molecule generator,Sampling,Generation
@@ -26,11 +26,14 @@ similarity,eos2a9n,Similarity search in ChEMBL,Sampling,Similarity search
 similarity,eos2hzy,PubChem Molecular Sampler,Sampling,Similarity search
 similarity,eos3e6s,ChEMBL decoy sampler,Sampling,Similarity search
 similarity,eos3kcw,Small World Wuxi search,Sampling,Similarity search
+similarity,eos3pu0,Enamine Liquid Stock Similarity,Sampling,Similarity search
 similarity,eos4b8j,GDBChEMBL similarity search,Sampling,Similarity search
 similarity,eos6ru3,WHALES similarity search on 600k molecules from Q-Mug,Sampling,Similarity search
 similarity,eos7jlv,GDBMedChem similarity search,Sampling,Similarity search
 similarity,eos80al,Enamine Hit Locator Similarity,Sampling,Similarity search
+similarity,eos8698,Enamine REAL Sample Similarity,Sampling,Similarity search
 similarity,eos8nyg,Ersilia Reference Library Similarity,Sampling,Similarity search
+similarity,eos9b1c,Molport Library Similarity,Sampling,Similarity search
 similarity,eos9c7k,"Similarity search in ChEMBL, DrugBank and UNPD",Sampling,Similarity search
 similarity,eos9ueu,Small World Enamine REAL search,Sampling,Similarity search
 annotators,eos11sm,Resemblance to a curated list of known antibiotics,Annotation,
@@ -103,7 +106,6 @@ annotators,eos5eya,Antimicrobial activity prediction against Escherichia coli fr
 annotators,eos5gge,Early prediction of Drug-Induced Liver Injury,Annotation,
 annotators,eos5jv3,MycoPermeNet mycobacterial membrane permeation,Annotation,
 annotators,eos5jz9,CYP2C9 metabolism,Annotation,
-annotators,eos5nqn,GNEProp Escherichia coli antibiotic activity,Annotation,
 annotators,eos5pt8,Drug-likeness scoring based on unsupervised learning,Annotation,
 annotators,eos5q52,Antimicrobial activity prediction against Streptococcus pneumoniae from public ChEMBL data,Annotation,
 annotators,eos5qya,Antimicrobial activity prediction against Neisseria gonorrhoeae from public ChEMBL data,Annotation,
@@ -144,6 +146,7 @@ annotators,eos81zy,Antimicrobial activity prediction against Enterococcus faeciu
 annotators,eos8451,Water solubility,Annotation,
 annotators,eos85a3,Octanol/water distribution coefficient,Annotation,
 annotators,eos8a5g,MolBloom: molecule purchasability in ZINC20,Annotation,
+annotators,eos8bpb,MechGate E. coli Permeation,Annotation,
 annotators,eos8c0o,ImageMol human beta-secretase-1 (BACE-1) inhibition,Annotation,
 annotators,eos8d8a,Membrane permeability in Mycobacterium tuberculosis,Annotation,
 annotators,eos8fth,SARS-CoV-2 antiviral prediction: REDIAL-2020,Annotation,

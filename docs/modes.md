@@ -73,7 +73,8 @@ project's `rdkit` environment (`chemsampler fetch rdkit`), with the same values.
 `seed_smiles` is optional (but required with a Tanimoto annotator); without one, round 1 is unconditionally the new
 best, but every Hub model needs a seed to run, so pass one in practice.
 
-`hill_climb`'s generator may be `None` when a similarity model is given. Models
+`hill_climb`'s generator may be `None` when a similarity model is given, and
+`similarity` takes one model or a list. Models
 the code does not know are rejected: generators must be labelled Sampling /
-Generation in the catalog, the similarity model Sampling / Similarity search, and
+Generation in the catalog, the similarity models Sampling / Similarity search, and
 annotators Annotation.

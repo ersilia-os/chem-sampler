@@ -58,8 +58,10 @@ def test_rejects_a_model_that_is_not_a_similarity_model():
         HubSimilarity("eos9taz")
 
 
-@pytest.mark.parametrize("model", ["eos8nyg", "eos1bgt", "eos80al"])
-def test_the_three_same_method_models_are_accepted(monkeypatch, model):
+@pytest.mark.parametrize(
+    "model", ["eos8nyg", "eos1bgt", "eos80al", "eos3pu0", "eos9b1c", "eos8698"]
+)
+def test_the_allowed_similarity_models_are_accepted(monkeypatch, model):
     monkeypatch.setattr("chemsampler.models.similarity.HubModel", FakeHubModel)
 
     assert HubSimilarity(model).search_by_model("CCO") == {model: ["CCN", "CCC"]}

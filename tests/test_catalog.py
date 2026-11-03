@@ -124,11 +124,15 @@ def test_rejects_similarity_models_chemsampler_does_not_support(catalog_file):
         validate_models(similarity=["eos2a9n"])
 
     assert "not meant to be used in chemsampler" in str(error.value)
-    assert "Choose from: eos1bgt, eos80al, eos8nyg." in str(error.value)
+    assert "Choose from: eos1bgt, eos3pu0, eos80al, eos8698, eos8nyg, eos9b1c." in str(
+        error.value
+    )
 
 
-@pytest.mark.parametrize("model", ["eos8nyg", "eos1bgt", "eos80al"])
-def test_the_bundled_catalog_accepts_the_three_similarity_models(model):
+@pytest.mark.parametrize(
+    "model", ["eos8nyg", "eos1bgt", "eos80al", "eos3pu0", "eos9b1c", "eos8698"]
+)
+def test_the_bundled_catalog_accepts_the_allowed_similarity_models(model):
     # the shipped catalog, not a fixture: these ids must be listed as similarity
     validate_models(similarity=[model])
 

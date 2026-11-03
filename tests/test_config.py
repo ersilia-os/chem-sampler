@@ -92,8 +92,8 @@ def _load(inputs_dir, **kwargs):
 def test_loads_the_three_inputs_from_csvs(inputs_dir):
     inputs = _load(inputs_dir)
 
-    assert isinstance(inputs.similarity, HubSimilarity)
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert all(isinstance(s, HubSimilarity) for s in inputs.similarity)
+    assert inputs.similarity[0].model_id == "eos8nyg"
     assert [g.model_id for g in inputs.generators.generators] == ["eos9taz", "eos80sj"]
     specs = {s.annotator_id: s for s in inputs.annotators}
     assert list(specs) == ["eos4zfy", "mw", "qed"]
@@ -135,10 +135,10 @@ def test_similarity_and_generators_are_each_optional(inputs_dir, hub):
     (inputs_dir / "generators.csv").unlink()
     without_generators = _load(inputs_dir)
 
-    assert without_similarity.similarity is None
+    assert without_similarity.similarity == []
     assert without_similarity.generators is not None
     assert without_generators.generators is None
-    assert without_generators.similarity.model_id == "eos8nyg"
+    assert without_generators.similarity[0].model_id == "eos8nyg"
     assert hub[0]["similarity"] == [] and hub[1]["generators"] == []
 
 
@@ -191,7 +191,7 @@ def test_a_flag_overrides_the_config_and_the_folder(inputs_dir, tmp_path):
     inputs = _load(inputs_dir, generators=str(other))
 
     assert [g.model_id for g in inputs.generators.generators] == ["eos8vud"]
-    assert inputs.similarity.model_id == "eos8nyg"  # the other inputs are unaffected
+    assert inputs.similarity[0].model_id == "eos8nyg"  # the other inputs are unaffected
 
 
 def test_a_flag_overrides_an_inline_config_value(tmp_path):
@@ -217,7 +217,7 @@ def test_inputs_are_found_in_the_working_directory(inputs_dir, monkeypatch):
 
     inputs = load_inputs()
 
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.similarity[0].model_id == "eos8nyg"
     assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw", "qed"]
 
 
@@ -233,7 +233,7 @@ def test_a_named_folder_never_falls_back_to_the_working_directory(
 
     inputs = _load(folder)
 
-    assert inputs.similarity is None
+    assert inputs.similarity == []
 
 
 def test_path_to_models_must_be_a_folder(tmp_path):
@@ -313,7 +313,7 @@ def test_one_model_with_two_versions_is_refused(inputs_dir):
 def test_versions_are_recorded_with_each_model(inputs_dir):
     described = _load(inputs_dir).describe()
 
-    assert described["similarity"] == {"model": "eos8nyg", "version": "v1.0.0"}
+    assert described["similarity"] == [{"model": "eos8nyg", "version": "v1.0.0"}]
     assert described["generators"][1] == {"model": "eos80sj", "version": "v1.0.0"}
     by_model = {a["model"]: a["version"] for a in described["annotators"]}
     assert by_model == {"eos4zfy": "v1.0.0", "mw": None, "qed": None}
@@ -343,15 +343,16 @@ def test_an_empty_list_is_rejected(inputs_dir):
         _load(inputs_dir)
 
 
-def test_only_one_similarity_model_for_now(inputs_dir):
+def test_several_similarity_models_are_all_loaded(inputs_dir):
     _write_csv(
         inputs_dir / "similarity.csv",
         ["model", "version"],
-        [["eos8nyg", "v1.0.0"], ["eos2a9n", "v1.0.0"]],
+        [["eos8nyg", "v1.0.0"], ["eos1bgt", "v1.0.0"]],
     )
 
-    with pytest.raises(ValueError, match="only one similarity model"):
-        _load(inputs_dir)
+    inputs = _load(inputs_dir)
+
+    assert [s.model_id for s in inputs.similarity] == ["eos8nyg", "eos1bgt"]
 
 
 def test_annotator_errors_say_the_file_and_row(inputs_dir):
@@ -423,7 +424,7 @@ def test_everything_can_be_given_inline_in_the_config(tmp_path):
 
     inputs = load_inputs(config=path)
 
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.similarity[0].model_id == "eos8nyg"
     assert [s.annotator_id for s in inputs.annotators] == ["eos4zfy", "mw"]
     assert inputs.annotators[1].cutoff == (250.0, 450.0)
 
@@ -457,7 +458,7 @@ def test_flags_override_the_config_paths(tmp_path, inputs_dir):
 
     inputs = load_inputs(config=path, path_to_models=str(inputs_dir))
 
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.similarity[0].model_id == "eos8nyg"
 
 
 def test_an_input_in_both_the_config_and_a_csv_is_rejected(tmp_path, inputs_dir):
@@ -651,7 +652,7 @@ def test_inside_a_project_its_marker_file_is_the_config(
 
     inputs = load_inputs()
 
-    assert inputs.similarity.model_id == "eos8nyg"
+    assert inputs.similarity[0].model_id == "eos8nyg"
     # results are the project's; the models are the machine's
     assert inputs.runs_dir == str((tmp_path / "proj" / "runs").resolve())
     assert inputs.models_dir == str(store_root / "models")

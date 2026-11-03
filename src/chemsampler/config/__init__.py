@@ -48,7 +48,7 @@ class Inputs:
     """Everything `hill_climb` needs from the user, validated and built."""
 
     generators: GeneratorPool | None
-    similarity: HubSimilarity | None
+    similarity: list[HubSimilarity]
     annotators: list[AnnotatorSpec]
     models_dir: str | None
     envs_dir: str | None
@@ -64,9 +64,7 @@ class Inputs:
             return {"model": model_id, "version": self.versions.get(model_id)}
 
         return {
-            "similarity": (
-                None if self.similarity is None else model(self.similarity.model_id)
-            ),
+            "similarity": ([model(s.model_id) for s in self.similarity] or None),
             "generators": (
                 None
                 if self.generators is None
@@ -671,11 +669,6 @@ def _read_inputs(names, loc: _Locations, files):
         generators = ids("generators")
     if "similarity" in names:
         similarity = ids("similarity")
-        if similarity is not None and len(similarity) != 1:
-            raise ValueError(
-                "similarity: only one similarity model is supported for now, "
-                f"got {len(similarity)}"
-            )
     if "generators" in names and generators is None and similarity is None:
         if loc.models is not None:
             raise ValueError(
@@ -755,7 +748,7 @@ def _load(
         "versions": versions,
         "annotators": [_to_spec(row, models_dir, envs_dir) for row in rows],
         "generators": None,
-        "similarity": None,
+        "similarity": [],
     }
     if generators is not None:
         loaded["generators"] = GeneratorPool(
@@ -765,9 +758,10 @@ def _load(
             ]
         )
     if similarity is not None:
-        loaded["similarity"] = HubSimilarity(
-            similarity[0], models_dir=models_dir, envs_dir=envs_dir
-        )
+        loaded["similarity"] = [
+            HubSimilarity(i, models_dir=models_dir, envs_dir=envs_dir)
+            for i in similarity
+        ]
     return loaded
 
 

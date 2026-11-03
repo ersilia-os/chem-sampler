@@ -2,6 +2,7 @@ import dataclasses
 import logging
 import math
 import os
+from functools import partial
 from typing import Literal
 
 import pandas as pd
@@ -98,7 +99,7 @@ def hill_climb(
     annotators: list[AnnotatorSpec],
     *,
     mode: Literal["joint", "sequential", "weighted", "incremental"] | None = None,
-    similarity: HubSimilarity | None = None,
+    similarity: HubSimilarity | list[HubSimilarity] | None = None,
     seed_smiles: str | None = None,
     n_rounds: int = 5,
     n_steps: int | None = None,
@@ -174,8 +175,8 @@ def hill_climb(
     mode : {"joint", "sequential", "weighted", "incremental"}, optional
         How the primaries combine: needed with several primaries; with one the
         run is "sequential" and no other mode is accepted (see `resolve_mode`).
-    similarity : HubSimilarity, optional
-        A similarity-search model whose nearest neighbours of the current best
+    similarity : HubSimilarity or list of HubSimilarity, optional
+        Similarity-search models whose nearest neighbours of the current best
         molecule join each round's candidates next to the generator's, or are
         the only candidates when `generator` is `None`. Kept separate from
         `generator`, which only takes generative models. Skipped with a warning
@@ -255,7 +256,11 @@ def hill_climb(
             f"{generator.model_id} is a similarity-search model, not a generator; "
             "pass it as hill_climb(similarity=...)"
         )
-    if generator is None and similarity is None:
+    if similarity is None:
+        similarity = []
+    elif not isinstance(similarity, (list, tuple)):
+        similarity = [similarity]
+    if generator is None and not similarity:
         raise ValueError("give a generator, a similarity model, or both")
     _validate_annotators(annotators)
     mode = resolve_mode(mode, annotators)
@@ -270,7 +275,7 @@ def hill_climb(
         raise ValueError("n_steps is only used by mode='incremental'")
     annotators = _with_seed(annotators, seed_smiles, mode)
 
-    if similarity is not None:
+    if similarity:
         generator = _CandidateSources(generator, similarity)
 
     history = []
@@ -504,33 +509,34 @@ def write_results_incremental(
 
 
 class _CandidateSources:
-    """A generator and a similarity model behind `hill_climb`'s one-generator interface."""
+    """A generator and similarity models behind `hill_climb`'s one-generator interface."""
 
-    def __init__(self, generator, similarity: HubSimilarity):
+    def __init__(self, generator, similarity: list[HubSimilarity]):
         self._generator = generator
         self._similarity = similarity
         # The per-round log line reads `.generators`; a lone generator has none.
         generators = (
             [] if generator is None else getattr(generator, "generators", [generator])
         )
-        self.generators = [*generators, similarity]
+        self.generators = [*generators, *similarity]
 
     def generate_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
         # the generators and the similarity search run side by side on a cluster
         calls = [] if self._generator is None else [self._generator.generate_by_model]
-        calls.append(self._search_by_model)
+        calls.extend(
+            partial(self._search_by_model, model) for model in self._similarity
+        )
         by_model = {}
         for found in execution.current().map(lambda call: call(seed_smiles), calls):
             by_model.update(found)
         return by_model
 
-    def _search_by_model(self, seed_smiles: str | None) -> dict[str, list[str]]:
+    @staticmethod
+    def _search_by_model(model, seed_smiles: str | None) -> dict[str, list[str]]:
         try:
-            return self._similarity.search_by_model(seed_smiles)
+            return model.search_by_model(seed_smiles)
         except SeedRequiredError:
-            logger.warning(
-                f"{self._similarity.model_id}: requires a seed molecule, skipped"
-            )
+            logger.warning(f"{model.model_id}: requires a seed molecule, skipped")
             return {}
 
 

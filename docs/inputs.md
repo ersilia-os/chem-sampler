@@ -9,7 +9,7 @@ role with none has its file removed); `annotators.csv` is always yours to write.
 
 | Input | CSV in `input/` |
 |---|---|
-| similarity | `similarity.csv`, header `model,version`, one model: `eos8nyg`, `eos1bgt` or `eos80al` |
+| similarity | `similarity.csv`, header `model,version`, one or more models: `eos8nyg`, `eos1bgt`, `eos80al`, `eos3pu0`, `eos9b1c` or `eos8698` |
 | generators | `generators.csv`, header `model,version` |
 | annotators | `annotators.csv`, header `source,model,version,cutoff,direction,priority` (+ `weight,column`) |
 | seeds | `smiles.csv`, header `smiles`, one SMILES per row |
@@ -87,10 +87,10 @@ Every Hub model is checked against
 [`src/chemsampler/hub/catalog.csv`](../src/chemsampler/hub/catalog.csv): generators
 must be labelled Sampling / Generation, the similarity model Sampling / Similarity
 search, annotators Annotation. The catalog lists only models the Hub lists (the
-Ready ones). Of the Hub's similarity models only three are accepted, the ones that
-run the same search on a fixed local library: `eos8nyg` (Ersilia Reference
-Library), `eos1bgt` (COCONUT natural products) and `eos80al` (Enamine Hit
-Locator); the others call outside services. The check is instant and works
+Ready ones). Of the Hub's similarity models only six are accepted: `eos8nyg` (Ersilia
+Reference Library), `eos1bgt` (COCONUT natural products), `eos80al` (Enamine Hit
+Locator), `eos3pu0` (Enamine Liquid Stock), `eos9b1c` (Molport) and `eos8698`
+(Enamine REAL sample); the others call outside services. The check is instant and works
 offline.
 
 `chemsampler catalog --update` rebuilds the catalog from the Hub (about 20 s, needs

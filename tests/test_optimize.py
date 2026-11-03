@@ -1164,8 +1164,9 @@ class StubSimilarity:
 
     model_id = "stub_sim"
 
-    def __init__(self, neighbours):
+    def __init__(self, neighbours, model_id="stub_sim"):
         self._neighbours = neighbours
+        self.model_id = model_id
 
     def search_by_model(self, seed_smiles):
         if seed_smiles is None:
@@ -1434,6 +1435,26 @@ def test_a_similarity_model_can_drive_a_run_alone():
 
     assert set(candidates_by_round[1]["source"]) == {"stub_sim"}
     assert summary.iloc[-1]["smiles"] == "CCN"
+
+
+def test_several_similarity_models_all_propose_candidates():
+    annotators = _score_only({"CCO": 1.0, "CCC": 2.0, "CCN": 3.0, "CCCl": 4.0})
+
+    summary, candidates_by_round = hill_climb(
+        None,
+        annotators,
+        mode="sequential",
+        similarity=[
+            StubSimilarity(["CCN"], model_id="sim_a"),
+            StubSimilarity(["CCCl", "CCC"], model_id="sim_b"),
+        ],
+        seed_smiles="CCO",
+        n_rounds=1,
+    )
+
+    sources = candidates_by_round[1].set_index("smiles")["source"].to_dict()
+    assert sources == {"CCN": "sim_a", "CCCl": "sim_b", "CCC": "sim_b"}
+    assert summary.iloc[-1]["smiles"] == "CCCl"
 
 
 def test_a_run_needs_a_generator_or_a_similarity_model():
