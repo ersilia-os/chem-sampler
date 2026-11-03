@@ -4,24 +4,13 @@ import sys
 import click
 
 from ..create_cli import chemsampler_cli
-from ..options import project_option
+from ..options import confirm, project_option, split_ids
 
 #: The input lists `fetch IDS` writes; annotators.csv stays the user's.
 _LISTS = ("generators", "similarity")
 
 #: The id that asks for the `rdkit` environment, which mw, qed and tanimoto run in.
 _RDKIT = "rdkit"
-
-
-def _can_ask() -> bool:
-    """Whether a person can answer a question (not a script or a pipe)."""
-    return sys.stdin.isatty()
-
-
-def _split(ids) -> list[str]:
-    """Ids given with spaces, commas or both, each once, in order."""
-    pieces = [piece.strip() for arg in ids for piece in arg.split(",")]
-    return list(dict.fromkeys(piece for piece in pieces if piece))
 
 
 def _pinned(name: str) -> tuple[str, str]:
@@ -52,13 +41,6 @@ def _listed(path) -> list[tuple[str, str]] | None:
     return [tuple(c.strip() for c in r) for r in rows[1:]]
 
 
-def _confirm(question: str, refusal: str) -> bool:
-    """Ask a yes/no question, or refuse when nobody can answer."""
-    if not _can_ask():
-        raise ValueError(refusal)
-    return click.confirm(question, default=False)
-
-
 @chemsampler_cli.command(
     "fetch", short_help="Clone models, download checkpoints, build their conda envs."
 )
@@ -80,7 +62,7 @@ def fetch_cmd(path: str | None, force: bool, ids: tuple[str, ...]) -> None:
     from ...project import PROJECT_FILE, Project, locate_project
 
     try:
-        pinned = dict(_pinned(name) for name in _split(ids))
+        pinned = dict(_pinned(name) for name in split_ids(ids))
         names = list(pinned)
         rdkit = _RDKIT in names
         root = locate_project(path)
@@ -106,7 +88,7 @@ def fetch_cmd(path: str | None, force: bool, ids: tuple[str, ...]) -> None:
             plan = plan_fetch(config)
             plan = dataclasses.replace(plan, rdkit=bool(plan.rdkit_annotators))
             click.echo(f"input/*.csv list: {_what(plan)}")
-            if not force and not _confirm(
+            if not force and not confirm(
                 "Fetch these?",
                 "fetch would fetch everything listed above; run it with -f to "
                 "fetch without asking",
@@ -169,7 +151,7 @@ def _write_lists(input_dir, roles: dict, versions: dict, force: bool) -> None:
         was = "not a list" if before is None else _shown(before) or "none"
         now = _shown(wanted) or "none (file removed)"
         click.echo(f"{path.name}: {was} -> {now}")
-    if not force and not _confirm(
+    if not force and not confirm(
         "Replace?",
         "fetch would replace the list(s) above; run it with -f to replace them "
         "without asking",

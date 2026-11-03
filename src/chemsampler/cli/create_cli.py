@@ -8,6 +8,7 @@ _COMMAND_ORDER = (
     "resume",
     "annotate",
     "catalog",
+    "remove",
     "store",
     "suggest",
 )
@@ -47,6 +48,7 @@ def create_cli() -> click.Group:
         catalog,
         fetch,
         init,
+        remove,
         resume,
         run,
         store,

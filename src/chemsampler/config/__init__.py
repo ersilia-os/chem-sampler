@@ -786,6 +786,15 @@ def locate_models(
     return loc.repos, loc.envs
 
 
+def store_folders(config: str | None = None) -> tuple[Path, Path, Path]:
+    """
+    Where `fetch` puts the clones, the environments and the logs: the folders
+    `chemsampler remove` deletes from. Reads no input list.
+    """
+    folders = _fetch_folders(_locations(config, None, None, None))
+    return folders["models_dir"], folders["envs_dir"], folders["logs_dir"]
+
+
 def plan_fetch(
     config: str | None = None,
     path_to_models: str | None = None,

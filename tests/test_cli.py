@@ -1177,9 +1177,9 @@ def test_fetch_pulls_and_rebuilds_by_default(tmp_path, fetched):
 
 def _fetch_ids(root, *args, can_ask=False, answer=None, monkeypatch=None):
     if monkeypatch is not None:
-        from chemsampler.cli.commands import fetch as fetch_cmd
+        from chemsampler.cli import options
 
-        monkeypatch.setattr(fetch_cmd, "_can_ask", lambda: can_ask)
+        monkeypatch.setattr(options, "can_ask", lambda: can_ask)
     return CliRunner().invoke(cli, ["fetch", "-p", str(root), *args], input=answer)
 
 

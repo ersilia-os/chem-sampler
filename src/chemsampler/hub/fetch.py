@@ -549,10 +549,13 @@ def release_problem(model_dir: Path, tag: str) -> str | None:
     return None
 
 
-def _has_local_commits(model_dir: Path, log: _Log) -> bool:
-    """Whether HEAD is on no remote branch and no tag: commits only this clone has."""
-    branches = log.run(["git", "-C", model_dir, "branch", "-r", "--contains", "HEAD"])
-    tags = log.run(["git", "-C", model_dir, "tag", "--contains", "HEAD"])
+def _has_local_commits(model_dir: Path, log: _Log | None = None) -> bool:
+    """Whether HEAD is on no remote branch and no tag: commits only this clone has.
+
+    With no `log`, nothing is written down (what `chemsampler remove` wants)."""
+    run = _run if log is None else log.run
+    branches = run(["git", "-C", model_dir, "branch", "-r", "--contains", "HEAD"])
+    tags = run(["git", "-C", model_dir, "tag", "--contains", "HEAD"])
     return not (branches.stdout.strip() or tags.stdout.strip())
 
 

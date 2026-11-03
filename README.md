@@ -61,7 +61,8 @@ rounds are read back, not run again, and the round it was in is run again whole.
 
 **Where models live.** A second project reuses what the first one fetched, so
 `fetch` there is instant. `chemsampler catalog` shows what the store holds and the
-state of each environment. To put a project's models elsewhere (on a cluster, a
+state of each environment; `chemsampler remove` deletes models from it (the store is
+shared, so check no other project uses them). To put a project's models elsewhere (on a cluster, a
 shared filesystem), give the folders to `init`:
 
 ```bash
@@ -160,6 +161,7 @@ leaves in its folder, are in [docs/hpc.md](docs/hpc.md).
 | `chemsampler resume` | Continue a stopped run from the rounds it finished. |
 | `chemsampler annotate` | Score a single molecule against a set of annotators (or one model), no generation. |
 | `chemsampler catalog` | List the models on this machine; `--hub` lists what the Hub offers, `--update` refreshes the bundled catalog. |
+| `chemsampler remove` | Delete models (clone and environment) from the store: `remove ID [ID ...]`, `remove rdkit`, or `--unused` for all the project does not name. Asks first; keeps clones with local work; never edits `input/*.csv`. |
 | `chemsampler store` | Show where models, environments and cluster profiles are kept, and how to move them. |
 
 ```bash
@@ -176,6 +178,8 @@ chemsampler annotate --smiles "CCO"
 chemsampler annotate --source rdkit --model mw --smiles "CCO"   # one model, no project needed
 chemsampler catalog                              # used / version / cloned / env ready, and why a model is not ready
 chemsampler catalog --hub --role generators
+chemsampler remove eos9p57                       # clone + environment, after asking
+chemsampler remove --unused                      # everything input/*.csv does not name
 ```
 
 (The audit scripts in `examples/gen-models-audit/` have their own `--path-to-models`
