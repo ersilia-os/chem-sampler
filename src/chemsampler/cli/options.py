@@ -12,7 +12,10 @@ project_option = click.option(
     "path",
     default=None,
     type=click.Path(exists=True, file_okay=False),
-    help="The project (any folder inside it). Default: the one you are in.",
+    help=(
+        "The project folder, or a folder in it. "
+        "Default: the project around your current folder."
+    ),
 )
 
 
