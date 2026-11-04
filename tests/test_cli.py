@@ -11,9 +11,8 @@ from chemsampler import config
 from chemsampler.cli import cli
 from chemsampler.hub import catalog
 from chemsampler.hub.envs import write_marker
-from chemsampler.project import create_project
 
-from .conftest import make_rdkit_env
+from .conftest import make_project, make_rdkit_env
 
 
 class FakeHubModel:
@@ -60,7 +59,7 @@ def _inputs(tmp_path, annotators=(QED,), fetched=True):
     models and the rdkit environment fetched into its own folders.
     """
     root = tmp_path / "proj"
-    create_project(root, tmp_path / "models", tmp_path / "envs")
+    make_project(root, tmp_path / "models", tmp_path / "envs")
     folder = root / "input"
     _write_csv(folder / "similarity.csv", ["model", "version"], [["eos8nyg", "v1.0.0"]])
     _write_csv(folder / "generators.csv", ["model", "version"], [["eos9taz", "v1.0.0"]])
@@ -785,7 +784,7 @@ def test_annotate_a_single_in_house_model_needs_no_project(
 
 def test_annotate_a_single_model_looks_in_the_project_given(tmp_path, monkeypatch):
     root = tmp_path / "proj"
-    create_project(root, models=tmp_path / "mine", envs=tmp_path / "mine-envs")
+    make_project(root, models=tmp_path / "mine", envs=tmp_path / "mine-envs")
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(
@@ -968,7 +967,7 @@ def _project(tmp_path, store_root, built=("eos9taz", "eos8nyg")):
     environments are in the store, which is where `fetch` puts them.
     """
     root = tmp_path / "proj"
-    create_project(root)
+    make_project(root)
     _write_csv(root / "input" / "annotators.csv", ANNOTATOR_HEADER, [QED])
     _fetch(store_root / "models", store_root / "envs", *built)
     make_rdkit_env(store_root / "envs")
@@ -1072,7 +1071,7 @@ def test_fetch_puts_models_in_the_store_and_says_where(
     tmp_path, store_root, monkeypatch, fetched
 ):
     root = tmp_path / "proj"
-    create_project(root)
+    make_project(root)
     monkeypatch.chdir(root)
 
     result = CliRunner().invoke(cli, ["fetch", "-f"])
@@ -1089,7 +1088,7 @@ def test_fetch_puts_models_in_the_store_and_says_where(
 
 def test_fetch_uses_the_folders_the_project_names(tmp_path, monkeypatch, fetched):
     root = tmp_path / "proj"
-    create_project(
+    make_project(
         root, models=tmp_path / "shared" / "models", envs=tmp_path / "shared" / "envs"
     )
     monkeypatch.chdir(root)

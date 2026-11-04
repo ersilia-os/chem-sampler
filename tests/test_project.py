@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from chemsampler import store
 from chemsampler.cli import cli
-from chemsampler.config import load_inputs
+from chemsampler.config import load_inputs, load_seeds
 from chemsampler.project import (
     PROJECT_FILE,
     TEMPLATES,
@@ -113,15 +113,26 @@ def test_a_broken_marker_file_is_explained(tmp_path):
         Project.load(tmp_path)
 
 
-def test_the_templates_are_valid_inputs_for_the_shipped_catalog(tmp_path, fake_fetch):
+def test_the_templates_are_valid_inputs_for_the_shipped_catalog(
+    tmp_path, store_root, fake_fetch
+):
     create_project(tmp_path)
-    fake_fetch("eos8nyg", "eos9taz", "eos4zfy")
+    fake_fetch("eos1bgt", "eos9p57", "eos9ei3")
+    make_rdkit_env(store_root / "envs")
 
     inputs = load_inputs(path_to_models=str(tmp_path / "input"))
 
-    assert inputs.similarity[0].model_id == "eos8nyg"
-    assert [g.model_id for g in inputs.generators.generators] == ["eos9taz"]
-    assert [a.annotator_id for a in inputs.annotators] == ["eos4zfy"]
+    assert [s.model_id for s in inputs.similarity] == ["eos1bgt"]
+    assert [g.model_id for g in inputs.generators.generators] == ["eos9p57"]
+    assert [a.annotator_id for a in inputs.annotators] == [
+        "eos9ei3",
+        "mw",
+        "qed",
+        "tanimoto",
+    ]
+    assert load_seeds(path_to_models=str(tmp_path / "input")) == (
+        "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",
+    )
 
 
 # --- the init command ---------------------------------------------------------------

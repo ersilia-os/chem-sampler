@@ -26,9 +26,8 @@ from chemsampler.hpc.slurm import (
     sbatch_argv,
 )
 from chemsampler.hub.envs import write_marker
-from chemsampler.project import create_project
 
-from .conftest import make_rdkit_env
+from .conftest import make_project, make_rdkit_env
 
 # --- fake models that a "node" (bash) can run -----------------------------------------
 
@@ -67,7 +66,7 @@ def project(tmp_path, store_root, monkeypatch):
     monkeypatch.setattr(config, "validate_models", lambda **kwargs: None)
     _fake_models(store_root)
     root = tmp_path / "proj"
-    create_project(root)
+    make_project(root)
     (root / "input" / "generators.csv").write_text("model,version\neos9taz,v1.0.0\n")
     (root / "input" / "annotators.csv").write_text(ANNOTATORS)
     (store_root / "hpc.json").write_text(json.dumps(PROFILES))

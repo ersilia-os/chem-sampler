@@ -9,7 +9,6 @@ from chemsampler.cli import cli
 from chemsampler.hub import catalog
 from chemsampler.hub.catalog import CatalogEntry, write_catalog
 from chemsampler.hub.envs import write_marker
-from chemsampler.project import create_project
 
 ENTRIES = [
     CatalogEntry("generators", "eos9p57", "CReM Growth", "Sampling", "Generation"),
@@ -22,6 +21,8 @@ ENTRIES = [
     ),
     CatalogEntry("annotators", "eos4zfy", "MAIP", "Annotation", ""),
 ]
+
+from .conftest import make_project
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +98,7 @@ def test_an_empty_store_says_how_to_fill_it(store_root):
 def test_a_project_marks_the_models_it_needs(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     # the project's template wants eos9taz, eos8nyg and eos4zfy; eos9p57 is spare
     fake_fetch("eos9taz", "eos9p57", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
@@ -117,7 +118,7 @@ def test_a_project_marks_the_models_it_needs(
 def test_models_a_project_needs_but_has_not_fetched_are_called_out(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     fake_fetch("eos9taz")  # eos8nyg and eos4zfy are missing
     monkeypatch.chdir(tmp_path / "proj")
 
@@ -133,7 +134,7 @@ def test_models_a_project_needs_but_has_not_fetched_are_called_out(
 def test_a_cloned_model_whose_environment_failed_counts_as_not_ready(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     fake_fetch("eos9taz", "eos8nyg")
     fake_fetch("eos4zfy", complete=False)
     monkeypatch.chdir(tmp_path / "proj")
@@ -148,7 +149,7 @@ def test_unreadable_project_inputs_are_explained_not_fatal(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
     root = tmp_path / "proj"
-    create_project(root)
+    make_project(root)
     (root / "input" / "annotators.csv").unlink()
     fake_fetch("eos9taz")
     monkeypatch.chdir(root)
@@ -186,7 +187,7 @@ def test_a_project_is_listed_from_the_folders_it_names(tmp_path):
     env = tmp_path / "shared" / "envs" / "eos9taz"
     env.mkdir(parents=True)
     write_marker(env, model="eos9taz")
-    create_project(tmp_path / "proj", models=clones, envs=tmp_path / "shared" / "envs")
+    make_project(tmp_path / "proj", models=clones, envs=tmp_path / "shared" / "envs")
 
     result = _catalog("-p", str(tmp_path / "proj"))
 
@@ -197,7 +198,7 @@ def test_a_project_is_listed_from_the_folders_it_names(tmp_path):
 def test_a_folder_named_alone_has_no_environments_to_report(tmp_path):
     clones = tmp_path / "bundles"
     (clones / "eos9taz").mkdir(parents=True)
-    create_project(tmp_path / "proj", models=clones)
+    make_project(tmp_path / "proj", models=clones)
 
     result = _catalog("-p", str(tmp_path / "proj"))
 
@@ -304,7 +305,7 @@ def test_a_marker_file_that_names_its_own_models_is_listed_from_there(
 ):
     # a project made before the store existed keeps its models beside it
     root = tmp_path / "old"
-    create_project(root)
+    make_project(root)
     (root / "chemsampler.json").write_text(
         json.dumps({"path_to_model_repositories": "models", "path_to_envs": "envs"})
     )
@@ -327,7 +328,7 @@ def test_a_listing_prints_only_the_listing(
 ):
     # the real model check, which is what logs "Checking models against the catalog"
     monkeypatch.setattr(config, "validate_models", catalog.validate_models)
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
 
@@ -343,7 +344,7 @@ def test_a_listing_prints_only_the_listing(
 def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     (tmp_path / "proj" / "input" / "annotators.csv").write_text(
         "source,model,version,cutoff,direction,priority\nrdkit,qed,,0,higher,primary\n"
     )
@@ -364,7 +365,7 @@ def test_a_project_with_an_rdkit_annotator_shows_the_rdkit_environment(
 def test_a_project_without_rdkit_annotators_does_not_mention_it(
     tmp_path, store_root, monkeypatch, fake_fetch
 ):
-    create_project(tmp_path / "proj")  # the template annotates with eos4zfy only
+    make_project(tmp_path / "proj")  # these inputs annotate with eos4zfy only
     fake_fetch("eos9taz", "eos8nyg", "eos4zfy")
     monkeypatch.chdir(tmp_path / "proj")
 

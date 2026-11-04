@@ -8,10 +8,9 @@ from click.testing import CliRunner
 from chemsampler import config
 from chemsampler.cli import cli, options
 from chemsampler.hub import remove as hub_remove
-from chemsampler.project import create_project
 from chemsampler.store import STATE_FILE
 
-from .conftest import make_rdkit_env
+from .conftest import make_project, make_rdkit_env
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +21,7 @@ def _no_hub_check(monkeypatch):
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """A project whose template uses eos9taz, eos8nyg and eos4zfy (all live)."""
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     monkeypatch.chdir(tmp_path / "proj")
     return tmp_path / "proj"
 

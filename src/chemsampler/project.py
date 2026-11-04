@@ -24,14 +24,20 @@ FOLDER_KEYS = {"path_to_models": "input", "path_to_runs": "runs"}
 #: writes them (the store's, unless told otherwise); without them, the store's.
 STORE_KEYS = ("path_to_model_repositories", "path_to_envs")
 
-#: A first set of inputs, one model of each kind, each following its main branch.
+#: A first set of inputs: one similarity model, one generator, a Hub annotator
+#: with RDKit guard-rails (each model following its main branch), and ibuprofen
+#: as the seed (PubChem CID 3672, InChIKey HEFNNWSXXWATRW-UHFFFAOYSA-N).
 TEMPLATES = {
-    "similarity.csv": "model,version\neos8nyg,live\n",
-    "generators.csv": "model,version\neos9taz,live\n",
+    "similarity.csv": "model,version\neos1bgt,live\n",
+    "generators.csv": "model,version\neos9p57,live\n",
     "annotators.csv": (
         "source,model,version,cutoff,direction,priority\n"
-        "ersilia,eos4zfy,live,0.0,higher,primary\n"
+        "ersilia,eos9ei3,live,1,lower,primary\n"
+        "rdkit,mw,,200-600,range,guard-rail\n"
+        "rdkit,qed,,0.5,higher,guard-rail\n"
+        "rdkit,tanimoto,,0.4,higher,guard-rail\n"
     ),
+    "smiles.csv": "smiles\nCC(C)CC1=CC=C(C=C1)C(C)C(=O)O\n",
 }
 
 

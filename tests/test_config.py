@@ -14,9 +14,8 @@ from chemsampler.hub.envs import env_path, write_marker
 from chemsampler.models.annotator import MolecularWeightAnnotator, QEDAnnotator
 from chemsampler.models.hub_annotator import HubAnnotator
 from chemsampler.models.similarity import HubSimilarity
-from chemsampler.project import create_project
 
-from .conftest import make_rdkit_env
+from .conftest import make_project, make_rdkit_env
 
 ANNOTATOR_HEADER = [
     "source",
@@ -163,7 +162,7 @@ def test_a_project_marker_given_as_the_config_gets_the_project_folders(
     tmp_path, monkeypatch
 ):
     root = tmp_path / "proj"
-    create_project(root)
+    make_project(root)
     (root / "chemsampler.json").write_text("{}")  # names no folder at all
     _write_csv(
         root / "input" / "annotators.csv",
@@ -647,7 +646,7 @@ def test_build_annotator_rejects_unknown_names():
 def test_inside_a_project_its_marker_file_is_the_config(
     tmp_path, store_root, monkeypatch
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     monkeypatch.chdir(tmp_path / "proj" / "runs")  # any folder inside will do
 
     inputs = load_inputs()
@@ -661,7 +660,7 @@ def test_inside_a_project_its_marker_file_is_the_config(
 
 def test_a_project_made_before_the_store_keeps_its_own_models(tmp_path, monkeypatch):
     root = tmp_path / "old-project"
-    create_project(root)
+    make_project(root)
     (root / "chemsampler.json").write_text(
         json.dumps(
             {
@@ -681,7 +680,7 @@ def test_a_project_made_before_the_store_keeps_its_own_models(tmp_path, monkeypa
 
 
 def test_a_flag_overrides_a_project_folder(tmp_path, monkeypatch):
-    create_project(tmp_path)
+    make_project(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     inputs = load_inputs(path_to_envs=str(tmp_path / "elsewhere"))
@@ -690,7 +689,7 @@ def test_a_flag_overrides_a_project_folder(tmp_path, monkeypatch):
 
 
 def test_an_explicit_config_ignores_the_project(tmp_path, store_root, monkeypatch):
-    create_project(tmp_path)
+    make_project(tmp_path)
     monkeypatch.chdir(tmp_path)
     path = _write_config(tmp_path / "other.json", **INLINE)
 
@@ -764,7 +763,7 @@ def test_a_missing_clone_with_environments_in_use_says_to_run_fetch(
 def test_plan_fetch_lists_each_hub_model_once_and_targets_the_store(
     tmp_path, store_root, monkeypatch, hub
 ):
-    create_project(tmp_path / "proj")
+    make_project(tmp_path / "proj")
     monkeypatch.chdir(tmp_path / "proj")
     _write_csv(
         tmp_path / "proj" / "input" / "generators.csv",

@@ -2,8 +2,9 @@
 
 Annotators are required, and so is at least one of similarity and generators.
 They are three CSV files in the project's `input/` folder, and a fourth for the
-seeds; `chemsampler init` writes a template of the first three (one model of
-each kind, `live`). `chemsampler fetch ID [ID ...]` sets `similarity.csv` and
+seeds; `chemsampler init` writes a template of all four (one similarity model,
+one generator, a Hub annotator with RDKit guard-rails, all `live`, and
+ibuprofen as the seed). `chemsampler fetch ID [ID ...]` sets `similarity.csv` and
 `generators.csv` to the ids it is given, `live` or at the release of `ID@TAG` (a
 role with none has its file removed); `annotators.csv` is always yours to write.
 
@@ -35,7 +36,7 @@ turn, as if it were a run of its own, in its own folder of the run: `seed1/`,
 `summary.csv` and, on a cluster, its `jobs/` and `jobs.json`. A stopped run
 resumes in the seed it was in; the seeds before it are only read back. A SMILES
 RDKit cannot read, one with a space in it (RDKit would read the rest as a
-name), or the same molecule twice is refused. `init` writes no `smiles.csv`.
+name), or the same molecule twice is refused. `init` writes one with ibuprofen.
 
 ## Annotators
 

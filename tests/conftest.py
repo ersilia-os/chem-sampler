@@ -4,6 +4,28 @@ import pytest
 
 from chemsampler import store
 from chemsampler.hub.envs import RDKIT_ENV, write_marker
+from chemsampler.project import Project, create_project
+
+#: One Hub model of each kind, no RDKit rows and no seed: what tests of other
+#: features build on, so they do not change whenever `init`'s templates do.
+MINIMAL_INPUTS = {
+    "similarity.csv": "model,version\neos8nyg,live\n",
+    "generators.csv": "model,version\neos9taz,live\n",
+    "annotators.csv": (
+        "source,model,version,cutoff,direction,priority\n"
+        "ersilia,eos4zfy,live,0.0,higher,primary\n"
+    ),
+}
+
+
+def make_project(root, models=None, envs=None):
+    """`create_project`, with `MINIMAL_INPUTS` in place of the templates."""
+    created = create_project(root, models, envs)
+    folder = Project.load(root).input
+    (folder / "smiles.csv").unlink()
+    for name, text in MINIMAL_INPUTS.items():
+        (folder / name).write_text(text)
+    return created
 
 
 def make_rdkit_env(envs_dir):

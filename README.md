@@ -29,10 +29,9 @@ where its models are. The models are expensive to fetch, so by default they live
 a **store** that every project on the machine shares.
 
 ```bash
-chemsampler init -p my-run && cd my-run   # a project: input/ and runs/
-chemsampler fetch eos9p57 eos8nyg eos4zfy rdkit # these models, live (writes input/generators.csv and similarity.csv), and the rdkit env
-$EDITOR input/annotators.csv              # cutoff, direction and priority of each annotator
-printf 'smiles\nCCO\n' > input/smiles.csv  # the seeds, one per row
+chemsampler init -p my-run && cd my-run   # a project: input/ and runs/, with template inputs
+$EDITOR input/*.csv                       # the models, the annotators' cutoffs and the seeds
+chemsampler fetch                         # every model the inputs name, and the rdkit env
 chemsampler run                           # --mode only with several primaries
 ```
 
