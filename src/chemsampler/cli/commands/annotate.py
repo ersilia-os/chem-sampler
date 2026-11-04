@@ -2,6 +2,7 @@ import sys
 
 import click
 
+from ...models.spec import has_cutoff
 from ..create_cli import chemsampler_cli
 from ..options import project_option
 
@@ -108,9 +109,14 @@ def annotate_cmd(
         return
     primaries = [spec for spec in annotators if spec.priority == "primary"]
     guards = [spec for spec in annotators if spec.priority == "guard-rail"]
-    satisfied = int(row["cutoffs_satisfied"])
-    color = "green" if satisfied == len(primaries) else "yellow"
-    click.secho(f"{satisfied} of {len(primaries)} primary cutoffs satisfied", fg=color)
+    if primaries and not has_cutoff(primaries[0]):
+        click.secho("primary: no cutoff (optimized)", fg="cyan")
+    elif primaries:
+        met = bool(row["cutoff_satisfied"])
+        click.secho(
+            f"primary cutoff {'satisfied' if met else 'NOT satisfied'}",
+            fg="green" if met else "yellow",
+        )
     if guards:
         met = bool(row["guardrails_satisfied"])
         click.secho(
@@ -130,7 +136,9 @@ def _per_seed(annotator_id: str, annotator, seeds) -> dict:
 
 
 def _describe(spec) -> str:
-    """The cutoff as the user wrote it: '>= 0.5', '<= 3', or '250-450'."""
+    """The cutoff as the user wrote it: '>= 0.5', '<= 3', '250-450', or 'optimized'."""
+    if not has_cutoff(spec):
+        return f"optimized, {spec.direction}"
     if spec.direction == "range":
         low, high = spec.cutoff
         return f"{low:g}-{high:g}"

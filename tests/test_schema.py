@@ -78,7 +78,7 @@ def test_an_unreadable_cutoff_is_rejected():
 
 
 def test_parses_a_primary_ersilia_annotator():
-    row = parse_annotator(_row(weight="2", column="score"), "annotators.csv row 1")
+    row = parse_annotator(_row(column="score"), "annotators.csv row 1")
 
     assert (row.source, row.model, row.cutoff, row.direction) == (
         "ersilia",
@@ -86,7 +86,7 @@ def test_parses_a_primary_ersilia_annotator():
         0.5,
         "higher",
     )
-    assert (row.priority, row.weight, row.column) == ("primary", 2.0, "score")
+    assert (row.priority, row.column) == ("primary", "score")
 
 
 def test_parses_an_rdkit_guard_rail():
@@ -103,13 +103,13 @@ def test_parses_an_rdkit_guard_rail():
     )
 
     assert row.cutoff == (250.0, 450.0) and row.version is None
-    assert row.weight is None and row.column is None
+    assert row.column is None
 
 
 def test_empty_cells_and_whitespace_count_as_missing_or_are_stripped():
-    row = parse_annotator(_row(model=" eos4zfy ", weight="", column=" "), "row")
+    row = parse_annotator(_row(model=" eos4zfy ", column=" "), "row")
 
-    assert (row.model, row.weight, row.column) == ("eos4zfy", None, None)
+    assert (row.model, row.column) == ("eos4zfy", None)
 
 
 @pytest.mark.parametrize(
@@ -120,10 +120,11 @@ def test_empty_cells_and_whitespace_count_as_missing_or_are_stripped():
         ({"priority": ""}, "missing"),
         ({"priority": "main"}, "priority must be one of"),
         ({"priority": "secondary"}, "'secondary' is now called 'guard-rail'"),
-        ({"weight": "-1"}, "weight must be >= 0"),
-        ({"weight": "heavy"}, "invalid weight"),
+        ({"weight": "2"}, "weight is no longer used"),
+        ({"weight": ""}, "weight is no longer used"),
+        ({"cutoff": ""}, "write nan for a primary"),
+        ({"cutoff": "nan", "priority": "guard-rail"}, "a guard-rail needs a cutoff"),
         ({"cutoff": "0.5-0.9", "direction": "range"}, "only allowed for guard-rails"),
-        ({"priority": "guard-rail", "weight": "2"}, "weight only applies to primary"),
         ({"source": "rdkit", "model": "logp"}, "unknown rdkit model"),
         ({"source": "rdkit", "model": "qed", "column": "x"}, "column only applies"),
         ({"colour": "red"}, "unknown field"),
@@ -168,9 +169,9 @@ def test_header_must_match():
     check_header("g.csv", ["generators"], ["generators"])
     check_header(
         "a.csv",
-        ["source", "model", "version", "cutoff", "direction", "priority", "weight"],
+        ["source", "model", "version", "cutoff", "direction", "priority", "column"],
         ["source", "model", "version", "cutoff", "direction", "priority"],
-        ["weight", "column"],
+        ["column"],
     )
 
 

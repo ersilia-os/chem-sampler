@@ -68,7 +68,9 @@ def test_each_step_of_a_round_reaches_the_executor_as_one_batch():
     scores = {"CCO": 0.0, "CCN": 1.0, "CCC": 2.0}
     annotators = [
         AnnotatorSpec("a", Scores(scores), cutoff=float("-inf"), direction="higher"),
-        AnnotatorSpec("b", Scores(scores), cutoff=float("-inf"), direction="higher"),
+        AnnotatorSpec(
+            "b", Scores(scores), float("-inf"), "higher", priority="guard-rail"
+        ),
     ]
     recorder = RecordingExecutor()
 
@@ -76,7 +78,6 @@ def test_each_step_of_a_round_reaches_the_executor_as_one_batch():
         hill_climb(
             Generator(),
             annotators,
-            mode="weighted",
             similarity=Neighbours(),
             seed_smiles="CCO",
             n_rounds=1,

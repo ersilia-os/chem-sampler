@@ -85,11 +85,9 @@ def execute(inputs, record: dict, run_dir, input_dir=None) -> None:
                 summary, candidates_by_round = hill_climb(
                     inputs.generators,
                     inputs.annotators,
-                    mode=options["mode"],
                     similarity=inputs.similarity,
                     seed_smiles=seed,
                     n_rounds=options["n_rounds"],
-                    n_steps=options["n_steps"],
                     tolerance=options["tolerance"],
                     checkpoint=folder,
                 )
@@ -192,12 +190,6 @@ def _report(seeds, summaries, folders, elapsed: float, verbose: bool, run_dir) -
 )
 @project_option
 @click.option(
-    "--mode",
-    type=click.Choice(["joint", "sequential", "weighted", "incremental"]),
-    default=None,
-    help="How the primaries combine (needed with several; one is always sequential).",
-)
-@click.option(
     "--seed-smiles",
     default=None,
     help="One SMILES to start from (default: the seeds in input/smiles.csv).",
@@ -207,13 +199,7 @@ def _report(seeds, summaries, folders, elapsed: float, verbose: bool, run_dir) -
     default=5,
     show_default=True,
     type=int,
-    help="Most rounds (per stage in sequential, per step in incremental).",
-)
-@click.option(
-    "--n-steps",
-    default=None,
-    type=int,
-    help="Levels per annotator (--mode incremental only).",
+    help="Most rounds.",
 )
 @click.option(
     "--tolerance",
@@ -242,10 +228,8 @@ def _report(seeds, summaries, folders, elapsed: float, verbose: bool, run_dir) -
 )
 def run_cmd(
     path: str | None,
-    mode: str | None,
     seed_smiles: str | None,
     n_rounds: int,
-    n_steps: int | None,
     tolerance: float,
     hpc: str | None,
     detach: bool,
@@ -253,7 +237,6 @@ def run_cmd(
 ) -> None:
     """Generate and score candidates around each seed, round by round."""
     from ...config import load_inputs
-    from ...optimize import resolve_mode
     from ...project import PROJECT_FILE, Project, locate_project
     from ...utils.logging import logger
 
@@ -263,12 +246,6 @@ def run_cmd(
     try:
         root = locate_project(path)
         inputs = load_inputs(str(root / PROJECT_FILE))
-        primaries = [s for s in inputs.annotators if s.priority == "primary"]
-        if mode is not None and len(primaries) == 1:
-            raise ValueError(
-                "with one primary annotator a run is always sequential: drop --mode"
-            )
-        mode = resolve_mode(mode, inputs.annotators)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
         click.secho(str(e), fg="red")
         sys.exit(1)
@@ -299,10 +276,8 @@ def run_cmd(
         **inputs.describe(),
         "run": {
             "chemsampler_version": _chemsampler_version(),
-            "mode": mode,
             "seeds": list(seeds),
             "n_rounds": n_rounds,
-            "n_steps": n_steps,
             "tolerance": tolerance,
             "hpc": hpc,
             "verbose": verbose,

@@ -22,14 +22,13 @@ tool's own CLI rather than importing its Python classes directly.
 
 **This skill only guides the user through the chemsampler pipeline. It never
 makes a decision that belongs to the user.** Every choice that shapes a run —
-which annotators, cutoffs and directions; the combination mode; the seed; any
+which annotators, cutoffs and directions; which one is primary; the seed; any
 Tanimoto constraint; which generators; the number of rounds and tolerance;
 whether to run at all; whether to run another round — is the user's.
 
 What the skill does:
 - **Explains** what each choice means and what it will cost or change (a
-  mode's effect, a generator's measured behaviour and time, whether a cutoff
-  is achievable).
+  generator's measured behaviour and time, whether a cutoff is achievable).
 - **Warns** when something looks unrealistic or is likely not to work, and
   says why.
 - **Recommends**, when it has grounds to. A recommendation is labelled as
@@ -65,7 +64,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      guard-rail; `higher`/`lower` take a single number).
    - `priority` — `primary` (optimized; usually the activity) or `guard-rail`
      (a constraint every candidate must satisfy, e.g. an MW range or a QED floor;
-     it is never optimized and takes no weight). At least one primary.
+     it is never optimized). Exactly one primary; see step 3.
 
    Do not write `annotators.csv` yet — run the feasibility check below first.
 
@@ -104,38 +103,15 @@ When unsure whether something is the user's call, treat it as theirs and ask.
      plausible range, say so and ask the user rather than silently trusting
      an extreme cutoff.
 
-3. **Combination mode** — only with several primary annotators. With one, the
-   run is always `sequential` (it optimizes that annotator until its cutoff is
-   met) and the CLI refuses `--mode`: say so and skip this step. With several,
-   `--mode` is required: explain all four, recommend one if the user's stated
-   goal clearly points to it, and let the user pick:
-   - `sequential` — primary annotators are optimized one at a time, in
-     priority order (the order the user listed them). Each finished stage's own
-     cutoff becomes a hard floor for every later stage. Reproduces plain
-     maximization/minimization when there's a single annotator.
-   - `joint` — all primaries optimized simultaneously; a candidate's score
-     is how many primary cutoffs it satisfies. With a single annotator this is a
-     threshold + arbitrary pick among passers, not maximization — mention
-     this explicitly if the user has only one annotator and seems to expect
-     "get the best possible value."
-   - `weighted` — all annotators optimized simultaneously as one scalarized
-     score (`weight * value`, summed, with `direction="lower"` annotators
-     negated first). Takes an optional `weight` per primary (default 1.0); flag that
-     weight magnitudes are relative to each annotator's own scale, not
-     normalized, so a 0-1 score and a hundreds-scale score need very
-     different weights to pull comparably.
-   - `incremental` — like `sequential`, but each primary is nudged only a
-     fraction of the way to its cutoff before moving to the next, cycling
-     through the full list `--n-steps` times (interim targets interpolate
-     linearly between the seed's own score and the cutoff). Needs a seed, a
-     finite cutoff for every annotator, and `--n-steps`. Slower than
-     `sequential` — recommend it only for cases where the user is worried
-     that pushing one annotator all the way before touching the next risks
-     an unrecoverable overshoot on an uncorrelated one (see the "Open
-     questions" note below on annotator correlation).
-
-   Whatever the mode, guard-rails apply: a candidate that fails one is never
-   eligible.
+3. **One primary.** A run optimizes exactly one annotator, the primary; every
+   other annotator is a guard-rail (`chemsampler run` refuses two primaries). If
+   the user has several objectives, help them pick the one to optimize and turn
+   the others into guard-rails with a cutoff each. The primary's cutoff may be
+   `nan`: it then has none, and the run maximises or minimises it (per its
+   direction) until a round stops improving or `--n-rounds` runs out. With a
+   cutoff, the run also stops as soon as the cutoff is met. Each round, the
+   winner is the best primary value among the candidates that pass every
+   guard-rail; a candidate that fails one is never eligible.
 
 4. **Seed compounds.** `run` needs at least one. Ask for SMILES. If the user
    names a compound instead of pasting a SMILES, look it up from an
@@ -152,9 +128,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    `rdkit,tanimoto,<cutoff>,<direction>,guard-rail` to `annotators.csv`
    (`higher` = stay at least this similar; `lower` = novelty-seeking, stay at
    most this similar; `range` = both, e.g. `0.4-0.9`). It can also be a
-   primary (`lower` drives the search away from the seed; `higher` as the
-   first primary of `sequential`/`incremental` cannot improve on the seed's
-   1.0). Run it through the feasibility check from step 2 — it's always
+   primary (`lower` drives the search away from the seed; `higher` cannot
+   improve on the seed's 1.0). Run it through the feasibility check from step 2 — it's always
    `[0, 1]`.
    Collected here, before generator selection, because it directly
    constrains which generators make sense to use next.
@@ -166,7 +141,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    `chemsampler annotate -p <project> --smiles <seed>` (it needs
    only the annotators, and generates nothing) prints the seed's value for
    each annotator and whether its cutoffs and guard-rails are met. Compare it
-   to each primary's cutoff and use the gap to inform a generator
+   to the primary's cutoff and use the gap to inform a generator
    **recommendation**, which the user is free to override:
    - **The 6 generators of the former default list, in the user's two groups**
      (`eos2401` is in maintenance, so the Hub check refuses it; mean Tanimoto to
@@ -256,10 +231,7 @@ When unsure whether something is the user's call, treat it as theirs and ask.
    apply any silently either: state the value that will be used, so it is
    visible and easy to change (step 10 shows them again in the final
    command):
-   - `--n-rounds` (default 5; applies per stage in `sequential` mode, per
-     step in `incremental` mode)
-   - `--n-steps` (only if `--mode incremental` was chosen; no default, must
-     be asked)
+   - `--n-rounds` (default 5)
    - `--tolerance` (default 0.0)
    - `--hpc NAME` (default: none, the run stays on this machine). It runs every
      model as a Slurm job using a profile from `hpc.json` in the store (see
@@ -302,9 +274,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
       say so explicitly and explain why if known (e.g. a generator that
       only accepts certain scaffold types, or the seed being outside its
       working range) rather than silently omitting it.
-    - The best score achieved (and which annotator it's against, in
-      `mode="sequential"`), plus that candidate's `tanimoto_to_seed`, for
-      each seed.
+    - The best primary score achieved, plus that candidate's
+      `tanimoto_to_seed`, for each seed.
     - Which generator took the most wall-clock time, if that's visible
       (e.g. from timing chemsampler itself logs, or from run duration) —
       useful for the user to know which model is the bottleneck when
@@ -331,11 +302,8 @@ When unsure whether something is the user's call, treat it as theirs and ask.
 - **Final skill location.** `.claude/skills/` (machine-local, gitignored)
   vs. the shared `ersilia-skills` repo — not decided.
 - **Annotator correlation.** Raised 2026-09-25: whether to estimate
-  correlation between annotators' scores before a run, and use it to warn or
-  suggest a mode. Motivating example: MAIP vs. molecular weight looked
+  correlation between the primary and the guard-rails before a run, and warn
+  about it. Motivating example: MAIP vs. molecular weight looked
   anti-correlated in one real run (MAIP-only optimization drove MW from 180
-  to over 1000 Da by round 9) — for an anti-correlated pair, `sequential`'s
-  hard floors (or splitting into stages/steps at all, including
-  `incremental`) may be the wrong approach entirely, and `joint`/`weighted`
-  might suit it better. Not scoped, no estimation method chosen; see session
-  notes.
+  to over 1000 Da by round 9); an MW guard-rail is what holds such a pair now.
+  Not scoped, no estimation method chosen; see session notes.

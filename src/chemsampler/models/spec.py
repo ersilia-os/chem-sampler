@@ -13,10 +13,9 @@ class AnnotatorSpec:
     """
     An annotator paired with the cutoff a candidate must clear.
 
-    A *primary* annotator is optimized: `hill_climb`'s `mode` decides how the
-    primaries combine into a round's winner. A *guard-rail* is a hard
-    constraint: a candidate that does not satisfy it is never eligible, in any
-    mode, and it takes no part in the optimization.
+    A run has exactly one *primary* annotator, the one it optimizes. A
+    *guard-rail* is a hard constraint: a candidate that does not satisfy it is
+    never eligible, and it takes no part in the optimization.
 
     Parameters
     ----------
@@ -26,16 +25,12 @@ class AnnotatorSpec:
     annotator : object
         Any object exposing `.score(smiles_list: list[str]) -> dict[str, float]`.
     cutoff : float or tuple[float, float]
-        The value a candidate must clear to satisfy this annotator. Use
-        `float("-inf")`/`float("inf")` to express "no real floor/ceiling". A
-        `(min, max)` pair, with `min < max`, when `direction="range"`.
+        The value a candidate must clear to satisfy this annotator. A
+        `(min, max)` pair, with `min < max`, when `direction="range"`. NaN, on a
+        primary only, means no cutoff: the primary is simply optimized.
     direction : {"higher", "lower", "range"}
         "higher" is satisfied by `value >= cutoff`; "lower" by `value <= cutoff`;
         "range" by `min <= value <= max`. A range is only allowed on a guard-rail.
-    weight : float, optional
-        Relative importance in `hill_climb`'s `mode="weighted"`; ignored by
-        every other mode and by guard-rails. Must be >= 0. By default
-        1.0.
     priority : {"primary", "guard-rail"}, optional
         "primary" annotators are optimized; "guard-rail" ones are constraints.
         By default "primary".
@@ -45,7 +40,6 @@ class AnnotatorSpec:
     annotator: object
     cutoff: Cutoff
     direction: AnnotatorDirection
-    weight: float = 1.0
     priority: Priority = "primary"
 
     def __post_init__(self) -> None:
@@ -65,13 +59,10 @@ class AnnotatorSpec:
                 f"{self.annotator_id}: cutoff {self.cutoff} is a range, so "
                 f"direction must be 'range'; got {self.direction!r}"
             )
-        elif math.isnan(self.cutoff):
-            raise ValueError(f"{self.annotator_id}: cutoff cannot be NaN")
-        if math.isnan(self.weight):
-            raise ValueError(f"{self.annotator_id}: weight cannot be NaN")
-        if self.weight < 0:
+        elif math.isnan(self.cutoff) and self.priority == "guard-rail":
             raise ValueError(
-                f"{self.annotator_id}: weight must be >= 0, got {self.weight}"
+                f"{self.annotator_id}: a guard-rail needs a cutoff (NaN, no "
+                "cutoff, is only for the primary)"
             )
 
     def _check_range(self) -> None:
@@ -91,3 +82,8 @@ class AnnotatorSpec:
                 f"{self.annotator_id}: a range needs finite bounds with "
                 f"min < max, got {self.cutoff}"
             )
+
+
+def has_cutoff(spec: AnnotatorSpec) -> bool:
+    """Whether the annotator has a cutoff; a primary without one (NaN) is optimized."""
+    return not (isinstance(spec.cutoff, float) and math.isnan(spec.cutoff))

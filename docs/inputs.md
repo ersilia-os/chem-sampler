@@ -12,7 +12,7 @@ role with none has its file removed); `annotators.csv` is always yours to write.
 |---|---|
 | similarity | `similarity.csv`, header `model,version`, one or more models: `eos8nyg`, `eos1bgt`, `eos80al`, `eos3pu0`, `eos9b1c` or `eos8698` |
 | generators | `generators.csv`, header `model,version` |
-| annotators | `annotators.csv`, header `source,model,version,cutoff,direction,priority` (+ `weight,column`) |
+| annotators | `annotators.csv`, header `source,model,version,cutoff,direction,priority` (+ `column`) |
 | seeds | `smiles.csv`, header `smiles`, one SMILES per row |
 
 `version` is a release tag of the model's GitHub repository, e.g. `v1.0.0` (its
@@ -42,9 +42,10 @@ name), or the same molecule twice is refused. `init` writes one with ibuprofen.
 
 `source` is `ersilia` (`model` is a Hub id) or `rdkit` (`model` is `mw`, `qed` or
 `tanimoto`). `cutoff` is a number, or `min-max` with `direction` `range`
-(`higher`/`lower` take a single number, and only a guard-rail can be a range).
-`priority` is `primary` (optimized, in list order for `sequential` and
-`incremental`) or `guard-rail` (a constraint every winner must satisfy, no weight).
+(`higher`/`lower` take a single number, and only a guard-rail can be a range), or
+`nan` on the primary, which then has no cutoff and is simply optimized.
+`priority` is `primary` (optimized; exactly one) or `guard-rail` (a constraint every
+winner must satisfy).
 
 `tanimoto` is the similarity of each candidate to the seed of its climb (Morgan
 fingerprints, radius 2, 2048 bits; the seed itself scores 1.0).
@@ -53,8 +54,7 @@ As a guard-rail it keeps candidates near the seed (`0.4,higher`), away from it
 away from the seed. `mw`, `qed` and `tanimoto` run in the `rdkit` environment,
 which `chemsampler fetch rdkit` builds (this Python's version and chemsampler's
 own RDKit, so the values are the same everywhere): as a process of its own
-here, as a job on a cluster. `weight` (primary, default 1) and `column` (a
-multi-output Hub model) are optional.
+here, as a job on a cluster. `column` (a multi-output Hub model) is optional.
 
 ## The project file
 

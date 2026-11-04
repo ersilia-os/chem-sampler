@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 
 import pytest
 
@@ -24,10 +25,10 @@ ANNOTATOR_HEADER = [
     "cutoff",
     "direction",
     "priority",
-    "weight",
+    "column",
 ]
 ANNOTATOR_ROWS = [
-    ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", "2"],
+    ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", ""],
     ["rdkit", "mw", "", "250-450", "range", "guard-rail", ""],
     ["rdkit", "qed", "", "0.3", "higher", "guard-rail", ""],
 ]
@@ -97,7 +98,7 @@ def test_loads_the_three_inputs_from_csvs(inputs_dir):
     specs = {s.annotator_id: s for s in inputs.annotators}
     assert list(specs) == ["eos4zfy", "mw", "qed"]
     assert isinstance(specs["eos4zfy"].annotator, HubAnnotator)
-    assert (specs["eos4zfy"].priority, specs["eos4zfy"].weight) == ("primary", 2.0)
+    assert specs["eos4zfy"].priority == "primary"
     assert isinstance(specs["mw"].annotator, MolecularWeightAnnotator)
     assert isinstance(specs["qed"].annotator, QEDAnnotator)
     assert (specs["mw"].cutoff, specs["mw"].direction) == ((250.0, 450.0), "range")
@@ -365,8 +366,37 @@ def test_annotator_errors_say_the_file_and_row(inputs_dir):
 def test_a_run_needs_a_primary_annotator(inputs_dir):
     _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, ANNOTATOR_ROWS[1:])
 
-    with pytest.raises(ValueError, match="at least one primary"):
+    with pytest.raises(ValueError, match="a primary annotator is required"):
         _load(inputs_dir)
+
+
+def test_a_run_takes_one_primary_annotator(inputs_dir):
+    rows = [*ANNOTATOR_ROWS, ["rdkit", "tanimoto", "", "0.4", "higher", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    message = r"one primary annotator only, got 2 \(eos4zfy, tanimoto\)"
+    with pytest.raises(ValueError, match=message):
+        _load(inputs_dir)
+    with pytest.raises(ValueError, match=message):  # fetch refuses such lists too
+        plan_fetch(path_to_models=str(inputs_dir))
+
+
+def test_a_weight_column_is_refused(inputs_dir):
+    header = [*ANNOTATOR_HEADER[:-1], "weight"]
+    _write_csv(inputs_dir / "annotators.csv", header, ANNOTATOR_ROWS)
+
+    with pytest.raises(ValueError, match="annotators.csv: weight is no longer used"):
+        _load(inputs_dir)
+
+
+def test_a_primary_without_a_cutoff_is_recorded_as_null(inputs_dir):
+    rows = [["ersilia", "eos4zfy", "v1.0.0", "nan", "lower", "primary", ""]]
+    _write_csv(inputs_dir / "annotators.csv", ANNOTATOR_HEADER, rows)
+
+    inputs = _load(inputs_dir)
+
+    assert math.isnan(inputs.annotators[0].cutoff)
+    assert inputs.describe()["annotators"][0]["cutoff"] is None
 
 
 def test_an_annotator_cannot_be_listed_twice(inputs_dir):
@@ -377,14 +407,13 @@ def test_an_annotator_cannot_be_listed_twice(inputs_dir):
         _load(inputs_dir)
 
 
-def test_weight_defaults_to_one_and_column_reaches_the_hub_annotator(inputs_dir):
+def test_column_reaches_the_hub_annotator(inputs_dir):
     header = ["source", "model", "version", "cutoff", "direction", "priority", "column"]
     rows = [["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary", "score"]]
     _write_csv(inputs_dir / "annotators.csv", header, rows)
 
     spec = _load(inputs_dir).annotators[0]
 
-    assert spec.weight == 1.0
     assert spec.annotator.column == "score"
 
 

@@ -1,5 +1,6 @@
 """Parsing and validation of the annotator inputs, shared by the CSV and JSON files."""
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -11,7 +12,10 @@ SOURCES = ("ersilia", "rdkit")
 DIRECTIONS = ("higher", "lower", "range")
 PRIORITIES = ("primary", "guard-rail")
 REQUIRED_FIELDS = ("source", "model", "version", "cutoff", "direction", "priority")
-OPTIONAL_FIELDS = ("weight", "column")
+OPTIONAL_FIELDS = ("column",)
+
+#: Said of a `weight` field, which only a mode with several primaries used.
+NO_WEIGHT = "weight is no longer used (a run has one primary annotator): remove it"
 
 #: Two numbers joined by a hyphen, so "-5--1" is a range and "-5" is not.
 _RANGE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)\s*$")
@@ -28,7 +32,6 @@ class AnnotatorRow:
     cutoff: Cutoff
     direction: str
     priority: str
-    weight: float | None
     column: str | None
 
 
@@ -76,7 +79,10 @@ def parse_cutoff(where: str, direction: str, raw) -> Cutoff:
         or isinstance(raw, bool)
         or (isinstance(raw, str) and not raw.strip())
     ):
-        raise ValueError(f"{where}: cutoff is required")
+        raise ValueError(
+            f"{where}: cutoff is required (write nan for a primary without one, "
+            "to optimize it)"
+        )
 
     if isinstance(raw, (int, float)):
         cutoff: Cutoff = float(raw)
@@ -118,20 +124,6 @@ def _clean(value):
     return value
 
 
-def _parse_weight(where: str, value) -> float | None:
-    if value is None:
-        return None
-    try:
-        if isinstance(value, bool):
-            raise TypeError("a boolean is not a weight")
-        weight = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{where}: invalid weight {value!r}") from None
-    if weight < 0:
-        raise ValueError(f"{where}: weight must be >= 0, got {weight}")
-    return weight
-
-
 def no_version(where: str, model: str) -> ValueError:
     """The error for a Hub model listed without its release tag."""
     return ValueError(
@@ -150,23 +142,25 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
     row : Mapping
         Fields `source`, `model`, `version` (a Hub model's release tag; empty
         for an rdkit one), `cutoff`, `direction` and `priority`, and optionally
-        `weight` and `column`. Empty cells count as missing.
+        `column`. Empty cells count as missing.
     where : str
         Prefix for error messages, e.g. "annotators.csv row 3".
 
     Returns
     -------
     AnnotatorRow
-        The validated entry; `weight` is `None` unless it was given.
+        The validated entry.
 
     Raises
     ------
     ValueError
         On an unknown or missing field, a source/model/direction/priority that is
         not allowed, a Hub model without a version or an rdkit one with one, a
-        bad cutoff (see `parse_cutoff`), a range on a primary annotator, a
-        weight on a guard-rail, or a column on an rdkit one.
+        bad cutoff (see `parse_cutoff`), a range on a primary annotator, no
+        cutoff (nan) on a guard-rail, a `weight`, or a column on an rdkit one.
     """
+    if "weight" in row:
+        raise ValueError(f"{where}: {NO_WEIGHT}")
     allowed = REQUIRED_FIELDS + OPTIONAL_FIELDS
     unknown = sorted(str(k) for k in row if k not in allowed)
     if unknown:
@@ -175,8 +169,12 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
         )
 
     values = {name: _clean(row.get(name)) for name in allowed}
-    # the version depends on the source, so it is checked below
-    missing = [n for n in REQUIRED_FIELDS if n != "version" and values[n] is None]
+    # the version depends on the source, and an empty cutoff gets its own hint below
+    missing = [
+        n
+        for n in REQUIRED_FIELDS
+        if n not in ("version", "cutoff") and values[n] is None
+    ]
     if missing:
         raise ValueError(f"{where}: missing {missing}")
 
@@ -221,11 +219,10 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
             "annotator is optimized toward a one-sided cutoff."
         )
 
-    weight = _parse_weight(where, values["weight"])
-    if priority == "guard-rail" and weight is not None:
+    if isinstance(cutoff, float) and math.isnan(cutoff) and priority == "guard-rail":
         raise ValueError(
-            f"{where}: weight only applies to primary annotators; a guard-rail "
-            "is not weighted."
+            f"{where}: a guard-rail needs a cutoff; nan (no cutoff) is only for "
+            "the primary, which is then simply optimized"
         )
 
     return AnnotatorRow(
@@ -235,6 +232,5 @@ def parse_annotator(row: Mapping, where: str) -> AnnotatorRow:
         cutoff=cutoff,
         direction=direction,
         priority=priority,
-        weight=weight,
         column=values["column"],
     )

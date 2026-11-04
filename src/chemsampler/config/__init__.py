@@ -2,6 +2,7 @@
 
 import csv
 import datetime
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from ..project import PROJECT_FILE, Project, find_project
 from ..utils.jsonfile import is_list_of, is_text, read_object
 from ..utils.logging import logger
 from .schema import (
+    NO_WEIGHT,
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
     SOURCES,
@@ -74,12 +76,9 @@ class Inputs:
                 {
                     "model": spec.annotator_id,
                     "version": self.versions.get(spec.annotator_id),
-                    "cutoff": list(spec.cutoff)
-                    if isinstance(spec.cutoff, tuple)
-                    else spec.cutoff,
+                    "cutoff": _recorded_cutoff(spec.cutoff),
                     "direction": spec.direction,
                     "priority": spec.priority,
-                    "weight": spec.weight,
                 }
                 for spec in self.annotators
             ],
@@ -474,6 +473,8 @@ def _read_annotators_csv(path: Path) -> list[AnnotatorRow]:
                 f"{path.name}: the header now needs a version column (a Hub "
                 "model's release tag; empty for rdkit), see docs/inputs.md"
             )
+        if "weight" in [c.strip() for c in reader.fieldnames]:
+            raise ValueError(f"{path.name}: {NO_WEIGHT}")
         check_header(path, reader.fieldnames, REQUIRED_FIELDS, OPTIONAL_FIELDS)
         reader.fieldnames = [c.strip() for c in reader.fieldnames]
         rows = []
@@ -872,10 +873,15 @@ def _check_annotator_rows(rows: list[AnnotatorRow]) -> None:
     repeated = sorted({m for m in models if models.count(m) > 1})
     if repeated:
         raise ValueError(f"annotators: listed more than once: {repeated}")
-    if not any(row.priority == "primary" for row in rows):
+    primaries = [row.model for row in rows if row.priority == "primary"]
+    if not primaries:
         raise ValueError(
-            "annotators: at least one primary annotator is required; guard-rails "
-            "are not optimized"
+            "annotators: a primary annotator is required; guard-rails are not optimized"
+        )
+    if len(primaries) > 1:
+        raise ValueError(
+            f"annotators: one primary annotator only, got {len(primaries)} "
+            f"({', '.join(primaries)}): make the others guard-rails"
         )
 
 
@@ -944,6 +950,13 @@ def _check_rdkit_env(envs_dir: str | None, names: list[str]) -> None:
         )
 
 
+def _recorded_cutoff(cutoff):
+    """A cutoff as JSON can hold it: a range as a list, no cutoff (NaN) as null."""
+    if isinstance(cutoff, tuple):
+        return list(cutoff)
+    return None if math.isnan(cutoff) else cutoff
+
+
 def _to_spec(row: AnnotatorRow, models_dir: str | None, envs_dir: str | None):
     return AnnotatorSpec(
         annotator_id=row.model,
@@ -952,6 +965,5 @@ def _to_spec(row: AnnotatorRow, models_dir: str | None, envs_dir: str | None):
         ),
         cutoff=row.cutoff,
         direction=row.direction,
-        weight=1.0 if row.weight is None else row.weight,
         priority=row.priority,
     )

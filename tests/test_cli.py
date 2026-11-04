@@ -122,40 +122,40 @@ def test_a_guard_rail_annotator_acts_as_one_through_the_cli(tmp_path):
     assert round1["guardrails_satisfied"].tolist() == [False]  # CCN weighs about 45 Da
 
 
-def test_one_primary_runs_sequentially_without_a_mode(tmp_path):
-    root = _inputs(
-        tmp_path, [QED, ["rdkit", "mw", "", "0-1000", "range", "guard-rail"]]
-    )
-
-    result = _run(root)
-
-    assert result.exit_code == 0, result.output
-    saved = json.loads((_run_dir(root) / "inputs.json").read_text())
-    assert saved["run"]["mode"] == "sequential"
-
-
-@pytest.mark.parametrize("mode", ["joint", "sequential"])
-def test_one_primary_takes_no_mode(tmp_path, mode):
+@pytest.mark.parametrize("option", ["--mode", "--n-steps"])
+def test_run_takes_no_mode(tmp_path, option):
     root = _inputs(tmp_path)
 
-    result = _run(root, "--mode", mode)
+    result = _run(root, option, "2")
 
-    assert result.exit_code == 1
-    assert "a run is always sequential: drop --mode" in result.output
+    assert result.exit_code == 2
+    assert f"No such option: {option}" in result.output
     assert not list((root / "runs").iterdir())
 
 
-def test_several_primaries_need_a_mode(tmp_path):
+def test_several_primaries_are_refused_before_anything_runs(tmp_path):
     root = _inputs(tmp_path, [QED, ["rdkit", "mw", "", "0", "higher", "primary"]])
 
-    refused = _run(root)
-    weighted = _run(root, "--mode", "weighted")
+    result = _run(root)
 
-    assert refused.exit_code == 1
-    assert "with 2 primary annotators a mode is needed (--mode)" in refused.output
-    assert weighted.exit_code == 0, weighted.output
+    assert result.exit_code == 1
+    assert "one primary annotator only, got 2 (qed, mw)" in result.output
+    assert not list((root / "runs").iterdir())
+
+
+def test_a_primary_without_a_cutoff_runs_until_no_improvement(tmp_path):
+    root = _inputs(tmp_path, [["rdkit", "qed", "", "nan", "higher", "primary"]])
+
+    result = _run(root, "--n-rounds", "3")
+
+    assert result.exit_code == 0, result.output
     saved = json.loads((_run_dir(root) / "inputs.json").read_text())
-    assert saved["run"]["mode"] == "weighted"
+    assert saved["annotators"][0]["cutoff"] is None
+    assert "cutoff" not in result.output
+    assert pd.read_csv(_seed_dir(root) / "round1.csv")["cutoff_satisfied"].isna().all()
+    scored = _annotate("-p", str(root), "--smiles", "CCO")
+    assert "qed [primary] (optimized, higher)" in scored.output
+    assert "primary: no cutoff (optimized)" in scored.output
 
 
 def test_run_needs_the_inputs_and_reports_errors_in_red(tmp_path):
@@ -216,10 +216,8 @@ def test_a_run_records_how_it_was_launched(tmp_path):
     assert saved["similarity"] == [{"model": "eos8nyg", "version": "v1.0.0"}]
     assert saved["run"] == {
         "chemsampler_version": importlib.metadata.version("chemsampler"),
-        "mode": "sequential",
         "seeds": ["CCO"],
         "n_rounds": 1,
-        "n_steps": None,
         "tolerance": 0.1,
         "hpc": None,
         "verbose": False,
@@ -243,7 +241,7 @@ def test_an_interrupted_run_keeps_its_record_with_the_partial_results(
     assert result.exit_code == 0, result.output
     assert "Partial results written" in result.output
     saved = json.loads((_run_dir(root) / "inputs.json").read_text())
-    assert saved["run"]["mode"] == "sequential"
+    assert saved["run"]["status"] == "stopped"
     assert (_seed_dir(root) / "summary.csv").exists()
 
 
@@ -424,6 +422,29 @@ def test_a_finished_run_is_not_run_again(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "already finished" in result.output
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_resume_refuses_a_run_made_with_modes(tmp_path, monkeypatch, finished):
+    root = _generator_project(tmp_path)
+    _script(monkeypatch, *(HEAVIER if finished else [HEAVIER[0], KeyboardInterrupt()]))
+    _three_rounds(root)
+    record_file = _run_dir(root) / "inputs.json"
+    record = json.loads(record_file.read_text())
+    record["run"]["mode"] = "sequential"  # as every run before one primary says
+    record_file.write_text(json.dumps(record))
+    _script(monkeypatch)  # any model call would fail
+
+    result = _resume(root)
+
+    if finished:  # nothing to continue: it says so, as before
+        assert result.exit_code == 0, result.output
+        assert "already finished" in result.output
+    else:
+        assert result.exit_code == 1
+        assert "made by an older chemsampler, before runs had one primary" in (
+            result.output
+        )
 
 
 def test_resume_explains_what_it_cannot_resume(tmp_path, monkeypatch):
@@ -689,7 +710,7 @@ def test_annotate_without_a_seed_leaves_tanimoto_out(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "tanimoto [guard-rail] (>= 0.5): needs a seed" in result.output
-    assert "1 of 1 primary cutoffs satisfied" in result.output
+    assert "primary cutoff satisfied" in result.output
 
 
 def test_annotate_a_single_tanimoto_uses_the_project_seed(tmp_path):
@@ -722,7 +743,7 @@ def test_annotate_with_several_seeds_shows_tanimoto_per_seed_uncounted(tmp_path)
         "tanimoto vs seed 2: 1.0; not counted"
     ) in result.output
     assert "qed [primary]" in result.output
-    assert "1 of 1 primary cutoffs satisfied" in result.output
+    assert "primary cutoff satisfied" in result.output
     assert "guard-rails" not in result.output  # none counted
     assert one_model.exit_code == 0, one_model.output
     assert "tanimoto vs seed 1: 0.2857142857142857" in one_model.output
@@ -743,7 +764,7 @@ def test_annotate_prints_values_priorities_and_the_cutoff_summary(tmp_path):
     assert result.exit_code == 0, result.output
     assert "qed [primary] (>= 0)" in result.output
     assert "mw [guard-rail] (0-1000)" in result.output
-    assert "1 of 1 primary cutoffs satisfied" in result.output
+    assert "primary cutoff satisfied" in result.output
     assert "guard-rails all satisfied" in result.output
 
 
@@ -1011,7 +1032,6 @@ def test_a_run_saves_what_it_resolved_next_to_its_results(
             "cutoff": 0.0,
             "direction": "higher",
             "priority": "primary",
-            "weight": 1.0,
         }
     ]
     # which models ran is recorded too: they are the machine's, not the project's
@@ -1194,7 +1214,7 @@ def _ids(root, name):
 
 def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
     root = _inputs(
-        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "guard-rail"]]
     )
 
     result = _fetch_ids(root, "eos9p57,eos1bgt", "eos4zfy", "rdkit", "-f")
@@ -1216,7 +1236,7 @@ def test_fetch_ids_sorts_them_by_role_and_writes_the_lists(tmp_path, fetched):
 
 def test_fetch_id_at_tag_pins_that_release(tmp_path, fetched):
     root = _inputs(
-        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "guard-rail"]]
     )
 
     result = _fetch_ids(
@@ -1315,7 +1335,7 @@ def test_fetch_cannot_ask_without_a_terminal(tmp_path, fetched, monkeypatch):
 
 def test_fetch_ids_say_where_annotators_csv_disagrees(tmp_path, fetched):
     root = _inputs(
-        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "primary"]]
+        tmp_path, [QED, ["ersilia", "eos4zfy", "v1.0.0", "0.5", "higher", "guard-rail"]]
     )
 
     result = _fetch_ids(root, "eos9p57", "eos9ei3", "-f")

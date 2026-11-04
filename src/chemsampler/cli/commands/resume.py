@@ -49,6 +49,11 @@ def resume_cmd(path: str | None, run: str | None, detach: bool) -> None:
         if record["run"]["status"] == "finished":
             click.secho(f"{run_dir.name} already finished: see {run_dir}", fg="green")
             return
+        if "mode" in record["run"]:
+            raise ValueError(
+                f"{run_dir.name} was made by an older chemsampler, before runs had "
+                "one primary annotator and new output columns: start it again"
+            )
         if "seeds" not in record["run"]:
             raise ValueError(
                 f"{run_dir.name} was made by an older chemsampler, before each "

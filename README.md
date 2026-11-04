@@ -32,7 +32,7 @@ a **store** that every project on the machine shares.
 chemsampler init -p my-run && cd my-run   # a project: input/ and runs/, with template inputs
 $EDITOR input/*.csv                       # the models, the annotators' cutoffs and the seeds
 chemsampler fetch                         # every model the inputs name, and the rdkit env
-chemsampler run                           # --mode only with several primaries
+chemsampler run                           # one round after another, while it improves
 ```
 
 `init` only creates a new folder; without `-p` it makes a dummy `chemsampler-test`.
@@ -116,15 +116,15 @@ Annotators are required, and so is at least one of similarity and generators.
 | annotators | `annotators.csv` | models or RDKit functions that score molecules, each with a cutoff, a direction and a priority |
 | seeds | `smiles.csv` | the starting molecules, header `smiles`, one per row; each is climbed in turn (`run --seed-smiles` gives one instead) |
 
-A **primary** annotator is optimized; a **guard-rail** is one every candidate must
-satisfy. Any annotator can be either, including the RDKit ones: `mw`, `qed` and
+Exactly one annotator is **primary**, the one optimized; every other one is a
+**guard-rail**, which every candidate must satisfy. A primary with cutoff `nan` has
+none: it is maximised or minimised until a round does not improve. Any annotator can
+be either, including the RDKit ones: `mw`, `qed` and
 `tanimoto`, the similarity to the seed of each climb (e.g. `rdkit,tanimoto,0.4,higher,guard-rail`
 keeps candidates near it). Every model is checked against a bundled catalog of what
 the Hub currently labels for each role, which works offline. The exact columns, the
-project file and the catalog are in [docs/inputs.md](docs/inputs.md). With one
-primary a run is sequential; with several, `--mode` picks one of the four ways to
-combine them (`sequential`, `joint`, `weighted`, `incremental`), described with the
-Python API in [docs/modes.md](docs/modes.md).
+project file and the catalog are in [docs/inputs.md](docs/inputs.md); how a round
+picks its winner, and the Python API, in [docs/python.md](docs/python.md).
 
 ## Running on a cluster
 
@@ -168,7 +168,6 @@ chemsampler fetch eos9p57,eos8nyg rdkit -f      # set the project's samplers (li
 chemsampler fetch eos9p57@v1.0.0 eos8nyg rdkit   # a given release of eos9p57
 chemsampler fetch                                # everything input/*.csv lists, after asking
 chemsampler run -p my-run                        # from outside the project
-chemsampler run --mode weighted                  # several primaries: say how to combine them
 chemsampler run --seed-smiles "CCO"              # one seed instead of input/smiles.csv
 chemsampler run --hpc mycluster                  # models as Slurm jobs
 chemsampler run --hpc mycluster --detach         # the run is a job too
